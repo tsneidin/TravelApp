@@ -98,7 +98,7 @@ export function Layout() {
                           <span className="side-tab-dot" />
                           {tb.label}
                         </Link>
-                        {tb.key === 'itinerary' && (t.days ?? []).map((day, index) => (
+                        {tb.key === 'itinerary' && [...(t.days ?? [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder).map((day, index) => (
                           <Link
                             key={day.id}
                             to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}

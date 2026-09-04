@@ -222,4 +222,6 @@ export interface GeocodedPlace {
   lng: number;
   category: string;
   country?: string;
+  placeId?: string;
+  website?: string;
 }

@@ -36,7 +36,7 @@ export function PlaceSearchInput({
   onSelect,
   biasLat,
   biasLng,
-  placeholder = 'Search a place, sight, restaurant, address…',
+  placeholder = 'Search a place or paste a Google Maps URL…',
   autoFocus = false,
 }: PlaceSearchInputProps) {
   const [query, setQuery] = useState('');
@@ -72,13 +72,20 @@ export function PlaceSearchInput({
     setLoading(true);
     timerRef.current = window.setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ q });
-        if (biasLat != null && biasLng != null) {
-          params.set('biasLat', String(biasLat));
-          params.set('biasLng', String(biasLng));
+        const isMapUrl = /^https:\/\/(?:maps\.app\.goo\.gl|goo\.gl|(?:www\.|maps\.)?google\.com)\//i.test(q);
+        if (isMapUrl) {
+          const params = new URLSearchParams({ url: q });
+          const res = await apiGet<{ place: GeocodedPlace }>(`/places/resolve-map-url?${params.toString()}`);
+          setResults(res.place ? [res.place] : []);
+        } else {
+          const params = new URLSearchParams({ q });
+          if (biasLat != null && biasLng != null) {
+            params.set('biasLat', String(biasLat));
+            params.set('biasLng', String(biasLng));
+          }
+          const res = await apiGet<{ places: GeocodedPlace[] }>(`/places/search?${params.toString()}`);
+          setResults(res.places || []);
         }
-        const res = await apiGet<{ places: GeocodedPlace[] }>(`/places/search?${params.toString()}`);
-        setResults(res.places || []);
         setHighlightIdx(0);
         setOpen(true);
       } catch {
@@ -156,7 +163,7 @@ export function PlaceSearchInput({
       {open && query.trim().length >= 2 && (
         <div className="place-autocomplete-dropdown">
           {loading && results.length === 0 && (
-            <div className="place-autocomplete-empty">Searching OpenStreetMap…</div>
+            <div className="place-autocomplete-empty">Searching Google Maps…</div>
           )}
           {!loading && results.length === 0 && (
             <div className="place-autocomplete-empty">No places found for &quot;{query}&quot;</div>

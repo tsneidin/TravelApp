@@ -128,8 +128,8 @@ const TOOLS: ToolDef[] = [
           reference: { type: 'string', description: 'Confirmation or PNR number if present' },
           startAt: { type: 'string', description: 'Start ISO datetime or YYYY-MM-DD' },
           endAt: { type: 'string', description: 'Optional end ISO datetime or YYYY-MM-DD' },
-          price: { type: 'number', description: 'Total price or fare if present' },
-          currency: { type: 'string', description: 'Currency code e.g. USD, EUR' },
+          price: { type: 'number', description: 'Confirmed total, amount paid, or ticketed fare only. Do not use estimates, optional charges, points values, or advertised prices.' },
+          currency: { type: 'string', description: 'Currency code for the confirmed price, e.g. USD or EUR' },
         },
         required: ['type', 'title'],
       },
@@ -288,6 +288,15 @@ async function executeTool(
         booking.id,
         ctx.sourceText || `${title} ${a.provider ?? ''} ${a.reference ?? ''}`,
         title,
+        {
+          type,
+          provider: a.provider ? String(a.provider) : undefined,
+          reference: a.reference ? String(a.reference) : undefined,
+          startAt: toDate(a.startAt),
+          endAt: toDate(a.endAt),
+          totalAmount: typeof a.price === 'number' ? a.price : parseFloat(String(a.price ?? '')),
+          currency: a.currency ? String(a.currency) : undefined,
+        },
       );
 
       const extras: string[] = [];

@@ -90,6 +90,12 @@ $2,054.66 USD
     expect(info.currency).toBe('USD');
   });
 
+  it('extracts a confirmed total from compact confirmation text', () => {
+    const info = extractFlightLegs('United Airlines\nConfirmation ABC123\nTotal paid: $1,234.56 USD');
+    expect(info.totalAmount).toBe(1234.56);
+    expect(info.currency).toBe('USD');
+  });
+
   it('extracts all 4 flight legs with correct airports and dates', () => {
     const info = extractFlightLegs(sampleReceipt);
     expect(info.legs.length).toBe(4);

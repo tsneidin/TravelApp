@@ -1,4 +1,5 @@
 import { prisma } from '../db.js';
+import type { BookingType } from '@prisma/client';
 
 export interface ExtractedFlightLeg {
   carrier: string;
@@ -225,12 +226,23 @@ export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   };
 }
 
+export interface BookingSyncFallback {
+  type?: BookingType;
+  provider?: string;
+  reference?: string;
+  startAt?: Date;
+  endAt?: Date;
+  totalAmount?: number;
+  currency?: string;
+}
+
 export async function syncBookingToItinerary(
   tripId: string,
   userId: string,
   bookingId: string,
   rawSourceText: string,
-  fallbackTitle = 'Flight Booking',
+  fallbackTitle = 'Booking',
+  fallback: BookingSyncFallback = {},
 ): Promise<{ daysAdded: number; placesAdded: number; expenseAdded: boolean }> {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -239,6 +251,20 @@ export async function syncBookingToItinerary(
   if (!trip) return { daysAdded: 0, placesAdded: 0, expenseAdded: false };
 
   const info = extractFlightLegs(rawSourceText);
+
+  // The LLM has already extracted structured booking fields. Use them whenever
+  // receipt regexes cannot understand a vendor's particular confirmation layout.
+  if ((!info.provider || info.provider === 'Airline') && fallback.provider) info.provider = fallback.provider;
+  if (!info.reference && fallback.reference) info.reference = fallback.reference;
+  if (!info.startDate && fallback.startAt) info.startDate = fallback.startAt;
+  if (!info.endDate && fallback.endAt) info.endDate = fallback.endAt;
+  if ((!info.totalAmount || info.totalAmount <= 0) && fallback.totalAmount && fallback.totalAmount > 0) {
+    info.totalAmount = fallback.totalAmount;
+  }
+  if (fallback.currency && (!info.currency || info.currency === 'USD')) {
+    info.currency = fallback.currency.toUpperCase();
+  }
+
   let daysAdded = 0;
   let placesAdded = 0;
   let expenseAdded = false;
@@ -298,9 +324,13 @@ export async function syncBookingToItinerary(
         placesAdded++;
       }
     }
-  } else if (info.startDate) {
-    // Fallback: Single departure place from booking dates
-    const dayId = await getOrCreateDay(info.startDate);
+  } else {
+    // Fallback: create a useful itinerary item from the AI's structured dates.
+    // If the confirmation omitted a parseable date, use the trip start rather
+    // than silently dropping a confirmed booking from the itinerary.
+    const itineraryDate = info.startDate || fallback.startAt || trip.startDate;
+    if (itineraryDate) {
+    const dayId = await getOrCreateDay(itineraryDate);
     const existingPlace = await prisma.place.findFirst({
       where: { tripId, dayId, name: { contains: fallbackTitle } },
     });
@@ -311,9 +341,9 @@ export async function syncBookingToItinerary(
         data: {
           tripId,
           dayId,
-          name: `✈️ ${fallbackTitle}`,
-          category: 'Transport',
-          startTime: info.startDate,
+          name: `${fallback.type === 'hotel' ? '🏨' : fallback.type === 'car' ? '🚗' : fallback.type === 'activity' ? '🎟️' : '✈️'} ${fallbackTitle}`,
+          category: fallback.type === 'hotel' ? 'Accommodation' : fallback.type === 'activity' ? 'Activity' : 'Transport',
+          startTime: info.startDate || fallback.startAt,
           endTime: info.endDate,
           notes: info.reference ? `Confirmation: ${info.reference}` : undefined,
           sortOrder: count,
@@ -323,7 +353,7 @@ export async function syncBookingToItinerary(
       placesAdded++;
     }
 
-    if (info.endDate && toDayKey(info.endDate) !== toDayKey(info.startDate)) {
+    if (fallback.type === 'flight' && info.endDate && info.startDate && toDayKey(info.endDate) !== toDayKey(info.startDate)) {
       const returnDayId = await getOrCreateDay(info.endDate);
       const count = await prisma.place.count({ where: { tripId } });
       await prisma.place.create({
@@ -337,6 +367,7 @@ export async function syncBookingToItinerary(
         },
       });
       placesAdded++;
+    }
     }
   }
 

@@ -125,7 +125,7 @@ export function TripDetail() {
       </div>
 
       {tab === 'itinerary' && <ItineraryTab trip={trip} reload={load} />}
-      {tab === 'map' && <MapTab trip={trip} />}
+      {tab === 'map' && <MapTab trip={trip} reload={load} />}
       {tab === 'budget' && <BudgetTab trip={trip} reload={load} />}
       {tab === 'photos' && <PhotosJournalTab trip={trip} reload={load} />}
       {tab === 'packing' && <PackingTab trip={trip} reload={load} />}

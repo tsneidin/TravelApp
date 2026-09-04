@@ -142,7 +142,7 @@ tripsRouter.get(
     // Backfill confirmations imported before booking-to-itinerary synchronization
     // was reliable. The helper performs duplicate checks, so this is idempotent.
     const confirmationBookings = await prisma.booking.findMany({
-      where: { tripId, details: { not: null } },
+      where: { tripId },
     });
     for (const booking of confirmationBookings) {
       const details = booking.details && typeof booking.details === 'object' && !Array.isArray(booking.details)

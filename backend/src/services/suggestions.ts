@@ -10,6 +10,7 @@ export interface Suggestion {
   dayId?: string;
   recommendedAt?: string;
   context?: string;
+  mapUrl?: string;
 }
 
 interface SearxngResult {
@@ -19,6 +20,23 @@ interface SearxngResult {
   thumbnail?: string;
   img_src?: string;
   thumbnail_src?: string;
+}
+
+interface NominatimResult {
+  osm_type?: 'node' | 'way' | 'relation';
+  osm_id?: number;
+  lat?: string;
+  lon?: string;
+  display_name?: string;
+  name?: string;
+  type?: string;
+  category?: string;
+  extratags?: {
+    website?: string;
+    contact_website?: string;
+    opening_hours?: string;
+    cuisine?: string;
+  };
 }
 
 interface WikiResult {
@@ -57,6 +75,78 @@ async function fromSearxng(query: string, count: number): Promise<Suggestion[]> 
       thumbnail: r.thumbnail || r.thumbnail_src || r.img_src || undefined,
       summary: r.content ? String(r.content).slice(0, 220) : undefined,
     }));
+}
+
+function isLocalDiscovery(query: string): boolean {
+  return /(restaurants?|pizza|coffee|cafes?|bars?|breakfast|lunch|dinner|food|shops?|shopping|hotels?|lodging|laundromat|pharmacy|grocer|market|music|shows?|events?|tours?|museums?|parks?|hikes?|beaches?|nearby|open around)/i.test(query);
+}
+
+function localSearchQuery(query: string): string {
+  return query
+    .replace(/\s+open around\s+.*$/i, '')
+    .replace(/\s+highly rated reviews\s*$/i, '')
+    .replace(/\b[A-Z]{3}\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Local-place fallback using OpenStreetMap's Nominatim index. */
+async function fromNominatim(query: string, count: number): Promise<Suggestion[]> {
+  const clean = localSearchQuery(query);
+  const url =
+    'https://nominatim.openstreetmap.org/search?' +
+    new URLSearchParams({
+      q: clean,
+      format: 'jsonv2',
+      addressdetails: '1',
+      extratags: '1',
+      namedetails: '1',
+      limit: String(Math.min(count * 2, 20)),
+    }).toString();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.search.timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'TravelApp/0.0.19 (self-hosted trip planner)',
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+    const data = (await res.json()) as NominatimResult[];
+    const seen = new Set<string>();
+    const out: Suggestion[] = [];
+    for (const place of data) {
+      const lat = Number(place.lat);
+      const lng = Number(place.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const title = place.name || place.display_name?.split(',')[0]?.trim();
+      if (!title || seen.has(title.toLowerCase())) continue;
+      seen.add(title.toLowerCase());
+      const osmUrl = place.osm_type && place.osm_id
+        ? `https://www.openstreetmap.org/${place.osm_type}/${place.osm_id}`
+        : `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`;
+      const website = place.extratags?.website || place.extratags?.contact_website;
+      const details = [
+        place.display_name,
+        place.extratags?.cuisine ? `Cuisine: ${place.extratags.cuisine}` : undefined,
+        place.extratags?.opening_hours ? `Hours: ${place.extratags.opening_hours}` : undefined,
+      ].filter(Boolean).join(' · ');
+      out.push({
+        title,
+        url: website || osmUrl,
+        mapUrl: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+        summary: details || undefined,
+        lat,
+        lng,
+      });
+      if (out.length >= count) break;
+    }
+    return out;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Fallback: Wikipedia search with page images + opening extract (no key). */
@@ -108,11 +198,26 @@ export async function fetchSuggestions(query: string, count = 8): Promise<Sugges
   if (config.search.enabled) {
     try {
       const r = await fromSearxng(q, count);
-      if (r.length) return r;
+      if (r.length) {
+        return r.map((item) => ({
+          ...item,
+          mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.title)}`,
+        }));
+      }
     } catch (e) {
-      console.warn('[suggest] SearXNG unavailable, using Wikipedia fallback:', (e as Error).message);
+      console.warn('[suggest] SearXNG unavailable:', (e as Error).message);
     }
   }
+
+  if (isLocalDiscovery(q)) {
+    try {
+      return await fromNominatim(q, count);
+    } catch (e) {
+      console.error('[suggest] OpenStreetMap fallback failed:', e);
+      return [];
+    }
+  }
+
   try {
     return await fromWikipedia(q, count);
   } catch (e) {

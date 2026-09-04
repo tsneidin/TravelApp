@@ -35,7 +35,7 @@ function SuggestionCard({
         dayId: s.dayId || undefined,
         notes: s.summary || undefined,
         website: s.url || undefined,
-        sourceText: [s.title, s.context, s.summary, s.url].filter(Boolean).join('\n\n'),
+        sourceText: [s.title, s.context, s.summary, s.url, s.mapUrl].filter(Boolean).join('\n\n'),
       });
       setAdded(true);
       onAdded(s.title);
@@ -64,6 +64,11 @@ function SuggestionCard({
           {s.url && (
             <a className="btn sm ghost" href={s.url} target="_blank" rel="noreferrer">
               <ExternalLink size={12} /> Info
+            </a>
+          )}
+          {s.mapUrl && (
+            <a className="btn sm ghost" href={s.mapUrl} target="_blank" rel="noreferrer">
+              <MapPin size={12} /> Map
             </a>
           )}
           <button className="btn sm primary" onClick={() => void addPlace()} disabled={adding || added}>

@@ -200,6 +200,7 @@ export interface Suggestion {
   dayId?: string;
   recommendedAt?: string;
   context?: string;
+  mapUrl?: string;
 }
 
 export interface AiAction {

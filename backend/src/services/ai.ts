@@ -263,8 +263,13 @@ async function executeTool(
       const type = BOOKING_TYPES.includes(rawType as BookingType) ? (rawType as BookingType) : null;
       const title = String(a.title ?? '').trim();
       if (!type || !title) return { action: name, summary: 'add_booking: valid type and title required', ok: false };
+      const confirmedPrice = typeof a.price === 'number' ? a.price : parseFloat(String(a.price ?? ''));
       const details = ctx.sourceText
-        ? { sourceRaw: ctx.sourceText.slice(0, 12_000) }
+        ? {
+            sourceRaw: ctx.sourceText.slice(0, 12_000),
+            ...(Number.isFinite(confirmedPrice) && confirmedPrice > 0 ? { confirmedPrice } : {}),
+            ...(a.currency ? { currency: String(a.currency).toUpperCase() } : {}),
+          }
         : undefined;
 
       const booking = await prisma.booking.create({
@@ -294,7 +299,7 @@ async function executeTool(
           reference: a.reference ? String(a.reference) : undefined,
           startAt: toDate(a.startAt),
           endAt: toDate(a.endAt),
-          totalAmount: typeof a.price === 'number' ? a.price : parseFloat(String(a.price ?? '')),
+          totalAmount: confirmedPrice,
           currency: a.currency ? String(a.currency) : undefined,
         },
       );

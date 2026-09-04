@@ -355,18 +355,25 @@ export async function syncBookingToItinerary(
 
     if (fallback.type === 'flight' && info.endDate && info.startDate && toDayKey(info.endDate) !== toDayKey(info.startDate)) {
       const returnDayId = await getOrCreateDay(info.endDate);
-      const count = await prisma.place.count({ where: { tripId } });
-      await prisma.place.create({
-        data: {
-          tripId,
-          dayId: returnDayId,
-          name: `✈️ Return: ${fallbackTitle}`,
-          category: 'Transport',
-          startTime: info.endDate,
-          sortOrder: count,
-        },
+      const returnName = `✈️ Return: ${fallbackTitle}`;
+      const existingReturn = await prisma.place.findFirst({
+        where: { tripId, dayId: returnDayId, name: returnName },
       });
-      placesAdded++;
+      if (!existingReturn) {
+        const count = await prisma.place.count({ where: { tripId } });
+        await prisma.place.create({
+          data: {
+            tripId,
+            dayId: returnDayId,
+            name: returnName,
+            category: 'Transport',
+            startTime: info.endDate,
+            sortOrder: count,
+            sourceText: rawSourceText.slice(0, 10_000),
+          },
+        });
+        placesAdded++;
+      }
     }
     }
   }

@@ -145,6 +145,7 @@ const TOOLS: ToolDef[] = [
         type: 'object',
         properties: {
           description: { type: 'string' },
+          notes: { type: 'string', description: 'Optional notes about this expense' },
           amount: { type: 'number', description: 'Numerical amount, no currency symbol' },
           currency: { type: 'string', description: 'ISO currency code, default USD' },
           category: { type: 'string', enum: EXPENSE_CATEGORIES },
@@ -363,6 +364,7 @@ async function executeTool(
           tripId,
           userId,
           description: desc,
+          notes: a.notes ? String(a.notes) : undefined,
           amount,
           currency: a.currency ? String(a.currency).toUpperCase() : 'USD',
           category,

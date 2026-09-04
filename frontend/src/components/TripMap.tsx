@@ -69,7 +69,8 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
           center: { lat: 20, lng: 0 }, zoom: 2, mapTypeControl: true, streetViewControl: false,
         });
         mapRef.current.addListener('click', async (event: any) => {
-          if (!mapClickRef.current || !event.latLng) return;
+          const callback = mapClickRef.current;
+          if (!callback || !event.latLng) return;
           const geocoder = new maps.Geocoder();
           try {
             const request = event.placeId
@@ -82,7 +83,7 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
               component.types?.some((type: string) => ['point_of_interest', 'establishment', 'premise'].includes(type)),
             );
             const fallbackName = result?.formatted_address?.split(',')[0] || 'Pinned location';
-            mapClickRef.current({
+            callback({
               name: nameComponent?.long_name || fallbackName,
               address: result?.formatted_address || fallbackName,
               lat: point.lat(),
@@ -94,7 +95,7 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
                 : `https://www.google.com/maps/search/?api=1&query=${point.lat()},${point.lng()}`,
             });
           } catch {
-            mapClickRef.current({
+            callback({
               name: 'Pinned location',
               address: `${event.latLng.lat().toFixed(6)}, ${event.latLng.lng().toFixed(6)}`,
               lat: event.latLng.lat(),

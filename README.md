@@ -95,6 +95,11 @@ BOOTSTRAP_EMAIL=you@example.com
 BOOTSTRAP_PASSWORD=choose_a_password
 # Optional email import — leave false until IMAP is configured:
 EMAIL_ENABLED=false
+# AI assistant — leave false until an OpenAI-compatible endpoint is set up:
+AI_ENABLED=false
+AI_BASE_URL=http://open-webui:8080   # Open WebUI on the LAN, or Ollama http://<host-ip>:11434
+AI_MODEL=llama3
+AI_API_KEY=
 ```
 - Web UI: `http://192.168.86.86:8070`
 - Data persists under `/mnt/user/appdata/travelapp/` (db, uploads)
@@ -107,6 +112,39 @@ EMAIL_ENABLED=false
 
 Connect via the existing **swag** reverse proxy or **cloudflared** tunnel later
 for remote access.
+
+## AI assistant setup
+The chat panel (bottom-right floating button) is powered by any
+**OpenAI-compatible** endpoint. Two common options on Unraid:
+
+**Option A — Open WebUI** (you already have the container defined, just start it):
+```
+AI_ENABLED=true
+AI_BASE_URL=http://open-webui:8080
+AI_MODEL=<a model name available in Open WebUI, e.g. llama3>
+AI_API_KEY=<your open-webui api key, optional>
+```
+Make sure `open-webui` is on the same Docker network as `travelapp-api` (e.g.
+both on `travelapp`), or use `http://<host-ip>:8080`.
+
+**Option B — Ollama on the Unraid host:**
+```
+AI_ENABLED=true
+AI_BASE_URL=http://<unraid-ip>:11434
+AI_MODEL=llama3
+```
+
+### What the assistant can do
+- Answer questions about a trip (uses the current itinerary, bookings, budget).
+- Parse booking confirmation emails you paste and **add them as bookings**
+  (flights, hotels, car rentals, activities).
+- Add places to itinerary days, add expense entries, and create days — all via
+  tool calls, then it confirms what it changed.
+- Suggest things to do / places to see for the destination.
+- Chat history is saved per trip and shown next time you open it.
+
+> Chat happens per trip. Open a trip, then use the chat button at bottom-right.
+> The page auto-refreshes when the assistant modifies the itinerary.
 
 ## Email import setup
 1. On your Gmail account (or Google Workspace admin for org mailboxes) enable:

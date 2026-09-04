@@ -155,3 +155,23 @@ export interface CalendarEvent {
   bookingType?: string;
   dayId?: string;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface AiStatus {
+  enabled: boolean;
+  baseUrl?: string | null;
+  model?: string | null;
+  configured: boolean;
+}
+
+export interface AiAction {
+  action: string;
+  summary: string;
+  ok: boolean;
+}

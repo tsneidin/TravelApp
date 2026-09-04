@@ -57,6 +57,16 @@ export function TripDetail() {
     void load();
   }, [load]);
 
+  // Reload whenever the AI assistant modifies this trip (itinerary/bookings/budget).
+  useEffect(() => {
+    const onMutated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tripId?: string } | undefined;
+      if (!detail?.tripId || detail.tripId === tripId) void load();
+    };
+    window.addEventListener('travelapp:mutated', onMutated);
+    return () => window.removeEventListener('travelapp:mutated', onMutated);
+  }, [load, tripId]);
+
   const save = async () => {
     await apiPatch(`/trips/${tripId}`, {
       name: form.name,

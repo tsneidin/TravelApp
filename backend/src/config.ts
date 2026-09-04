@@ -55,4 +55,12 @@ export const config = {
       .filter(Boolean),
     unseenFirst: optionalBool('IMPORT_UNSEEN_FIRST', true),
   },
+
+  ai: {
+    enabled: optionalBool('AI_ENABLED', false),
+    baseUrl: optional('AI_BASE_URL', 'http://open-webui:8080'),
+    apiKey: optional('AI_API_KEY'),
+    model: optional('AI_MODEL', 'llama3'),
+    timeoutMs: optionalInt('AI_TIMEOUT_MS', 120_000),
+  },
 };

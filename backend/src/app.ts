@@ -8,6 +8,7 @@ import { tripsRouter } from './routes/trips.routes.js';
 import { contentRouter } from './routes/content.routes.js';
 import { calendarRouter } from './routes/calendar.routes.js';
 import { emailRouter } from './routes/email.routes.js';
+import { aiRouter } from './routes/ai.routes.js';
 import { errorHandler } from './lib/errors.js';
 
 export function createApp() {
@@ -23,6 +24,7 @@ export function createApp() {
   app.use('/auth', authRouter);
   app.use('/trips', tripsRouter);
   app.use('/trips', contentRouter);
+  app.use('/trips', aiRouter);
   app.use('/calendar', calendarRouter);
   app.use('/email', emailRouter);
 

@@ -54,6 +54,7 @@ model User {
   expenses    Expense[]
   imports     EmailImport[]
   bookings    Booking[]
+  chat        ChatMessage[]
 }
 
 model Trip {
@@ -79,6 +80,7 @@ model Trip {
   packing  PackingItem[]
   bookings Booking[]
   imports  EmailImport[]
+  chat     ChatMessage[]
 
   @@index([ownerId])
 }
@@ -249,4 +251,19 @@ model EmailImport {
 
   @@index([tripId])
   @@index([status])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+  trip   Trip?  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId String?
+
+  @@index([tripId, createdAt])
+  @@index([userId, createdAt])
 }

@@ -963,6 +963,139 @@ tbody tr.total-row td {
   opacity: 0.4;
 }
 
+/* ---------- AI chat (right panel) ---------- */
+.ai-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 900;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s, border-color 0.15s;
+}
+.ai-fab:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+.ai-chat {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: 380px;
+  max-width: calc(100vw - 28px);
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, var(--panel), #0c1524);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.ai-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  font-weight: 800;
+  border-bottom: 1px solid var(--line);
+  background: var(--card-2);
+}
+.ai-chat-sub {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ai-bubble {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-bubble.user {
+  align-self: flex-end;
+  background: rgba(34, 211, 238, 0.16);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  color: var(--text);
+}
+.ai-bubble.assistant {
+  align-self: flex-start;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.ai-typing {
+  padding: 4px 12px;
+}
+.ai-placeholder {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  padding: 0 10px;
+}
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--line);
+  max-height: 90px;
+  overflow-y: auto;
+}
+.ai-error {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.08);
+  border-top: 1px solid var(--line);
+}
+.ai-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  align-items: flex-end;
+}
+.ai-input-row textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 140px;
+  resize: vertical;
+  font-family: inherit;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 0.9rem;
+  outline: none;
+}
+.ai-input-row textarea:focus {
+  border-color: var(--accent);
+}
+
 /* leaflet dark tweaks */
 .leaflet-container {
   background: #0d1526;

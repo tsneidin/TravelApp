@@ -51,6 +51,11 @@ services:
       IMAP_POLL_MINUTES: ${IMAP_POLL_MINUTES:-5}
       EMAIL_ALLOWLIST: ${EMAIL_ALLOWLIST:-}
       IMPORT_UNSEEN_FIRST: ${IMPORT_UNSEEN_FIRST:-true}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_BASE_URL: ${AI_BASE_URL:-http://open-webui:8080}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-llama3}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-120000}
     volumes:
       - /mnt/user/appdata/travelapp/uploads:/data/uploads
     networks:

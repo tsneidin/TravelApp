@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../lib/auth';
 import { APP_VERSION } from '../lib/version';
 import { apiGet } from '../lib/api';
+import { AIChat } from './AIChat';
 import type { Trip } from '../lib/types';
 
 const TRIP_TABS: { key: string; label: string }[] = [
@@ -133,6 +134,9 @@ export function Layout() {
       <main className="side-content">
         <Outlet />
       </main>
+
+      {/* ---------- Right-side AI assistant ---------- */}
+      <AIChat tripId={activeTripId ?? null} />
     </div>
   );
 }

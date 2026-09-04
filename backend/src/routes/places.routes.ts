@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler, badRequest } from '../lib/errors.js';
 import { getUser } from '../middleware/auth.js';
 import { searchPlaces } from '../services/geocoding.js';
+import { config } from '../config.js';
 
 export const placesRouter = Router();
 
@@ -12,6 +13,26 @@ function isGoogleMapsHost(hostname: string): boolean {
     || host === 'google.com'
     || host === 'www.google.com'
     || host === 'maps.google.com';
+}
+
+
+interface GooglePlaceResult {
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+  websiteUri?: string;
+  googleMapsUri?: string;
+  primaryType?: string;
+}
+
+function googleCategory(primaryType?: string): string {
+  const type = primaryType || '';
+  if (/restaurant|cafe|bar|bakery|meal/.test(type)) return 'Restaurant';
+  if (/lodging|hotel|hostel|campground/.test(type)) return 'Accommodation';
+  if (/airport|train|bus|transit|car_rental|ferry/.test(type)) return 'Transport';
+  if (/store|shop|market/.test(type)) return 'Shopping';
+  if (/amusement|aquarium|zoo|stadium|theater/.test(type)) return 'Activity';
+  return 'Sightseeing';
 }
 
 function mapDetails(rawUrl: string) {
@@ -83,24 +104,57 @@ placesRouter.get(
     const lookup = details.name || (hasCoords ? `${details.lat}, ${details.lng}` : '');
     if (!lookup) throw badRequest('Could not identify a place in that Google Maps URL');
 
-    const matches = await searchPlaces(lookup, {
+    let googlePlace: GooglePlaceResult | undefined;
+    if (config.search.googlePlacesApiKey) {
+      try {
+        const body: Record<string, unknown> = { textQuery: lookup, maxResultCount: 1 };
+        if (hasCoords) {
+          body.locationBias = {
+            circle: {
+              center: { latitude: details.lat, longitude: details.lng },
+              radius: 1000,
+            },
+          };
+        }
+        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': config.search.googlePlacesApiKey,
+            'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.websiteUri,places.googleMapsUri,places.primaryType',
+          },
+          body: JSON.stringify(body),
+        });
+        if (response.ok) {
+          const data = await response.json() as { places?: GooglePlaceResult[] };
+          googlePlace = data.places?.[0];
+        }
+      } catch {
+        // The existing geocoder below remains the fallback.
+      }
+    }
+
+    const matches = googlePlace ? [] : await searchPlaces(lookup, {
       biasLat: hasCoords ? details.lat : undefined,
       biasLng: hasCoords ? details.lng : undefined,
       limit: 1,
     });
     const match = matches[0];
-    if (!hasCoords && (match?.lat == null || match?.lng == null)) {
+    const googleLat = googlePlace?.location?.latitude;
+    const googleLng = googlePlace?.location?.longitude;
+    if (!hasCoords && googleLat == null && googleLng == null && (match?.lat == null || match?.lng == null)) {
       throw badRequest('Could not resolve coordinates from that Google Maps URL');
     }
     res.json({
       place: {
-        name: details.name || match?.name || 'Pinned location',
-        address: match?.address || details.name || lookup,
-        lat: hasCoords ? details.lat : match?.lat,
-        lng: hasCoords ? details.lng : match?.lng,
-        category: match?.category || 'Sightseeing',
+        name: googlePlace?.displayName?.text || details.name || match?.name || 'Pinned location',
+        address: googlePlace?.formattedAddress || match?.address || details.name || lookup,
+        lat: hasCoords ? details.lat : (googleLat ?? match?.lat),
+        lng: hasCoords ? details.lng : (googleLng ?? match?.lng),
+        category: googlePlace ? googleCategory(googlePlace.primaryType) : (match?.category || 'Sightseeing'),
         country: match?.country,
-        website: originalUrl,
+        website: googlePlace?.websiteUri,
+        mapUrl: googlePlace?.googleMapsUri || originalUrl,
       },
     });
   }),

@@ -90,7 +90,7 @@ const TOOLS: ToolDef[] = [
     function: {
       name: 'add_place',
       description:
-        'Add a place / stop / activity / restaurant / sightseeing spot to a specific day of the itinerary. Use "date" (YYYY-MM-DD) to pick a day; if the trip has no matching day, one is created.',
+        'Add a place / stop / activity / restaurant / sightseeing spot to a specific day of the itinerary. Use "date" (YYYY-MM-DD) to pick a day; if the trip has no matching day, one is created. Infer and include the most likely address, latitude, longitude, and website whenever the user gives a recognizable place, venue, city, or airport code. Preserve route text such as "MSN to ORD" in the name.',
       parameters: {
         type: 'object',
         properties: {

@@ -153,7 +153,7 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
   })[];
 
   const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
-  const [focusGeo, setFocusGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const [focusGeos, setFocusGeos] = useState<{ lat: number; lng: number; label: string }[]>([]);
 
   const focusPlace = focusPlaceId ? allPlaces.find((p) => p.id === focusPlaceId) : undefined;
 
@@ -161,14 +161,30 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
   useEffect(() => {
     let alive = true;
     setGeo(null);
-    setFocusGeo(null);
+    setFocusGeos([]);
 
     if (focusPlace) {
       if (focusPlace.lat != null && focusPlace.lng != null) return;
-      const q = `${focusPlace.name} ${focusPlace.address ?? ''} ${destination ?? ''}`.trim();
-      if (!q) return;
-      geocodeDestination(q).then((c) => {
-        if (alive && c) setFocusGeo(c);
+
+      // Travel entries often contain multiple airport codes (for example MSN to ORD).
+      // Resolve every endpoint and fit the map around the resulting route.
+      const airportCodes = Array.from(
+        new Set(focusPlace.name.match(/\b[A-Z]{3}\b/g) ?? []),
+      ).slice(0, 6);
+      const queries = airportCodes.length >= 1
+        ? airportCodes.map((code) => ({ label: code, query: `${code} airport` }))
+        : [{
+            label: focusPlace.name,
+            query: `${focusPlace.name} ${focusPlace.address ?? ''} ${destination ?? ''}`.trim(),
+          }];
+
+      Promise.all(
+        queries.map(async ({ label, query }) => {
+          const coords = await geocodeDestination(query);
+          return coords ? { ...coords, label } : null;
+        }),
+      ).then((results) => {
+        if (alive) setFocusGeos(results.filter((p): p is { lat: number; lng: number; label: string } => p != null));
       });
       return () => {
         alive = false;
@@ -190,7 +206,8 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
       if (focusPlace.lat != null && focusPlace.lng != null) {
         return { kind: 'point', lat: focusPlace.lat, lng: focusPlace.lng, zoom: 15 };
       }
-      if (focusGeo) return { kind: 'point', lat: focusGeo.lat, lng: focusGeo.lng, zoom: 13 };
+      if (focusGeos.length >= 2) return { kind: 'bounds', pts: focusGeos.map((p) => [p.lat, p.lng]) };
+      if (focusGeos.length === 1) return { kind: 'point', lat: focusGeos[0].lat, lng: focusGeos[0].lng, zoom: 13 };
       return { kind: 'world' };
     }
     if (withCoords.length >= 2) {
@@ -202,7 +219,7 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
     }
     if (geo) return { kind: 'point', lat: geo.lat, lng: geo.lng, zoom: 8 };
     return { kind: 'world' };
-  }, [withCoords, geo, focusPlace, focusGeo]);
+  }, [withCoords, geo, focusPlace, focusGeos]);
 
   const path = withCoords.length > 1 ? withCoords.map((p) => [p.lat, p.lng] as [number, number]) : [];
 
@@ -225,14 +242,14 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
           </Popup>
         </Marker>
       ))}
-      {focusPlace && focusGeo && (
-        <Marker position={[focusGeo.lat, focusGeo.lng]} icon={marker}>
+      {focusPlace && focusGeos.map((point) => (
+        <Marker key={point.label} position={[point.lat, point.lng]} icon={marker}>
           <Popup>
-            <b>{focusPlace.name}</b>
-            {focusPlace.address ? <div style={{ fontSize: 11, opacity: 0.8 }}>{focusPlace.address}</div> : null}
+            <b>{point.label}</b>
+            <div style={{ fontSize: 11, opacity: 0.8 }}>{focusPlace.name}</div>
           </Popup>
         </Marker>
-      )}
+      ))}
       {withCoords.length > 1 && (
         <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 500, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: 'var(--muted)' }}>
           {withCoords.length} stops · ~{Math.round(haversineKm(withCoords[0], withCoords[withCoords.length - 1]))} km

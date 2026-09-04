@@ -224,4 +224,5 @@ export interface GeocodedPlace {
   country?: string;
   placeId?: string;
   website?: string;
+  mapUrl?: string;
 }

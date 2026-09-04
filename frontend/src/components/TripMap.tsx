@@ -23,7 +23,7 @@ function loadGoogleMaps(): Promise<any> {
       resolve(window.google.maps);
     };
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&callback=${callback}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&libraries=places&callback=${callback}`;
     script.async = true;
     script.onerror = () => reject(new Error('Google Maps failed to load'));
     document.head.appendChild(script);
@@ -32,6 +32,15 @@ function loadGoogleMaps(): Promise<any> {
 }
 
 const geocodeCache = new Map<string, Coord>();
+
+function categoryFromGoogleTypes(types: string[] = []): string {
+  if (types.some((type) => ['restaurant', 'cafe', 'bar', 'bakery', 'meal_takeaway'].includes(type))) return 'Restaurant';
+  if (types.some((type) => ['lodging', 'campground', 'rv_park'].includes(type))) return 'Accommodation';
+  if (types.some((type) => ['airport', 'train_station', 'bus_station', 'transit_station', 'car_rental'].includes(type))) return 'Transport';
+  if (types.some((type) => ['store', 'shopping_mall', 'supermarket'].includes(type))) return 'Shopping';
+  if (types.some((type) => ['amusement_park', 'aquarium', 'zoo', 'movie_theater', 'stadium'].includes(type))) return 'Activity';
+  return 'Sightseeing';
+}
 
 function isTransportation(place: PlaceWithStop): boolean {
   return /transport|flight|airport|train|rail|bus|coach|drive|driving|car rental|ferry|boat|transfer|taxi|rideshare/i.test(
@@ -94,7 +103,7 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
             actions.style.cssText = 'display:flex;gap:8px;align-items:center';
 
             const viewLink = document.createElement('a');
-            viewLink.href = place.website || `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+            viewLink.href = place.mapUrl || `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
             viewLink.target = '_blank';
             viewLink.rel = 'noreferrer';
             viewLink.textContent = 'View on Google Maps';
@@ -117,26 +126,44 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
           };
 
           try {
-            const request = event.placeId
-              ? { placeId: event.placeId }
-              : { location: event.latLng };
-            const response = await geocoder.geocode(request);
+            if (event.placeId && maps.places?.PlacesService) {
+              const service = new maps.places.PlacesService(mapRef.current);
+              const details = await new Promise<any | null>((resolve) => {
+                service.getDetails({
+                  placeId: event.placeId,
+                  fields: ['name', 'formatted_address', 'geometry', 'website', 'url', 'types'],
+                }, (place: any, status: any) => {
+                  resolve(status === maps.places.PlacesServiceStatus.OK ? place : null);
+                });
+              });
+              if (details) {
+                const point = details.geometry?.location ?? event.latLng;
+                showPreview({
+                  name: details.name || 'Pinned location',
+                  address: details.formatted_address || details.name || 'Google Maps place',
+                  lat: point.lat(),
+                  lng: point.lng(),
+                  category: categoryFromGoogleTypes(details.types),
+                  placeId: event.placeId,
+                  website: details.website || undefined,
+                  mapUrl: details.url || `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(event.placeId)}`,
+                }, point);
+                return;
+              }
+            }
+
+            const response = await geocoder.geocode({ location: event.latLng });
             const result = response.results?.[0];
             const point = result?.geometry?.location ?? event.latLng;
-            const nameComponent = result?.address_components?.find((component: any) =>
-              component.types?.some((type: string) => ['point_of_interest', 'establishment', 'premise'].includes(type)),
-            );
             const fallbackName = result?.formatted_address?.split(',')[0] || 'Pinned location';
             showPreview({
-              name: nameComponent?.long_name || fallbackName,
+              name: fallbackName,
               address: result?.formatted_address || fallbackName,
               lat: point.lat(),
               lng: point.lng(),
-              category: 'Sightseeing',
-              placeId: event.placeId || result?.place_id,
-              website: event.placeId
-                ? `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(event.placeId)}`
-                : `https://www.google.com/maps/search/?api=1&query=${point.lat()},${point.lng()}`,
+              category: categoryFromGoogleTypes(result?.types),
+              placeId: result?.place_id,
+              mapUrl: `https://www.google.com/maps/search/?api=1&query=${point.lat()},${point.lng()}`,
             }, point);
           } catch {
             const place = {
@@ -145,7 +172,7 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
               lat: event.latLng.lat(),
               lng: event.latLng.lng(),
               category: 'Sightseeing',
-              website: `https://www.google.com/maps/search/?api=1&query=${event.latLng.lat()},${event.latLng.lng()}`,
+              mapUrl: `https://www.google.com/maps/search/?api=1&query=${event.latLng.lat()},${event.latLng.lng()}`,
             };
             showPreview(place, event.latLng);
           }

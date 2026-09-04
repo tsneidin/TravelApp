@@ -177,6 +177,7 @@ model JournalEntry {
 model Expense {
   id          String          @id @default(cuid())
   description String
+  notes       String?
   category    ExpenseCategory @default(other)
   amount      Float
   currency    String          @default("USD")

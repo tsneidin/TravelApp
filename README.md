@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.28` — check the bottom of the left sidebar for the
+**Current version:** `0.0.29` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -16,7 +16,7 @@ new version number to confirm the rebuild deployed.
 
 ## Features
 - Trips & day-by-day itineraries (drag-to-reorder places)
-- Map view with route polyline (Leaflet + OpenStreetMap)
+- Google Maps overview with itinerary pins, route line, photos, and item details
 - Budget & expenses (currency, categories, totals)
 - Photos & journal entries
 - Packing checklists
@@ -29,7 +29,7 @@ new version number to confirm the rebuild deployed.
 - Frontend: React 18 + TypeScript + Vite + Tailwind CSS
 - Backend: Node 20 + Express + TypeScript + Prisma
 - Database: PostgreSQL 16 (dedicated container)
-- Maps: Leaflet + OpenStreetMap tiles
+- Maps: Google Maps JavaScript API and Google Places API
 
 ## Layout
 ```
@@ -102,6 +102,7 @@ AI_MODEL=llama3
 AI_API_KEY=
 # Optional Google Places API (New), used for local recommendations:
 GOOGLE_PLACES_API_KEY=
+VITE_GOOGLE_MAPS_API_KEY=
 ```
 - Web UI: `http://192.168.86.86:8070`
 - Data persists under `/mnt/user/appdata/travelapp/` (db, uploads)

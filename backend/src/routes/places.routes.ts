@@ -89,6 +89,9 @@ placesRouter.get(
       limit: 1,
     });
     const match = matches[0];
+    if (!hasCoords && (match?.lat == null || match?.lng == null)) {
+      throw badRequest('Could not resolve coordinates from that Google Maps URL');
+    }
     res.json({
       place: {
         name: details.name || match?.name || 'Pinned location',

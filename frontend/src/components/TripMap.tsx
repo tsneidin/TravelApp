@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Place } from '../lib/types';
+import type { GeocodedPlace, Place } from '../lib/types';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
 type Coord = { lat: number; lng: number };
@@ -39,19 +39,22 @@ function isTransportation(place: PlaceWithStop): boolean {
   );
 }
 
-export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPlaceClick, height = 480 }: {
+export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPlaceClick, onMapClick, height = 480 }: {
   places: PlaceWithStop[];
   destination?: string | null;
   focusPlaceId?: string;
   activePlaceId?: string;
   onPlaceClick?: (placeId: string) => void;
+  onMapClick?: (place: GeocodedPlace) => void;
   height?: number | string;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
+  const mapClickRef = useRef(onMapClick);
   const [error, setError] = useState('');
   const targetId = activePlaceId || focusPlaceId;
+  useEffect(() => { mapClickRef.current = onMapClick; }, [onMapClick]);
   const signature = useMemo(
     () => places.map((p) => [p.id, p.name, p.address, p.lat, p.lng, p.stopNumber].join(':')).join('|'),
     [places],
@@ -64,6 +67,42 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
       if (!mapRef.current) {
         mapRef.current = new maps.Map(elementRef.current, {
           center: { lat: 20, lng: 0 }, zoom: 2, mapTypeControl: true, streetViewControl: false,
+        });
+        mapRef.current.addListener('click', async (event: any) => {
+          if (!mapClickRef.current || !event.latLng) return;
+          const geocoder = new maps.Geocoder();
+          try {
+            const request = event.placeId
+              ? { placeId: event.placeId }
+              : { location: event.latLng };
+            const response = await geocoder.geocode(request);
+            const result = response.results?.[0];
+            const point = result?.geometry?.location ?? event.latLng;
+            const nameComponent = result?.address_components?.find((component: any) =>
+              component.types?.some((type: string) => ['point_of_interest', 'establishment', 'premise'].includes(type)),
+            );
+            const fallbackName = result?.formatted_address?.split(',')[0] || 'Pinned location';
+            mapClickRef.current({
+              name: nameComponent?.long_name || fallbackName,
+              address: result?.formatted_address || fallbackName,
+              lat: point.lat(),
+              lng: point.lng(),
+              category: 'Sightseeing',
+              placeId: event.placeId || result?.place_id,
+              website: event.placeId
+                ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(event.placeId)}`
+                : `https://www.google.com/maps/search/?api=1&query=${point.lat()},${point.lng()}`,
+            });
+          } catch {
+            mapClickRef.current({
+              name: 'Pinned location',
+              address: `${event.latLng.lat().toFixed(6)}, ${event.latLng.lng().toFixed(6)}`,
+              lat: event.latLng.lat(),
+              lng: event.latLng.lng(),
+              category: 'Sightseeing',
+              website: `https://www.google.com/maps/search/?api=1&query=${event.latLng.lat()},${event.latLng.lng()}`,
+            });
+          }
         });
       }
       overlaysRef.current.forEach((overlay) => overlay.setMap?.(null));

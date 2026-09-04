@@ -28,6 +28,7 @@ async function main() {
   const app = createApp();
   const server = app.listen(config.port, () => {
     console.log(`[api] listening on :${config.port}`);
+    console.log(`[api] debug logging ${config.debugLogging ? 'enabled' : 'disabled'}`);
   });
 
   if (config.email.enabled) {

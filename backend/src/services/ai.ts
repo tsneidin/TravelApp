@@ -4,6 +4,7 @@ import { fetchSuggestions } from './suggestions.js';
 import type { Suggestion } from './suggestions.js';
 import { getAiConfig, type AiConfigData } from './settings.service.js';
 import { syncBookingToItinerary } from './bookingHelper.js';
+import { debugLog } from '../lib/debug.js';
 import type { BookingType, ExpenseCategory } from '@prisma/client';
 
 const BOOKING_TYPES = ['flight', 'hotel', 'car', 'activity'] as const;
@@ -217,6 +218,7 @@ async function executeTool(
   ctx: { sourceText?: string; destination?: string; recommendationContext?: RecommendationContext; allowMutation?: boolean } = {},
 ): Promise<ToolResult> {
   const a = parseArgs(argsRaw);
+  debugLog('ai', 'tool_requested', { tool: name, mutationAllowed: Boolean(ctx.allowMutation) });
   try {
     if (['add_place', 'add_booking', 'add_expense', 'add_day'].includes(name) && !ctx.allowMutation) {
       return {
@@ -559,6 +561,7 @@ export async function processTripChat(
   history: ChatTurn[],
 ): Promise<{ reply: string; actions: ToolResult[] }> {
   const activeConfig = await getAiConfig();
+  debugLog('ai', 'chat_start', { tripId, historyTurns: history.length, messageLength: userMessage.length });
   if (!activeConfig.enabled) {
     return {
       reply: 'AI Assist is not enabled yet. Open the ⚙️ Settings icon in the header to configure your AI provider, model, and API key.',
@@ -590,8 +593,11 @@ export async function processTripChat(
   if (suggestQuery) {
     let suggestions = suggestionCache.get(suggestQuery);
     if (!suggestions) {
+      debugLog('ai', 'suggestion_cache_miss', { query: suggestQuery });
       suggestions = await fetchSuggestions(suggestQuery, 16);
       suggestionCache.set(suggestQuery, suggestions);
+    } else {
+      debugLog('ai', 'suggestion_cache_hit', { query: suggestQuery, results: suggestions.length });
     }
     if (suggestions.length) {
       suggestions = suggestions.map((suggestion) => ({

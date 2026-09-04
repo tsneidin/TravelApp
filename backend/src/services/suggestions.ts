@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { debugLog } from '../lib/debug.js';
 
 export interface Suggestion {
   title: string;
@@ -152,6 +153,8 @@ async function geocodeAnchor(query: string): Promise<{ lat: number; lng: number;
 /** Google Places Text Search (New). The API key stays server-side. */
 async function fromGooglePlaces(query: string, count: number): Promise<Suggestion[]> {
   if (!config.search.googlePlacesApiKey) return [];
+  const started = Date.now();
+  debugLog('places', 'search_start', { query: localSearchQuery(query), count });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.search.timeoutMs);
   try {
@@ -178,6 +181,7 @@ async function fromGooglePlaces(query: string, count: number): Promise<Suggestio
       throw new Error(`Google Places HTTP ${res.status}: ${detail.slice(0, 180)}`);
     }
     const data = (await res.json()) as { places?: GooglePlace[] };
+    debugLog('places', 'search_complete', { query: localSearchQuery(query), results: data.places?.length ?? 0, durationMs: Date.now() - started });
     return (data.places ?? []).flatMap((place) => {
       const title = place.displayName?.text?.trim();
       const lat = place.location?.latitude;
@@ -375,13 +379,18 @@ async function fromWikipedia(query: string, count: number): Promise<Suggestion[]
 export async function fetchSuggestions(query: string, count = 8): Promise<Suggestion[]> {
   const q = query.trim();
   if (!q) return [];
+  debugLog('suggest', 'route', { query: q, count, local: isLocalDiscovery(q), googleConfigured: Boolean(config.search.googlePlacesApiKey) });
   if (isLocalDiscovery(q)) {
     if (config.search.googlePlacesApiKey) {
       try {
         const google = await fromGooglePlaces(q, count);
-        if (google.length) return google;
+        if (google.length) {
+          debugLog('suggest', 'provider_selected', { provider: 'google_places', results: google.length });
+          return google;
+        }
       } catch (e) {
         console.warn('[suggest] Google Places unavailable; using OpenStreetMap:', (e as Error).message);
+        debugLog('suggest', 'provider_failed', { provider: 'google_places', error: (e as Error).message });
       }
     }
     try {

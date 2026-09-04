@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.24` — check the bottom of the left sidebar for the
+**Current version:** `0.0.25` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -173,6 +173,14 @@ node scripts/test-google-apis.mjs --referrer http://192.168.86.86:8070/
 ```
 
 The utility never displays the keys. The Places test requests one result using the same paid-tier fields used by AI Assist.
+
+## Debug logging
+
+Set `DEBUG_LOGGING=true` in the root `.env` and rebuild the API container. Structured JSON logs include HTTP status/duration, AI tool decisions, Google Places timing/result counts, cache use, and provider fallback errors. Secrets, authorization headers, request bodies, and pasted confirmation text are not logged.
+
+```bash
+docker logs -f travelapp-api
+```
 
 ## Verification
 ```bash

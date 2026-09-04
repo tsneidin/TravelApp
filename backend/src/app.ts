@@ -11,11 +11,24 @@ import { emailRouter } from './routes/email.routes.js';
 import { aiRouter } from './routes/ai.routes.js';
 import { placesRouter } from './routes/places.routes.js';
 import { errorHandler } from './lib/errors.js';
+import { debugLog } from './lib/debug.js';
 
 export function createApp() {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '2mb' }));
+  app.use((req, res, next) => {
+    const started = Date.now();
+    res.on('finish', () => {
+      debugLog('http', 'request', {
+        method: req.method,
+        path: req.originalUrl.split('?')[0],
+        status: res.statusCode,
+        durationMs: Date.now() - started,
+      });
+    });
+    next();
+  });
 
   // Serve uploaded images
   app.use('/uploads', express.static(config.uploadDir));

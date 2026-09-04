@@ -41,6 +41,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-travel}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-travelapp}?schema=public
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       PORT: 3000
+      DEBUG_LOGGING: ${DEBUG_LOGGING:-false}
       UPLOAD_DIR: /data/uploads
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8070}
       BOOTSTRAP_EMAIL: ${BOOTSTRAP_EMAIL:-}

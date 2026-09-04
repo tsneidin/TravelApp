@@ -27,6 +27,7 @@ function optionalBool(name: string, fallback = false): boolean {
 export const config = {
   nodeEnv: optional('NODE_ENV', 'development'),
   port: optionalInt('PORT', 3000),
+  debugLogging: optionalBool('DEBUG_LOGGING', false),
 
   databaseUrl: required('DATABASE_URL'),
   jwtSecret: required('JWT_SECRET'),

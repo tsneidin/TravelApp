@@ -132,7 +132,7 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
       </div>
 
       {jOpen && (
-        <Modal title={editingJournalId ? "Edit journal entry" : "New journal entry" onClose={() => setJOpen(false)}>
+        <Modal title={editingJournalId ? "Edit journal entry" : "New journal entry"} onClose={() => setJOpen(false)}>
           <div className="field">
             <label>Title</label>
             <input value={jForm.title} onChange={(e) => setJForm({ ...jForm, title: e.target.value })} placeholder="Day 2: Shibuya scramble" autoFocus />

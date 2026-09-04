@@ -11,6 +11,22 @@ export interface Suggestion {
   recommendedAt?: string;
   context?: string;
   mapUrl?: string;
+  rating?: number;
+  reviewCount?: number;
+  openNow?: boolean;
+}
+
+interface GooglePlace {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+  rating?: number;
+  userRatingCount?: number;
+  websiteUri?: string;
+  googleMapsUri?: string;
+  currentOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
+  regularOpeningHours?: { weekdayDescriptions?: string[] };
 }
 
 interface SearxngResult {
@@ -131,6 +147,61 @@ async function geocodeAnchor(query: string): Promise<{ lat: number; lng: number;
   return Number.isFinite(lat) && Number.isFinite(lng)
     ? { lat, lng, label: hit.display_name || query }
     : null;
+}
+
+/** Google Places Text Search (New). The API key stays server-side. */
+async function fromGooglePlaces(query: string, count: number): Promise<Suggestion[]> {
+  if (!config.search.googlePlacesApiKey) return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.search.timeoutMs);
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': config.search.googlePlacesApiKey,
+        'X-Goog-FieldMask': [
+          'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
+          'places.rating', 'places.userRatingCount', 'places.websiteUri',
+          'places.googleMapsUri', 'places.currentOpeningHours', 'places.regularOpeningHours',
+        ].join(','),
+      },
+      body: JSON.stringify({
+        textQuery: localSearchQuery(query),
+        pageSize: Math.min(Math.max(count, 1), 20),
+        rankPreference: 'RELEVANCE',
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Google Places HTTP ${res.status}: ${detail.slice(0, 180)}`);
+    }
+    const data = (await res.json()) as { places?: GooglePlace[] };
+    return (data.places ?? []).flatMap((place) => {
+      const title = place.displayName?.text?.trim();
+      const lat = place.location?.latitude;
+      const lng = place.location?.longitude;
+      if (!title) return [];
+      const rating = place.rating;
+      const reviewCount = place.userRatingCount;
+      const openNow = place.currentOpeningHours?.openNow;
+      const ratingText = rating == null ? undefined
+        : `${rating.toFixed(1)} ★${reviewCount != null ? ` (${reviewCount.toLocaleString()} reviews)` : ''}`;
+      const openText = openNow == null ? undefined : openNow ? 'Open now' : 'Closed now';
+      return [{
+        title,
+        url: place.websiteUri || place.googleMapsUri,
+        mapUrl: place.googleMapsUri || (lat != null && lng != null
+          ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(title)}`),
+        summary: [ratingText, openText, place.formattedAddress].filter(Boolean).join(' · '),
+        lat, lng, rating, reviewCount, openNow,
+      }];
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Find many geographically relevant businesses around the requested location. */
@@ -305,6 +376,14 @@ export async function fetchSuggestions(query: string, count = 8): Promise<Sugges
   const q = query.trim();
   if (!q) return [];
   if (isLocalDiscovery(q)) {
+    if (config.search.googlePlacesApiKey) {
+      try {
+        const google = await fromGooglePlaces(q, count);
+        if (google.length) return google;
+      } catch (e) {
+        console.warn('[suggest] Google Places unavailable; using OpenStreetMap:', (e as Error).message);
+      }
+    }
     try {
       const nearby = await fromOverpass(q, count);
       if (nearby.length) return nearby;

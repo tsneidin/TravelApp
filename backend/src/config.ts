@@ -65,6 +65,7 @@ export const config = {
   },
 
   search: {
+    googlePlacesApiKey: optional('GOOGLE_PLACES_API_KEY'),
     searxngUrl: optional('SEARXNG_URL', 'http://searxng:8080'),
     timeoutMs: optionalInt('SEARCH_TIMEOUT_MS', 10_000),
     enabled: optionalBool('SEARCH_ENABLED', true),

@@ -201,6 +201,9 @@ export interface Suggestion {
   recommendedAt?: string;
   context?: string;
   mapUrl?: string;
+  rating?: number;
+  reviewCount?: number;
+  openNow?: boolean;
 }
 
 export interface AiAction {

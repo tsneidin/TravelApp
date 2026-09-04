@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.3` — check the bottom of the left sidebar for the
+**Current version:** `0.0.22` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -100,6 +100,8 @@ AI_ENABLED=false
 AI_BASE_URL=http://open-webui:8080   # Open WebUI on the LAN, or Ollama http://<host-ip>:11434
 AI_MODEL=llama3
 AI_API_KEY=
+# Optional Google Places API (New), used for local recommendations:
+GOOGLE_PLACES_API_KEY=
 ```
 - Web UI: `http://192.168.86.86:8070`
 - Data persists under `/mnt/user/appdata/travelapp/` (db, uploads)
@@ -136,11 +138,10 @@ AI_MODEL=llama3
 
 ### What the assistant can do
 - Answer questions about a trip (uses the current itinerary, bookings, budget).
-- Parse booking confirmation emails you paste and **add them as bookings**
+- Parse booking confirmation emails you paste, show the proposed changes, and add them only after explicit confirmation
   (flights, hotels, car rentals, activities). The raw pasted text is retained —
   open a booking and click the document icon to view it.
-- Add places to itinerary days, add expense entries, and create days — all via
-  tool calls, then it confirms what it changed.
+- Propose places, expenses, bookings, and days, then require explicit confirmation before changing trip data.
 - Suggest things to do / places to see for the destination, with **thumbnail,
   link, and one-tap "Add"** straight into the itinerary.
 - Chat history is saved per trip and shown next time you open it.

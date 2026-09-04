@@ -214,10 +214,17 @@ async function executeTool(
   userId: string,
   name: string,
   argsRaw: string,
-  ctx: { sourceText?: string; destination?: string; recommendationContext?: RecommendationContext } = {},
+  ctx: { sourceText?: string; destination?: string; recommendationContext?: RecommendationContext; allowMutation?: boolean } = {},
 ): Promise<ToolResult> {
   const a = parseArgs(argsRaw);
   try {
+    if (['add_place', 'add_booking', 'add_expense', 'add_day'].includes(name) && !ctx.allowMutation) {
+      return {
+        action: name,
+        summary: `Confirmation required before ${name.replace('add_', 'adding ')}. No changes were made.`,
+        ok: false,
+      };
+    }
     if (name === 'add_place') {
       const nameStr = String(a.name ?? '').trim();
       if (!nameStr) return { action: name, summary: 'add_place: missing name', ok: false };
@@ -423,6 +430,7 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `\nEXPENSES: ${trip.expenses?.length ?? 0} recorded (total ${(trip.expenses ?? []).reduce((s, e) => s + e.amount, 0).toFixed(2)} ${trip.currency}).`,
     ``,
     `RULES:`,
+    `- NEVER add or modify itinerary, booking, day, or budget data on the first request. Summarize exactly what will be added and ask for explicit confirmation. Only call an add_* tool after the user confirms in a follow-up message. Recommendation-card Add buttons are already explicit confirmation.`,
     `- When the user pastes or mentions a reservation confirmation (flights, hotel, car, activity):`,
     `  1. Call add_booking with the reservation details, reference number, dates, and total fare/price. This automatically logs the booking, generates all missing itinerary days, places each flight leg or stay into the itinerary on the proper days, and adds the cost to the budget!`,
     `  2. Call add_place if additional custom activities or notes need to be added to specific days.`,
@@ -614,7 +622,16 @@ export async function processTripChat(
 
   const actions: ToolResult[] = [];
   let loop = 0;
-  const toolContext = { sourceText: userMessage, destination, recommendationContext };
+  const lastAssistant = [...history].reverse().find((turn) => turn.role === 'assistant')?.content ?? '';
+  const explicitConfirmation =
+    /^(yes|yep|yeah|confirm|confirmed|go ahead|do it|proceed|add it|add them)\b/i.test(userMessage.trim()) &&
+    /(confirm|shall i|should i|would you like|ready to add|no changes were made)/i.test(lastAssistant);
+  const toolContext = {
+    sourceText: userMessage,
+    destination,
+    recommendationContext,
+    allowMutation: explicitConfirmation,
+  };
 
   for (; loop < 6; loop++) {
     const res = await callLlm(messages, TOOLS, activeConfig);

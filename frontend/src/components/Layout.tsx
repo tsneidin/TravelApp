@@ -34,6 +34,7 @@ export function Layout() {
   const routeMatch = location.pathname.match(/^\/trips\/([^/]+)/);
   const activeTripId = routeMatch?.[1];
   const activeTab = new URLSearchParams(location.search).get('tab') ?? 'itinerary';
+  const activeDayId = location.hash.startsWith('#day-') ? location.hash.slice(5) : null;
 
   // Refresh the trip folder list whenever the route changes so the tree stays current.
   useEffect(() => {
@@ -89,14 +90,28 @@ export function Layout() {
                 {expanded && (
                   <div className="trip-subnav">
                     {TRIP_TABS.map((tb) => (
-                      <Link
-                        key={tb.key}
-                        to={`/trips/${t.id}?tab=${tb.key}`}
-                        className={`side-tab ${activeTab === tb.key ? 'active' : ''}`}
-                      >
-                        <span className="side-tab-dot" />
-                        {tb.label}
-                      </Link>
+                      <div key={tb.key}>
+                        <Link
+                          to={`/trips/${t.id}?tab=${tb.key}`}
+                          className={`side-tab ${activeTab === tb.key && !(tb.key === 'itinerary' && activeDayId) ? 'active' : ''}`}
+                        >
+                          <span className="side-tab-dot" />
+                          {tb.label}
+                        </Link>
+                        {tb.key === 'itinerary' && (t.days ?? []).map((day, index) => (
+                          <Link
+                            key={day.id}
+                            to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}
+                            className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
+                          >
+                            <span className="side-tab-dot" />
+                            <span>Day {index + 1}</span>
+                            <span className="muted small">
+                              {new Date(day.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 )}

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler, badRequest, notFound, forbidden } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
-import type { MemberRole } from '@prisma/client';
+import type { MemberRole, Prisma } from '@prisma/client';
 
 const ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
 
@@ -33,6 +33,37 @@ function isOwner(trip: { ownerId: string }, userId: string) {
   return trip.ownerId === userId;
 }
 
+function tripDates(startDate?: Date | null, endDate?: Date | null): Date[] {
+  if (!startDate || !endDate) return [];
+  const start = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
+  const end = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate()));
+  if (end < start) throw badRequest('End date must be on or after start date');
+
+  const dates: Date[] = [];
+  for (const date = new Date(start); date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
+    dates.push(new Date(date));
+  }
+  return dates;
+}
+
+async function ensureTripDays(
+  db: Prisma.TransactionClient,
+  tripId: string,
+  startDate?: Date | null,
+  endDate?: Date | null,
+) {
+  const dates = tripDates(startDate, endDate);
+  if (dates.length === 0) return;
+
+  const existing = await db.day.findMany({ where: { tripId }, select: { date: true } });
+  const existingDates = new Set(existing.map((day) => day.date.toISOString().slice(0, 10)));
+  const missing = dates
+    .map((date, index) => ({ tripId, date, label: `Day ${index + 1}`, sortOrder: index }))
+    .filter((day) => !existingDates.has(day.date.toISOString().slice(0, 10)));
+
+  if (missing.length > 0) await db.day.createMany({ data: missing });
+}
+
 // ---------- CRUD ----------
 tripsRouter.get(
   '/',
@@ -45,7 +76,11 @@ tripsRouter.get(
         };
     const trips = await prisma.trip.findMany({
       where,
-      include: { owner: { select: { id: true, name: true, email: true } }, _count: { select: { places: true, expenses: true } } },
+      include: {
+        owner: { select: { id: true, name: true, email: true } },
+        days: { orderBy: { date: 'asc' }, include: { places: { orderBy: { sortOrder: 'asc' } } } },
+        _count: { select: { places: true, expenses: true } },
+      },
       orderBy: { updatedAt: 'desc' },
     });
     res.json({ trips });
@@ -58,17 +93,23 @@ tripsRouter.post(
     const u = getUser(req);
     requireFields(req, ['name']);
     const { name, destination, currency, startDate, endDate, description, coverUrl } = req.body;
-    const trip = await prisma.trip.create({
-      data: {
-        name,
-        destination: destination ?? '',
-        currency: currency ?? 'USD',
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        description,
-        coverUrl,
-        ownerId: u.id,
-      },
+    const parsedStart = startDate ? new Date(startDate) : undefined;
+    const parsedEnd = endDate ? new Date(endDate) : undefined;
+    const trip = await prisma.$transaction(async (tx) => {
+      const created = await tx.trip.create({
+        data: {
+          name,
+          destination: destination ?? '',
+          currency: currency ?? 'USD',
+          startDate: parsedStart,
+          endDate: parsedEnd,
+          description,
+          coverUrl,
+          ownerId: u.id,
+        },
+      });
+      await ensureTripDays(tx, created.id, parsedStart, parsedEnd);
+      return created;
     });
     res.status(201).json({ trip });
   }),
@@ -100,7 +141,11 @@ tripsRouter.patch(
     if (data.startDate) data.startDate = new Date(data.startDate as string);
     if (data.endDate) data.endDate = new Date(data.endDate as string);
     delete (data as { coverUrl?: unknown }).coverUrl; // reset via multipart endpoint
-    const updated = await prisma.trip.update({ where: { id: tripId }, data });
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.trip.update({ where: { id: tripId }, data });
+      await ensureTripDays(tx, tripId, saved.startDate, saved.endDate);
+      return saved;
+    });
     res.json({ trip: updated });
   }),
 );

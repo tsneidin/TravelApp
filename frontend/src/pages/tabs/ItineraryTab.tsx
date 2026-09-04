@@ -172,7 +172,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       )}
 
       {days.map((day) => (
-        <div className="panel" key={day.id}>
+        <div className="panel" key={day.id} id={`day-${day.id}`} style={{ scrollMarginTop: 16 }}>
           <div className="row between">
             <div className="row">
               <span className="badge accent">{new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>

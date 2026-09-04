@@ -190,23 +190,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
-  // Map places calculation: numbered sequentially within the active day or across days
+  // Use one trip-wide sequence so every map marker has a unique number.
   const displayedMapPlaces = useMemo<PlaceWithStop[]>(() => {
-    if (selectedDayId) {
-      const day = days.find((d) => d.id === selectedDayId);
-      if (!day) return [];
-      return day.places.map((p, i) => ({ ...p, stopNumber: i + 1 }));
-    }
-
-    // All days: number stops sequentially within each day
     const result: PlaceWithStop[] = [];
+    let stopNumber = 1;
     for (const day of days) {
-      day.places.forEach((p, i) => {
-        result.push({ ...p, stopNumber: i + 1 });
+      day.places.forEach((place) => {
+        result.push({ ...place, stopNumber });
+        stopNumber += 1;
       });
     }
-    orphanPlaces.forEach((p) => result.push(p));
-    return result;
+    orphanPlaces.forEach((place) => {
+      result.push({ ...place, stopNumber });
+      stopNumber += 1;
+    });
+    return selectedDayId
+      ? result.filter((place) => place.dayId === selectedDayId)
+      : result;
   }, [days, selectedDayId, orphanPlaces]);
 
   const renderPlaceRow = (p: Place, stopNumber?: number) => (

@@ -83,6 +83,7 @@ export interface Expense {
   id: string;
   tripId: string;
   description: string;
+  notes?: string | null;
   category: string;
   amount: number;
   currency: string;

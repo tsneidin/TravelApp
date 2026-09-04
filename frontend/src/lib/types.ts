@@ -60,6 +60,7 @@ export interface Place {
   startTime?: string | null;
   endTime?: string | null;
   sortOrder: number;
+  includeInCalendar: boolean;
   dayId?: string | null;
 }
 

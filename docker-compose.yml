@@ -7,6 +7,10 @@
 # Data persists under /mnt/user/appdata/travelapp/ (db, uploads).
 # Create the directory on Unraid first if it does not exist.
 
+# Pin the compose project name so the CLI and Compose Manager always agree
+# (otherwise a fixed container_name like travelapp-db conflicts across projects).
+name: travelapp
+
 services:
   db:
     image: postgres:16-alpine

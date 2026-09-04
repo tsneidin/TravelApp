@@ -186,3 +186,12 @@ export interface AiAction {
   ok: boolean;
   suggestions?: Suggestion[];
 }
+
+export interface GeocodedPlace {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  category: string;
+  country?: string;
+}

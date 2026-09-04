@@ -4,17 +4,39 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Place } from '../lib/types';
 
-// Custom SVG marker matching the theme
-const marker = L.divIcon({
-  className: '',
+export interface PlaceWithStop extends Place {
+  stopNumber?: number;
+}
+
+// Generate numbered SVG markers matching Wanderlog's theme
+function createNumberedMarker(num: number | string, color = '#22d3ee', active = false) {
+  return L.divIcon({
+    className: 'custom-map-div-icon',
+    html: `
+      <div class="wanderlog-pin ${active ? 'active' : ''}">
+        <svg width="32" height="40" viewBox="0 0 32 40">
+          <path d="M16 1C8.3 1 2 7.3 2 15c0 10.5 14 24 14 24s14-13.5 14-24C30 7.3 23.7 1 16 1z" fill="${active ? '#38bdf8' : color}" stroke="#0b1220" stroke-width="2.2"/>
+          <circle cx="16" cy="15" r="9" fill="#0b1220"/>
+        </svg>
+        <span class="pin-number">${num}</span>
+      </div>
+    `,
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+    popupAnchor: [0, -38],
+  });
+}
+
+// Unnumbered default marker fallback
+const defaultMarker = L.divIcon({
+  className: 'custom-map-div-icon',
   html: `<svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 1C6.6 1 1.5 6.1 1.5 12.5c0 8.2 11.5 20.5 11.5 20.5s11.5-12.3 11.5-20.5C24.5 6.1 19.4 1 13 1z" fill="#22d3ee" stroke="#0b1220" stroke-width="2"/><circle cx="13" cy="12" r="4.5" fill="#0b1220"/></svg>`,
   iconSize: [26, 34],
   iconAnchor: [13, 34],
   popupAnchor: [0, -30],
 });
 
-// Free, no-API-key tile sources. Primary: official OSM standard tiles (reliable,
-// no key required). Fallback: subdomain variant if the primary errors.
+// Free, no-API-key tile sources.
 const TILE_SOURCES: { url: string; attribution: string; subdomains?: string }[] = [
   {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -38,13 +60,8 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Small in-memory cache so we don't hammer Nominatim for the same destination.
 const geoCache = new Map<string, { lat: number; lng: number }>();
 
-/**
- * Geocode a free-text destination via the OpenStreetMap Nominatim search API
- * (no API key required). Used to centre the map on the trip location.
- */
 async function geocodeDestination(query: string): Promise<{ lat: number; lng: number } | null> {
   const key = query.trim().toLowerCase();
   if (!key) return null;
@@ -64,10 +81,6 @@ async function geocodeDestination(query: string): Promise<{ lat: number; lng: nu
   }
 }
 
-/**
- * Wraps a TileLayer so that if the primary tile source fails, we fall back to
- * the next source to avoid a blank map or an "API key" notice.
- */
 function ResilientTileLayer({
   sources,
   maxZoom = 19,
@@ -117,13 +130,6 @@ type MapFocusTarget =
   | { kind: 'point'; lat: number; lng: number; zoom: number }
   | { kind: 'world' };
 
-/**
- * Child of MapContainer that moves the viewport when the focus target changes:
- *   1. Multiple places with coords  -> fit bounds
- *   2. Single place with coords     -> centre on it (city zoom)
- *   3. No place coords, destination -> centre on geocoded destination
- *   4. Otherwise                   -> world view
- */
 function MapFocus({ focus }: { focus: MapFocusTarget }) {
   const map = useMap();
   const key = useMemo(() => {
@@ -140,14 +146,28 @@ function MapFocus({ focus }: { focus: MapFocusTarget }) {
     } else {
       map.setView([focus.lat, focus.lng], focus.zoom, { animate: true });
     }
-  }, [key]);
+  }, [key, focus, map]);
 
   return null;
 }
 
-export function TripMap({ places, destination, focusPlaceId }: { places: Place[]; destination?: string | null; focusPlaceId?: string }) {
+export function TripMap({
+  places,
+  destination,
+  focusPlaceId,
+  activePlaceId,
+  onPlaceClick,
+  height = 480,
+}: {
+  places: PlaceWithStop[];
+  destination?: string | null;
+  focusPlaceId?: string;
+  activePlaceId?: string;
+  onPlaceClick?: (placeId: string) => void;
+  height?: number | string;
+}) {
   const allPlaces = places;
-  const withCoords = places.filter((p) => p.lat != null && p.lng != null) as (Place & {
+  const withCoords = places.filter((p) => p.lat != null && p.lng != null) as (PlaceWithStop & {
     lat: number;
     lng: number;
   })[];
@@ -155,9 +175,10 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
   const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
   const [focusGeos, setFocusGeos] = useState<{ lat: number; lng: number; label: string }[]>([]);
 
-  const focusPlace = focusPlaceId ? allPlaces.find((p) => p.id === focusPlaceId) : undefined;
+  const targetedId = activePlaceId || focusPlaceId;
+  const focusPlace = targetedId ? allPlaces.find((p) => p.id === targetedId) : undefined;
 
-  // Geocode the focused place (no coords) or the trip destination.
+  // Geocode the focused place (if no coords) or the trip destination.
   useEffect(() => {
     let alive = true;
     setGeo(null);
@@ -166,8 +187,6 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
     if (focusPlace) {
       if (focusPlace.lat != null && focusPlace.lng != null) return;
 
-      // Travel entries often contain multiple airport codes (for example MSN to ORD).
-      // Resolve every endpoint and fit the map around the resulting route.
       const airportCodes = Array.from(
         new Set(focusPlace.name.match(/\b[A-Z]{3}\b/g) ?? []),
       ).slice(0, 6);
@@ -199,7 +218,7 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
     return () => {
       alive = false;
     };
-  }, [focusPlaceId, focusPlace?.name, focusPlace?.address, destination, withCoords.length]);
+  }, [targetedId, focusPlace?.name, focusPlace?.address, destination, withCoords.length]);
 
   const focus = useMemo<MapFocusTarget>(() => {
     if (focusPlace) {
@@ -223,38 +242,91 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
 
   const path = withCoords.length > 1 ? withCoords.map((p) => [p.lat, p.lng] as [number, number]) : [];
 
+  const totalDistanceKm = useMemo(() => {
+    if (withCoords.length < 2) return 0;
+    let sum = 0;
+    for (let i = 1; i < withCoords.length; i++) {
+      sum += haversineKm(withCoords[i - 1], withCoords[i]);
+    }
+    return sum;
+  }, [withCoords]);
+
   return (
-    <MapContainer center={[20, 0]} zoom={2} style={{ height: 480, width: '100%' }}>
-      <ResilientTileLayer sources={TILE_SOURCES} maxZoom={19} />
-      <MapFocus focus={focus} />
-      {path.length > 1 && (
-        <Polyline
-          positions={path}
-          pathOptions={{ color: '#22d3ee', weight: 2.5, opacity: 0.85, dashArray: '8 8' }}
-        />
-      )}
-      {withCoords.map((p) => (
-        <Marker key={p.id} position={[p.lat, p.lng]} icon={marker}>
-          <Popup>
-            <b>{p.name}</b>
-            {p.address ? <div style={{ fontSize: 11, opacity: 0.8 }}>{p.address}</div> : null}
-            {p.notes ? <div style={{ fontSize: 11, opacity: 0.8 }}>{p.notes}</div> : null}
-          </Popup>
-        </Marker>
-      ))}
-      {focusPlace && focusGeos.map((point) => (
-        <Marker key={point.label} position={[point.lat, point.lng]} icon={marker}>
-          <Popup>
-            <b>{point.label}</b>
-            <div style={{ fontSize: 11, opacity: 0.8 }}>{focusPlace.name}</div>
-          </Popup>
-        </Marker>
-      ))}
-      {withCoords.length > 1 && (
-        <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 500, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: 'var(--muted)' }}>
-          {withCoords.length} stops · ~{Math.round(haversineKm(withCoords[0], withCoords[withCoords.length - 1]))} km
-        </div>
-      )}
-    </MapContainer>
+    <div style={{ position: 'relative', width: '100%', height: typeof height === 'number' ? `${height}px` : height }}>
+      <MapContainer center={[20, 0]} zoom={2} style={{ height: '100%', width: '100%' }}>
+        <ResilientTileLayer sources={TILE_SOURCES} maxZoom={19} />
+        <MapFocus focus={focus} />
+        {path.length > 1 && (
+          <Polyline
+            positions={path}
+            pathOptions={{ color: '#22d3ee', weight: 3, opacity: 0.85, dashArray: '8 8' }}
+          />
+        )}
+        {withCoords.map((p, idx) => {
+          const stopNum = p.stopNumber ?? idx + 1;
+          const isActive = p.id === targetedId;
+          const icon = p.stopNumber != null ? createNumberedMarker(stopNum, '#22d3ee', isActive) : defaultMarker;
+
+          return (
+            <Marker
+              key={p.id}
+              position={[p.lat, p.lng]}
+              icon={icon}
+              eventHandlers={{
+                click: () => onPlaceClick?.(p.id),
+              }}
+            >
+              <Popup>
+                <div style={{ minWidth: 140 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>
+                    {stopNum ? `#${stopNum} ` : ''}{p.name}
+                  </div>
+                  {p.category && (
+                    <span style={{ fontSize: 10, background: '#1e293b', padding: '1px 6px', borderRadius: 4, color: '#38bdf8' }}>
+                      {p.category}
+                    </span>
+                  )}
+                  {p.address && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>{p.address}</div>}
+                  {p.notes && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>✏️ {p.notes}</div>}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+        {focusPlace && focusGeos.map((point) => (
+          <Marker key={point.label} position={[point.lat, point.lng]} icon={defaultMarker}>
+            <Popup>
+              <b>{point.label}</b>
+              <div style={{ fontSize: 11, opacity: 0.8 }}>{focusPlace.name}</div>
+            </Popup>
+          </Marker>
+        ))}
+        {withCoords.length > 1 && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              left: 12,
+              zIndex: 500,
+              background: 'rgba(16, 26, 46, 0.92)',
+              backdropFilter: 'blur(6px)',
+              border: '1px solid var(--line)',
+              borderRadius: 8,
+              padding: '5px 12px',
+              fontSize: 11,
+              color: 'var(--text)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            }}
+          >
+            <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{withCoords.length} stops</span>
+            <span style={{ opacity: 0.5 }}>·</span>
+            <span>~{totalDistanceKm.toFixed(1)} km ({(totalDistanceKm * 0.621371).toFixed(1)} mi) route</span>
+          </div>
+        )}
+      </MapContainer>
+    </div>
   );
 }

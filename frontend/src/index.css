@@ -1216,3 +1216,376 @@ a.link {
 a.link:hover {
   text-decoration: underline;
 }
+
+/* ---------- Wanderlog Split Itinerary & Live Map ---------- */
+.itinerary-layout-container.split-mode {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.15fr) minmax(380px, 0.95fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1023px) {
+  .itinerary-layout-container.split-mode {
+    grid-template-columns: 1fr;
+  }
+}
+
+.itinerary-left-pane {
+  min-width: 0;
+}
+
+.itinerary-right-pane {
+  position: sticky;
+  top: 20px;
+  height: calc(100vh - 120px);
+  min-height: 520px;
+}
+
+.itinerary-sticky-map-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.map-pane-header {
+  padding: 10px 14px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.itinerary-sticky-map-canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* ---------- Segmented Control ---------- */
+.segmented-control {
+  display: inline-flex;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn.active {
+  background: var(--card-2);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- Numbered Stop Badges ---------- */
+.stop-number-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.14);
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.place-card {
+  transition: all 0.18s ease;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.place-card:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: var(--card-2);
+}
+
+.place-card.active-highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.2);
+  background: rgba(34, 211, 238, 0.05);
+}
+
+/* ---------- Leaflet Custom Numbered Pin ---------- */
+.custom-map-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.wanderlog-pin {
+  position: relative;
+  width: 32px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+  transition: transform 0.15s ease;
+}
+
+.wanderlog-pin:hover,
+.wanderlog-pin.active {
+  transform: scale(1.15) translateY(-2px);
+  filter: drop-shadow(0 4px 10px rgba(34, 211, 238, 0.6));
+}
+
+.wanderlog-pin svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.wanderlog-pin .pin-number {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* ---------- Inter-Stop Travel Estimate ---------- */
+.travel-estimate-container {
+  display: flex;
+  align-items: center;
+  padding: 4px 0 4px 34px;
+  position: relative;
+}
+
+.travel-estimate-line {
+  width: 12px;
+  height: 1px;
+  background: var(--line);
+}
+
+.travel-estimate-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.travel-estimate-pill:hover {
+  background: var(--card);
+  border-color: var(--accent);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.travel-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.travel-sep {
+  opacity: 0.4;
+}
+
+.travel-dist {
+  opacity: 0.8;
+}
+
+.travel-ext-icon {
+  margin-left: 2px;
+}
+
+/* ---------- Autocomplete Place Search ---------- */
+.place-search-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.place-search-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.place-search-input-box .search-icon {
+  position: absolute;
+  left: 12px;
+  pointer-events: none;
+}
+
+.place-search-input-box .spinner-icon {
+  position: absolute;
+  right: 12px;
+  color: var(--accent);
+}
+
+.place-search-input-box .clear-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.place-search-input-box .clear-btn:hover {
+  color: var(--text);
+}
+
+.place-search-field {
+  width: 100%;
+  padding: 9px 36px 9px 36px !important;
+  border-radius: 10px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--text) !important;
+  font-size: 0.88rem !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.place-search-field:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.18) !important;
+  outline: none;
+}
+
+.place-autocomplete-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 1050;
+  padding: 6px;
+}
+
+.place-autocomplete-empty {
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.place-autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.place-autocomplete-item:hover,
+.place-autocomplete-item.highlighted {
+  background: var(--card-2);
+}
+
+.place-item-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cat-icon.cat-restaurant { color: #f97316; }
+.cat-icon.cat-hotel { color: #a855f7; }
+.cat-icon.cat-transport { color: #3b82f6; }
+.cat-icon.cat-shopping { color: #ec4899; }
+.cat-icon.cat-activity { color: #eab308; }
+.cat-icon.cat-sight { color: var(--accent); }
+
+.place-item-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.place-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.place-item-cat {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.place-item-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-label-sparkle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-weight: 600;
+}

@@ -7,6 +7,9 @@ export interface Suggestion {
   summary?: string;
   lat?: number;
   lng?: number;
+  dayId?: string;
+  recommendedAt?: string;
+  context?: string;
 }
 
 interface SearxngResult {

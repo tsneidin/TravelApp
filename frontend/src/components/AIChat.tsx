@@ -32,9 +32,10 @@ function SuggestionCard({
         name: s.title,
         lat: s.lat ?? undefined,
         lng: s.lng ?? undefined,
+        dayId: s.dayId || undefined,
         notes: s.summary || undefined,
         website: s.url || undefined,
-        sourceText: [s.title, s.summary, s.url].filter(Boolean).join('\n\n'),
+        sourceText: [s.title, s.context, s.summary, s.url].filter(Boolean).join('\n\n'),
       });
       setAdded(true);
       onAdded(s.title);
@@ -57,6 +58,7 @@ function SuggestionCard({
       )}
       <div className="ai-sugg-body">
         <div className="ai-sugg-title">{s.title}</div>
+        {s.context ? <div className="small muted">{s.context}</div> : null}
         {s.summary ? <div className="ai-sugg-sum">{s.summary}</div> : null}
         <div className="ai-sugg-actions">
           {s.url && (

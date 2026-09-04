@@ -214,7 +214,7 @@ async function executeTool(
   userId: string,
   name: string,
   argsRaw: string,
-  ctx: { sourceText?: string; destination?: string } = {},
+  ctx: { sourceText?: string; destination?: string; recommendationContext?: RecommendationContext } = {},
 ): Promise<ToolResult> {
   const a = parseArgs(argsRaw);
   try {
@@ -363,11 +363,17 @@ async function executeTool(
       if (!suggestions.length) {
         return { action: name, summary: `No suggestions found for "${query}"`, ok: false };
       }
+      const contextualSuggestions = suggestions.map((suggestion) => ({
+        ...suggestion,
+        dayId: ctx.recommendationContext?.dayId,
+        recommendedAt: ctx.recommendationContext?.recommendedAt,
+        context: ctx.recommendationContext?.label,
+      }));
       return {
         action: name,
-        summary: `Found ${suggestions.length} suggestions for "${query}"`,
+        summary: `Found ${contextualSuggestions.length} suggestions for "${query}"`,
         ok: true,
-        suggestions,
+        suggestions: contextualSuggestions,
       };
     }
 
@@ -421,7 +427,7 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `  1. Call add_booking with the reservation details, reference number, dates, and total fare/price. This automatically logs the booking, generates all missing itinerary days, places each flight leg or stay into the itinerary on the proper days, and adds the cost to the budget!`,
     `  2. Call add_place if additional custom activities or notes need to be added to specific days.`,
     `  3. Confirm the reservation reference, itinerary days created, and flight legs added in your response.`,
-    `- For "things to do / places to see / suggestions", answer with concise, specific recommendations relevant to the destination and trip dates. Use bullet points.`,
+    `- Treat searches for restaurants, food, attractions, activities, shopping, events, and similar local options as recommendation requests even if the user does not say "recommend". Infer the relevant day, time, and location from arrivals/bookings/itinerary. Prefer highly reviewed options that appear open at the relevant time, provide linked evidence, and never claim hours are verified unless the source supports it.`,
     `- GUESS the date from trip context when sensible; if genuinely ambiguous, ask a short clarifying question instead of inventing a date.`,
     `- Keep answers under ~150 words unless generating a list of suggestions.`,
   ].join('\n');
@@ -429,10 +435,78 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
 
 // ---------------- main entry ----------------
 
-const SUGGEST_INTENT =
-  /(suggest|recommend|things? to do|places? to see|what (should|can|could|to) (i|we|you)\s?(do|see|visit|check out)|attractions|top sites|must-see|must see|best places?|ideas|itinerary ideas|where should)/i;
+interface RecommendationContext {
+  location: string;
+  dayId?: string;
+  recommendedAt?: string;
+  label?: string;
+}
 
-function detectSuggestQuery(message: string, destination: string): string | null {
+async function inferRecommendationContext(
+  tripId: string,
+  message: string,
+  destination: string,
+): Promise<RecommendationContext> {
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    include: {
+      days: {
+        orderBy: { date: 'asc' },
+        include: { places: { orderBy: [{ startTime: 'asc' }, { sortOrder: 'asc' }] } },
+      },
+      bookings: { orderBy: { startAt: 'asc' } },
+    },
+  });
+  const wantsArrival = /(when|after|once).{0,20}(land|arriv)|\bland(?:ing)?\b|\barrival\b/i.test(message);
+  if (!trip) return { location: destination };
+
+  const allPlaces = trip.days.flatMap((day) => day.places.map((place) => ({ day, place })));
+  const transports = allPlaces.filter(({ place }) =>
+    /transport/i.test(place.category ?? '') || /✈|flight|airport|\b[A-Z]{3}\b/.test(place.name),
+  );
+
+  if (wantsArrival && transports.length) {
+    const destinationWords = destination.toLowerCase().match(/[a-z]{4,}/g) ?? [];
+    const destinationLeg =
+      transports.find(({ place }) => destinationWords.some((word) => place.name.toLowerCase().includes(word))) ??
+      transports.find(({ place }) => place.endTime != null) ??
+      transports[0];
+    const arrival = destinationLeg.place.endTime ?? destinationLeg.place.startTime ?? destinationLeg.day.date;
+    const routeDestination = /(?:→|\bto\b)\s*([^()]+?)(?:\s*\(([A-Z]{3})\))?$/i.exec(destinationLeg.place.name);
+    const location = routeDestination
+      ? `${routeDestination[1].trim()} ${routeDestination[2] ?? ''}`.trim()
+      : destinationLeg.place.address || destination;
+    return {
+      location,
+      dayId: destinationLeg.day.id,
+      recommendedAt: arrival.toISOString(),
+      label: `${location} after arrival on ${arrival.toLocaleString()}`,
+    };
+  }
+
+  const datedPlace = allPlaces.find(({ place }) => place.startTime != null);
+  if (datedPlace) {
+    const at = datedPlace.place.startTime ?? datedPlace.day.date;
+    return {
+      location: datedPlace.place.address || destination,
+      dayId: datedPlace.day.id,
+      recommendedAt: at.toISOString(),
+      label: `${datedPlace.place.address || destination} on ${at.toLocaleDateString()}`,
+    };
+  }
+
+  return {
+    location: destination,
+    dayId: trip.days[0]?.id,
+    recommendedAt: trip.days[0]?.date.toISOString(),
+    label: destination || undefined,
+  };
+}
+
+const SUGGEST_INTENT =
+  /(suggest|recommend|things? to do|places? to see|what (should|can|could|to) (i|we|you)\s?(do|see|visit|check out)|attractions|top sites|must-see|must see|best places?|ideas|itinerary ideas|where should|restaurants?|pizza|coffee|cafes?|bars?|breakfast|lunch|dinner|food|museums?|tours?|shops?|shopping|parks?|hikes?|beaches?|music|shows?|events?|open when|nearby)/i;
+
+function detectSuggestQuery(message: string, context: RecommendationContext): string | null {
   if (!SUGGEST_INTENT.test(message)) return null;
   const stop = new Set([
     'please', 'suggest', 'suggestions', 'recommend', 'recommendations', 'things', 'thing',
@@ -444,8 +518,11 @@ function detectSuggestQuery(message: string, destination: string): string | null
     (w) => w.length > 3 && !stop.has(w),
   );
   const focus = words.slice(0, 4).join(' ');
-  if (destination) return focus ? `${destination} ${focus}` : destination;
-  return focus || (message.length > 4 ? message : null);
+  const timing = context.recommendedAt
+    ? ` open around ${new Date(context.recommendedAt).toLocaleString()} highly rated reviews`
+    : ' highly rated reviews';
+  if (context.location) return `${context.location} ${focus || message} ${timing}`.trim();
+  return focus ? `${focus} ${timing}`.trim() : (message.length > 4 ? message : null);
 }
 
 export async function processTripChat(
@@ -464,6 +541,7 @@ export async function processTripChat(
 
   const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { destination: true } });
   const destination = trip?.destination ?? '';
+  const recommendationContext = await inferRecommendationContext(tripId, userMessage, destination);
 
   const system = await buildSystemPrompt(tripId);
   let userContent = userMessage;
@@ -471,7 +549,7 @@ export async function processTripChat(
   // If the user is asking for recommendations, pre-fetch suggestions so they
   // always appear as cards (even if the model doesn't call the tool itself).
   let autoSuggest: ToolResult | null = null;
-  const suggestQuery = detectSuggestQuery(userMessage, destination);
+  const suggestQuery = detectSuggestQuery(userMessage, recommendationContext);
   if (suggestQuery) {
     let suggestions = suggestionCache.get(suggestQuery);
     if (!suggestions) {
@@ -479,6 +557,12 @@ export async function processTripChat(
       suggestionCache.set(suggestQuery, suggestions);
     }
     if (suggestions.length) {
+      suggestions = suggestions.map((suggestion) => ({
+        ...suggestion,
+        dayId: recommendationContext.dayId,
+        recommendedAt: recommendationContext.recommendedAt,
+        context: recommendationContext.label,
+      }));
       autoSuggest = {
         action: 'get_suggestions',
         summary: `Found ${suggestions.length} suggestions for "${suggestQuery}"`,
@@ -486,7 +570,7 @@ export async function processTripChat(
         suggestions,
       };
       userContent +=
-        `\n\n[Found recommendations for context. Present these and offer to add them when the user picks one:\n` +
+        `\n\n[Recommendation context: ${recommendationContext.label || destination || 'trip destination'}. Verify opening-hours claims against the linked sources. Found options; present the strongest matches and offer to add them:\n` +
         suggestions
           .slice(0, 8)
           .map((s) => `- ${s.title}${s.summary ? `: ${s.summary.slice(0, 120)}` : ''}`)
@@ -501,7 +585,7 @@ export async function processTripChat(
 
   const actions: ToolResult[] = [];
   let loop = 0;
-  const toolContext = { sourceText: userMessage, destination };
+  const toolContext = { sourceText: userMessage, destination, recommendationContext };
 
   for (; loop < 6; loop++) {
     const res = await callLlm(messages, TOOLS, activeConfig);

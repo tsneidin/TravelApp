@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Send, X, Sparkles, ExternalLink, Plus, Check, MapPin } from 'lucide-react';
+import {
+  Bot, Send, X, Sparkles, ExternalLink, Plus, Check, MapPin, Settings
+} from 'lucide-react';
 import { apiGet, apiPost } from '../lib/api';
 import type { ChatMessage, AiStatus, AiAction, Suggestion } from '../lib/types';
 import { Spinner } from './Spinner';
+import { AISettingsModal } from './AISettingsModal';
 
 /** True when a message is likely a pasted itinerary / confirmation to show formatted. */
 function isLongPaste(t: string): boolean {
@@ -72,6 +75,7 @@ function SuggestionCard({
 
 export function AIChat({ tripId }: { tripId: string | null }) {
   const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [input, setInput] = useState('');
@@ -154,16 +158,43 @@ export function AIChat({ tripId }: { tripId: string | null }) {
               <Sparkles size={15} style={{ color: 'var(--accent)' }} />
               AI Assistant
             </span>
-            <button className="btn sm ghost icon-only" onClick={() => setOpen(false)} title="Close"><X size={15} /></button>
+            <div className="row" style={{ gap: 4 }}>
+              {tripId && (
+                <button
+                  type="button"
+                  className="btn sm ghost icon-only"
+                  onClick={() => setSettingsOpen(true)}
+                  title="Configure AI assistant (model, API key, endpoint)"
+                >
+                  <Settings size={15} />
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn sm ghost icon-only"
+                onClick={() => setOpen(false)}
+                title="Close"
+              >
+                <X size={15} />
+              </button>
+            </div>
           </div>
 
           <div className="ai-chat-sub">
             {!tripId ? (
               <span className="small muted">Open a trip to scope the assistant to it.</span>
             ) : !status?.enabled ? (
-              <span className="small warn">
-                AI is not configured. Set AI_ENABLED=true, AI_BASE_URL, AI_MODEL in the server .env.
-              </span>
+              <div className="row between" style={{ width: '100%' }}>
+                <span className="small warn">AI is not enabled.</span>
+                <button
+                  type="button"
+                  className="btn sm ghost"
+                  style={{ padding: '2px 8px', fontSize: '0.74rem' }}
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  Configure
+                </button>
+              </div>
             ) : (
               <span className="small muted">Model: {status.model} · {status.baseUrl}</span>
             )}
@@ -173,10 +204,24 @@ export function AIChat({ tripId }: { tripId: string | null }) {
             {messages.length === 0 && !busy && (
               <div className="ai-placeholder">
                 <Bot size={28} style={{ color: 'var(--muted)', marginBottom: 8 }} />
-                <div>
-                  Ask questions, paste a booking confirmation to import it, try
-                  "add a sushi place on day 2" or "what should we do for 2 days in Tokyo?"
-                </div>
+                {!status?.enabled ? (
+                  <div>
+                    <div>Connect your local model (Open WebUI, Ollama) or cloud API (OpenAI, Groq) to get started.</div>
+                    <button
+                      type="button"
+                      className="btn sm primary mt"
+                      style={{ marginTop: 10 }}
+                      onClick={() => setSettingsOpen(true)}
+                    >
+                      <Settings size={13} /> Configure AI Assist
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    Ask questions, paste a booking confirmation to import it, try
+                    &quot;add a sushi place on day 2&quot; or &quot;what should we do for 2 days in Tokyo?&quot;
+                  </div>
+                )}
               </div>
             )}
             {messages.map((m) =>
@@ -248,6 +293,16 @@ export function AIChat({ tripId }: { tripId: string | null }) {
               <Send size={15} />
             </button>
           </div>
+
+          {settingsOpen && tripId && (
+            <AISettingsModal
+              tripId={tripId}
+              onClose={() => setSettingsOpen(false)}
+              onSaved={() => {
+                void loadStatus();
+              }}
+            />
+          )}
         </aside>
       )}
     </>

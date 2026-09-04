@@ -166,10 +166,29 @@ export interface ChatMessage {
 
 export interface AiStatus {
   enabled: boolean;
+  provider?: string;
   baseUrl?: string | null;
   model?: string | null;
   configured: boolean;
 }
+
+export interface AiConfig {
+  enabled: boolean;
+  provider: string;
+  baseUrl: string;
+  apiKey?: string;
+  hasApiKey?: boolean;
+  model: string;
+  timeoutMs: number;
+}
+
+export interface AiTestResult {
+  ok: boolean;
+  models: string[];
+  message: string;
+  error?: string;
+}
+
 
 export interface Suggestion {
   title: string;

@@ -2,6 +2,8 @@ import { config } from '../config.js';
 import { prisma } from '../db.js';
 import { fetchSuggestions } from './suggestions.js';
 import type { Suggestion } from './suggestions.js';
+import { getAiConfig, type AiConfigData } from './settings.service.js';
+import { syncBookingToItinerary } from './bookingHelper.js';
 import type { BookingType, ExpenseCategory } from '@prisma/client';
 
 const BOOKING_TYPES = ['flight', 'hotel', 'car', 'activity'] as const;
@@ -22,8 +24,8 @@ export interface ChatTurn {
 export const aiConfig = config.ai;
 
 /** Normalize an OpenAI-compatible base URL into the chat-completions endpoint. */
-function chatUrl(): string {
-  const base = config.ai.baseUrl.replace(/\/+$/, '');
+function chatUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
   if (/\/chat\/completions$/.test(base)) return base;
   if (/\/v1\/?$/.test(base)) return `${base}/chat/completions`;
   return `${base}/v1/chat/completions`;
@@ -46,9 +48,13 @@ interface LlmResponse {
   }[];
 }
 
-async function callLlm(messages: LlmMessage[], tools: ToolDef[]): Promise<LlmResponse> {
+async function callLlm(
+  messages: LlmMessage[],
+  tools: ToolDef[],
+  activeConfig: AiConfigData,
+): Promise<LlmResponse> {
   const body: Record<string, unknown> = {
-    model: config.ai.model,
+    model: activeConfig.model,
     messages,
     temperature: 0.4,
   };
@@ -56,12 +62,12 @@ async function callLlm(messages: LlmMessage[], tools: ToolDef[]): Promise<LlmRes
   else body.tool_choice = 'none';
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (config.ai.apiKey) headers.Authorization = `Bearer ${config.ai.apiKey}`;
+  if (activeConfig.apiKey) headers.Authorization = `Bearer ${activeConfig.apiKey}`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.ai.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), activeConfig.timeoutMs);
   try {
-    const res = await fetch(chatUrl(), {
+    const res = await fetch(chatUrl(activeConfig.baseUrl), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -90,7 +96,7 @@ const TOOLS: ToolDef[] = [
     function: {
       name: 'add_place',
       description:
-        'Add a place / stop / activity / restaurant / sightseeing spot to a specific day of the itinerary. Use "date" (YYYY-MM-DD) to pick a day; if the trip has no matching day, one is created. Infer and include the most likely address, latitude, longitude, and website whenever the user gives a recognizable place, venue, city, or airport code. Preserve route text such as "MSN to ORD" in the name.',
+        'Add a place / stop / activity / restaurant / sightseeing spot to a specific day of the itinerary. Use "date" (YYYY-MM-DD) to pick a day; if the trip has no matching day, one is automatically created. Infer and include the most likely address, latitude, longitude, and website whenever the user gives a recognizable place, venue, city, or airport code. Preserve route text such as "MSN to ORD" in the name.',
       parameters: {
         type: 'object',
         properties: {
@@ -112,16 +118,18 @@ const TOOLS: ToolDef[] = [
     function: {
       name: 'add_booking',
       description:
-        'Add a booking (flight, hotel, car, activity) to the trip. Use this when the user pastes a confirmation email or asks to log a reservation. Extract provider, confirmation/reference number, and dates.',
+        'Add a reservation or booking (flight, hotel, car, activity) to the trip. Automatically parses confirmation codes, extracts flight legs or stay dates into the itinerary, creates missing itinerary days, and logs ticket prices in the trip budget.',
       parameters: {
         type: 'object',
         properties: {
           type: { type: 'string', enum: BOOKING_TYPES, description: 'flight | hotel | car | activity' },
-          title: { type: 'string', description: 'Human-readable title e.g. "ANA 123 to Tokyo"' },
+          title: { type: 'string', description: 'Human-readable title e.g. "American Airlines Madison to Naples"' },
           provider: { type: 'string', description: 'Airline / hotel chain / rental company' },
           reference: { type: 'string', description: 'Confirmation or PNR number if present' },
           startAt: { type: 'string', description: 'Start ISO datetime or YYYY-MM-DD' },
           endAt: { type: 'string', description: 'Optional end ISO datetime or YYYY-MM-DD' },
+          price: { type: 'number', description: 'Total price or fare if present' },
+          currency: { type: 'string', description: 'Currency code e.g. USD, EUR' },
         },
         required: ['type', 'title'],
       },
@@ -258,6 +266,7 @@ async function executeTool(
       const details = ctx.sourceText
         ? { sourceRaw: ctx.sourceText.slice(0, 12_000) }
         : undefined;
+
       const booking = await prisma.booking.create({
         data: {
           tripId,
@@ -271,7 +280,29 @@ async function executeTool(
           details,
         },
       });
-      return { action: name, summary: `Added ${type} booking "${title}"${booking.reference ? ` (ref ${booking.reference})` : ''}`, ok: true, ...{ bookingId: booking.id } };
+
+      // Synchronize booking with itinerary days, places, and budget expense!
+      const sync = await syncBookingToItinerary(
+        tripId,
+        userId,
+        booking.id,
+        ctx.sourceText || `${title} ${a.provider ?? ''} ${a.reference ?? ''}`,
+        title,
+      );
+
+      const extras: string[] = [];
+      if (sync.daysAdded > 0) extras.push(`${sync.daysAdded} day(s) created`);
+      if (sync.placesAdded > 0) extras.push(`${sync.placesAdded} stop(s) added to itinerary`);
+      if (sync.expenseAdded) extras.push('expense logged in budget');
+
+      const extraSummary = extras.length > 0 ? ` (${extras.join(', ')})` : '';
+
+      return {
+        action: name,
+        summary: `Added ${type} booking "${title}"${booking.reference ? ` (ref ${booking.reference})` : ''}${extraSummary}`,
+        ok: true,
+        ...{ bookingId: booking.id },
+      };
     }
 
     if (name === 'add_expense') {
@@ -372,8 +403,10 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `\nEXPENSES: ${trip.expenses?.length ?? 0} recorded (total ${(trip.expenses ?? []).reduce((s, e) => s + e.amount, 0).toFixed(2)} ${trip.currency}).`,
     ``,
     `RULES:`,
-    `- Use tools to modify the itinerary, bookings, budget, or days when the user asks to add/save/import something.`,
-    `- If the user pastes a booking confirmation email, parse it (airline/flight number, hotel + check-in/out, car rental pickup, activity/tour), then call add_booking (and add_place if a specific venue/airport/hotel address is mentioned). Confirm what you added.`,
+    `- When the user pastes or mentions a reservation confirmation (flights, hotel, car, activity):`,
+    `  1. Call add_booking with the reservation details, reference number, dates, and total fare/price. This automatically logs the booking, generates all missing itinerary days, places each flight leg or stay into the itinerary on the proper days, and adds the cost to the budget!`,
+    `  2. Call add_place if additional custom activities or notes need to be added to specific days.`,
+    `  3. Confirm the reservation reference, itinerary days created, and flight legs added in your response.`,
     `- For "things to do / places to see / suggestions", answer with concise, specific recommendations relevant to the destination and trip dates. Use bullet points.`,
     `- GUESS the date from trip context when sensible; if genuinely ambiguous, ask a short clarifying question instead of inventing a date.`,
     `- Keep answers under ~150 words unless generating a list of suggestions.`,
@@ -407,8 +440,12 @@ export async function processTripChat(
   userMessage: string,
   history: ChatTurn[],
 ): Promise<{ reply: string; actions: ToolResult[] }> {
-  if (!config.ai.enabled) {
-    return { reply: 'AI is not enabled yet. Set AI_ENABLED=true and configure AI_BASE_URL/AI_MODEL in the server .env.', actions: [] };
+  const activeConfig = await getAiConfig();
+  if (!activeConfig.enabled) {
+    return {
+      reply: 'AI Assist is not enabled yet. Open the ⚙️ Settings icon in the header to configure your AI provider, model, and API key.',
+      actions: [],
+    };
   }
 
   const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { destination: true } });
@@ -453,7 +490,7 @@ export async function processTripChat(
   const toolContext = { sourceText: userMessage, destination };
 
   for (; loop < 6; loop++) {
-    const res = await callLlm(messages, TOOLS);
+    const res = await callLlm(messages, TOOLS, activeConfig);
     const msg = res.choices?.[0]?.message;
     if (!msg) throw new Error('AI returned no choices');
 
@@ -475,7 +512,7 @@ export async function processTripChat(
     }
   }
 
-  const res = await callLlm(messages, []);
+  const res = await callLlm(messages, [], activeConfig);
   const reply = res.choices?.[0]?.message?.content?.trim() || 'Finished.';
   if (autoSuggest && !actions.some((a) => a.action === 'get_suggestions')) {
     actions.push(autoSuggest);

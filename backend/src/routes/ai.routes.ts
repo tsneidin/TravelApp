@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { asyncHandler, badRequest } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess } from '../middleware/auth.js';
-import { config } from '../config.js';
 import { processTripChat } from '../services/ai.js';
+import { getAiConfig, saveAiConfig, testAiConnection } from '../services/settings.service.js';
 
 export const aiRouter = Router();
 
@@ -12,12 +12,87 @@ aiRouter.get(
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
     await requireTripAccess(req, tripId, 'viewer');
+    const cfg = await getAiConfig();
     res.json({
-      enabled: config.ai.enabled,
-      baseUrl: config.ai.enabled ? config.ai.baseUrl : null,
-      model: config.ai.enabled ? config.ai.model : null,
-      configured: config.ai.enabled,
+      enabled: cfg.enabled,
+      provider: cfg.provider,
+      baseUrl: cfg.enabled ? cfg.baseUrl : null,
+      model: cfg.enabled ? cfg.model : null,
+      configured: cfg.enabled && Boolean(cfg.baseUrl),
     });
+  }),
+);
+
+aiRouter.get(
+  '/:tripId/ai/config',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'viewer');
+    const cfg = await getAiConfig();
+    res.json({
+      enabled: cfg.enabled,
+      provider: cfg.provider,
+      baseUrl: cfg.baseUrl,
+      apiKey: cfg.apiKey ? '••••••••' : '',
+      hasApiKey: Boolean(cfg.apiKey),
+      model: cfg.model,
+      timeoutMs: cfg.timeoutMs,
+    });
+  }),
+);
+
+aiRouter.post(
+  '/:tripId/ai/config',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+
+    const update: Record<string, unknown> = {};
+    if (req.body.enabled !== undefined) update.enabled = Boolean(req.body.enabled);
+    if (typeof req.body.provider === 'string') update.provider = req.body.provider;
+    if (typeof req.body.baseUrl === 'string') update.baseUrl = req.body.baseUrl;
+    if (typeof req.body.model === 'string') update.model = req.body.model;
+    if (typeof req.body.timeoutMs === 'number') update.timeoutMs = req.body.timeoutMs;
+    // Only update apiKey if provided and not the masked placeholder
+    if (typeof req.body.apiKey === 'string' && req.body.apiKey !== '••••••••') {
+      update.apiKey = req.body.apiKey;
+    }
+
+    const saved = await saveAiConfig(update);
+    res.json({
+      ok: true,
+      config: {
+        enabled: saved.enabled,
+        provider: saved.provider,
+        baseUrl: saved.baseUrl,
+        apiKey: saved.apiKey ? '••••••••' : '',
+        hasApiKey: Boolean(saved.apiKey),
+        model: saved.model,
+        timeoutMs: saved.timeoutMs,
+      },
+    });
+  }),
+);
+
+aiRouter.post(
+  '/:tripId/ai/test',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'viewer');
+
+    const baseUrl = typeof req.body.baseUrl === 'string' ? req.body.baseUrl.trim() : '';
+    if (!baseUrl) throw badRequest('baseUrl is required for testing');
+
+    let apiKey = typeof req.body.apiKey === 'string' ? req.body.apiKey : undefined;
+    if (apiKey === '••••••••') {
+      // Use existing saved API key
+      const current = await getAiConfig();
+      apiKey = current.apiKey;
+    }
+
+    const model = typeof req.body.model === 'string' ? req.body.model : undefined;
+    const result = await testAiConnection({ baseUrl, apiKey, model });
+    res.json(result);
   }),
 );
 

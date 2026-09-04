@@ -51,6 +51,7 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
+  const previewRef = useRef<any>(null);
   const mapClickRef = useRef(onMapClick);
   const [error, setError] = useState('');
   const targetId = activePlaceId || focusPlaceId;
@@ -71,7 +72,50 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
         mapRef.current.addListener('click', async (event: any) => {
           const callback = mapClickRef.current;
           if (!callback || !event.latLng) return;
+          event.stop?.();
           const geocoder = new maps.Geocoder();
+
+          const showPreview = (place: GeocodedPlace, position: any) => {
+            previewRef.current?.close();
+            const card = document.createElement('div');
+            card.style.cssText = 'min-width:220px;max-width:300px;color:#111827;padding:2px';
+
+            const title = document.createElement('strong');
+            title.textContent = place.name;
+            title.style.cssText = 'display:block;font-size:14px;margin-bottom:4px';
+            card.appendChild(title);
+
+            const address = document.createElement('div');
+            address.textContent = place.address;
+            address.style.cssText = 'font-size:12px;color:#4b5563;margin-bottom:10px';
+            card.appendChild(address);
+
+            const actions = document.createElement('div');
+            actions.style.cssText = 'display:flex;gap:8px;align-items:center';
+
+            const viewLink = document.createElement('a');
+            viewLink.href = place.website || `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+            viewLink.target = '_blank';
+            viewLink.rel = 'noreferrer';
+            viewLink.textContent = 'View on Google Maps';
+            viewLink.style.cssText = 'font-size:12px;color:#2563eb;text-decoration:none';
+            actions.appendChild(viewLink);
+
+            const addButton = document.createElement('button');
+            addButton.type = 'button';
+            addButton.textContent = 'Add to itinerary';
+            addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:6px 9px;font-size:12px;cursor:pointer';
+            addButton.addEventListener('click', () => {
+              previewRef.current?.close();
+              callback(place);
+            });
+            actions.appendChild(addButton);
+            card.appendChild(actions);
+
+            previewRef.current = new maps.InfoWindow({ content: card, position });
+            previewRef.current.open({ map: mapRef.current });
+          };
+
           try {
             const request = event.placeId
               ? { placeId: event.placeId }
@@ -83,7 +127,7 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
               component.types?.some((type: string) => ['point_of_interest', 'establishment', 'premise'].includes(type)),
             );
             const fallbackName = result?.formatted_address?.split(',')[0] || 'Pinned location';
-            callback({
+            showPreview({
               name: nameComponent?.long_name || fallbackName,
               address: result?.formatted_address || fallbackName,
               lat: point.lat(),
@@ -91,18 +135,19 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
               category: 'Sightseeing',
               placeId: event.placeId || result?.place_id,
               website: event.placeId
-                ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(event.placeId)}`
+                ? `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(event.placeId)}`
                 : `https://www.google.com/maps/search/?api=1&query=${point.lat()},${point.lng()}`,
-            });
+            }, point);
           } catch {
-            callback({
+            const place = {
               name: 'Pinned location',
               address: `${event.latLng.lat().toFixed(6)}, ${event.latLng.lng().toFixed(6)}`,
               lat: event.latLng.lat(),
               lng: event.latLng.lng(),
               category: 'Sightseeing',
               website: `https://www.google.com/maps/search/?api=1&query=${event.latLng.lat()},${event.latLng.lng()}`,
-            });
+            };
+            showPreview(place, event.latLng);
           }
         });
       }

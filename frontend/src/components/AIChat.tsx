@@ -92,6 +92,8 @@ export function AIChat({ tripId }: { tripId: string | null }) {
   const [error, setError] = useState('');
   const [suggestionLimit, setSuggestionLimit] = useState(4);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
 
   const loadStatus = useCallback(async () => {
     if (!tripId) return;
@@ -129,6 +131,16 @@ export function AIChat({ tripId }: { tripId: string | null }) {
   }, [open, tripId, loaded, loadStatus, loadMessages]);
 
   useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!panelRef.current?.contains(target) && !fabRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [open]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, busy, actions]);
 
@@ -156,12 +168,12 @@ export function AIChat({ tripId }: { tripId: string | null }) {
 
   return (
     <>
-      <button className="ai-fab" title="AI assistant" onClick={() => setOpen((o) => !o)}>
+      <button ref={fabRef} className="ai-fab" title="AI assistant" onClick={() => setOpen((o) => !o)}>
         {open ? <X size={20} /> : <Bot size={20} />}
       </button>
 
       {open && (
-        <aside className="ai-chat">
+        <aside ref={panelRef} className="ai-chat">
           <div className="ai-chat-head">
             <span className="row" style={{ gap: 8 }}>
               <Sparkles size={15} style={{ color: 'var(--accent)' }} />

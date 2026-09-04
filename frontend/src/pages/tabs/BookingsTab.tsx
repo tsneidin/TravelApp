@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, FileText } from 'lucide-react';
 import { apiPost, apiDelete } from '../../lib/api';
 import type { Trip, Booking, BookingType } from '../../lib/types';
 import { Modal } from '../../components/Modal';
@@ -24,6 +24,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   const bookings = trip.bookings ?? [];
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [rawBooking, setRawBooking] = useState<Booking | null>(null);
   const [form, setForm] = useState<BookingForm>({ type: 'hotel', title: '', provider: '', reference: '', startAt: '', endAt: '' });
 
   const save = async () => {
@@ -50,6 +51,11 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   };
 
   const typeLabel = (t: BookingType) => TYPES.find((x) => x.value === t)?.label ?? t;
+
+  const hasRaw = (b: Booking) =>
+    typeof b.details === 'object' && b.details != null && typeof b.details.sourceRaw === 'string';
+
+  const rawText = (b: Booking) => (hasRaw(b) ? (b.details as Record<string, unknown>).sourceRaw as string : '');
 
   return (
     <div>
@@ -79,7 +85,16 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                   <td>{b.provider || '—'}</td>
                   <td>{b.reference || '—'}</td>
                   <td>{b.startAt ? new Date(b.startAt).toLocaleDateString() : '—'}</td>
-                  <td><button className="btn sm ghost danger" onClick={() => remove(b)}><Trash2 size={13} /></button></td>
+                  <td>
+                    <div className="row" style={{ gap: 4 }}>
+                      {hasRaw(b) && (
+                        <button className="btn sm ghost" title="View raw source text" onClick={() => setRawBooking(b)}>
+                          <FileText size={13} />
+                        </button>
+                      )}
+                      <button className="btn sm ghost danger" onClick={() => remove(b)}><Trash2 size={13} /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -122,6 +137,32 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <div className="modal-actions">
             <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={save} disabled={busy || !form.title}>Save</button>
+          </div>
+        </Modal>
+      )}
+
+      {rawBooking && (
+        <Modal title={`Raw source — ${rawBooking.title}`} onClose={() => setRawBooking(null)} wide>
+          <div className="small muted mb">{rawBooking.type} · {rawBooking.provider || '—'} {rawBooking.reference ? `· ref ${rawBooking.reference}` : ''}</div>
+          <pre
+            style={{
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: 'ui-monospace, Consolas, monospace',
+              fontSize: 12,
+              lineHeight: 1.55,
+              background: 'rgba(11,18,32,.6)',
+              border: '1px solid var(--line)',
+              borderRadius: 8,
+              padding: 12,
+              maxHeight: 420,
+              overflow: 'auto',
+            }}
+          >
+            {rawText(rawBooking)}
+          </pre>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setRawBooking(null)}>Close</button>
           </div>
         </Modal>
       )}

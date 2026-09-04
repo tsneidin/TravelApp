@@ -145,32 +145,54 @@ function MapFocus({ focus }: { focus: MapFocusTarget }) {
   return null;
 }
 
-export function TripMap({ places, destination }: { places: Place[]; destination?: string | null }) {
+export function TripMap({ places, destination, focusPlaceId }: { places: Place[]; destination?: string | null; focusPlaceId?: string }) {
+  const allPlaces = places;
   const withCoords = places.filter((p) => p.lat != null && p.lng != null) as (Place & {
     lat: number;
     lng: number;
   })[];
 
   const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const [focusGeo, setFocusGeo] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Geocode the destination only when there are no places with coordinates to focus on.
+  const focusPlace = focusPlaceId ? allPlaces.find((p) => p.id === focusPlaceId) : undefined;
+
+  // Geocode the focused place (no coords) or the trip destination.
   useEffect(() => {
     let alive = true;
-    if (withCoords.length > 0) {
-      setGeo(null);
-      return;
-    }
-    if (!destination) return;
     setGeo(null);
+    setFocusGeo(null);
+
+    if (focusPlace) {
+      if (focusPlace.lat != null && focusPlace.lng != null) return;
+      const q = `${focusPlace.name} ${focusPlace.address ?? ''}`.trim();
+      if (!q) return;
+      geocodeDestination(q).then((c) => {
+        if (alive && c) setFocusGeo(c);
+      });
+      return () => {
+        alive = false;
+      };
+    }
+
+    if (withCoords.length > 0) return;
+    if (!destination) return;
     geocodeDestination(destination).then((c) => {
       if (alive && c) setGeo(c);
     });
     return () => {
       alive = false;
     };
-  }, [destination, withCoords.length]);
+  }, [focusPlaceId, focusPlace?.name, focusPlace?.address, destination, withCoords.length]);
 
   const focus = useMemo<MapFocusTarget>(() => {
+    if (focusPlace) {
+      if (focusPlace.lat != null && focusPlace.lng != null) {
+        return { kind: 'point', lat: focusPlace.lat, lng: focusPlace.lng, zoom: 15 };
+      }
+      if (focusGeo) return { kind: 'point', lat: focusGeo.lat, lng: focusGeo.lng, zoom: 13 };
+      return { kind: 'world' };
+    }
     if (withCoords.length >= 2) {
       return { kind: 'bounds', pts: withCoords.map((p) => [p.lat, p.lng] as [number, number]) };
     }
@@ -180,7 +202,7 @@ export function TripMap({ places, destination }: { places: Place[]; destination?
     }
     if (geo) return { kind: 'point', lat: geo.lat, lng: geo.lng, zoom: 8 };
     return { kind: 'world' };
-  }, [withCoords, geo]);
+  }, [withCoords, geo, focusPlace, focusGeo]);
 
   const path = withCoords.length > 1 ? withCoords.map((p) => [p.lat, p.lng] as [number, number]) : [];
 

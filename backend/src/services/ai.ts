@@ -1,5 +1,7 @@
 import { config } from '../config.js';
 import { prisma } from '../db.js';
+import { fetchSuggestions } from './suggestions.js';
+import type { Suggestion } from './suggestions.js';
 import type { BookingType, ExpenseCategory } from '@prisma/client';
 
 const BOOKING_TYPES = ['flight', 'hotel', 'car', 'activity'] as const;
@@ -9,6 +11,7 @@ export interface ToolResult {
   action: string;
   summary: string;
   ok: boolean;
+  suggestions?: Suggestion[];
 }
 
 export interface ChatTurn {
@@ -156,6 +159,23 @@ const TOOLS: ToolDef[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_suggestions',
+      description:
+        'Fetch structured recommendations (things to do/see/eat, attractions, places) with thumbnails and links for a location. Call this when the user asks for suggestions, ideas, or "things to do/see". The results are also shown to the user as cards in the chat, so prefer calling this over inventing recommendations.',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string', description: 'City / destination, e.g. "Tokyo" or "Rome"' },
+          query: { type: 'string', description: 'Optional focus, e.g. "food", "museums", "nature"' },
+          count: { type: 'number', description: 'Max suggestions, default 8' },
+        },
+        required: ['location'],
+      },
+    },
+  },
 ];
 
 function parseArgs(raw: string): Record<string, unknown> {
@@ -178,7 +198,15 @@ function toDayKey(d: Date): string {
 
 // ---------------- executor ----------------
 
-async function executeTool(tripId: string, userId: string, name: string, argsRaw: string): Promise<ToolResult> {
+const suggestionCache = new Map<string, Suggestion[]>();
+
+async function executeTool(
+  tripId: string,
+  userId: string,
+  name: string,
+  argsRaw: string,
+  ctx: { sourceText?: string; destination?: string } = {},
+): Promise<ToolResult> {
   const a = parseArgs(argsRaw);
   try {
     if (name === 'add_place') {
@@ -199,6 +227,9 @@ async function executeTool(tripId: string, userId: string, name: string, argsRaw
         }
       }
       const count = await prisma.place.count({ where: { tripId } });
+      const notes = [a.notes ? String(a.notes) : undefined]
+        .filter(Boolean)
+        .join('\n');
       const place = await prisma.place.create({
         data: {
           tripId,
@@ -209,7 +240,7 @@ async function executeTool(tripId: string, userId: string, name: string, argsRaw
           address: a.address ? String(a.address) : undefined,
           lat: typeof a.lat === 'number' ? a.lat : undefined,
           lng: typeof a.lng === 'number' ? a.lng : undefined,
-          notes: a.notes ? String(a.notes) : undefined,
+          notes: notes || undefined,
         },
       });
       const when = dayId ? ` (on ${date ? toDayKey(date) : 'itinerary day'})` : ' (unassigned)';
@@ -221,6 +252,9 @@ async function executeTool(tripId: string, userId: string, name: string, argsRaw
       const type = BOOKING_TYPES.includes(rawType as BookingType) ? (rawType as BookingType) : null;
       const title = String(a.title ?? '').trim();
       if (!type || !title) return { action: name, summary: 'add_booking: valid type and title required', ok: false };
+      const details = ctx.sourceText
+        ? { sourceRaw: ctx.sourceText.slice(0, 12_000) }
+        : undefined;
       const booking = await prisma.booking.create({
         data: {
           tripId,
@@ -231,6 +265,7 @@ async function executeTool(tripId: string, userId: string, name: string, argsRaw
           reference: a.reference ? String(a.reference) : undefined,
           startAt: toDate(a.startAt),
           endAt: toDate(a.endAt),
+          details,
         },
       });
       return { action: name, summary: `Added ${type} booking "${title}"${booking.reference ? ` (ref ${booking.reference})` : ''}`, ok: true, ...{ bookingId: booking.id } };
@@ -264,6 +299,28 @@ async function executeTool(tripId: string, userId: string, name: string, argsRaw
         data: { tripId, date, label: a.label ? String(a.label) : undefined, sortOrder: count },
       });
       return { action: name, summary: `Added itinerary day ${toDayKey(date)}`, ok: true, ...{ dayId: day.id } };
+    }
+
+    if (name === 'get_suggestions') {
+      const location = String(a.location ?? ctx.destination ?? '').trim();
+      if (!location) return { action: name, summary: 'get_suggestions: location required', ok: false };
+      const focus = String(a.query ?? '').trim();
+      const count = Math.min(Number(a.count) || 8, 12);
+      const query = focus ? `${location} ${focus}` : `${location} things to see top attractions`;
+      let suggestions = suggestionCache.get(query);
+      if (!suggestions) {
+        suggestions = await fetchSuggestions(query, count);
+        suggestionCache.set(query, suggestions);
+      }
+      if (!suggestions.length) {
+        return { action: name, summary: `No suggestions found for "${query}"`, ok: false };
+      }
+      return {
+        action: name,
+        summary: `Found ${suggestions.length} suggestions for "${query}"`,
+        ok: true,
+        suggestions,
+      };
     }
 
     return { action: name, summary: `Unknown tool: ${name}`, ok: false };
@@ -322,6 +379,25 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
 
 // ---------------- main entry ----------------
 
+const SUGGEST_INTENT =
+  /(suggest|recommend|things? to do|places? to see|what (should|can|could|to) (i|we|you)\s?(do|see|visit|check out)|attractions|top sites|must-see|must see|best places?|ideas|itinerary ideas|where should)/i;
+
+function detectSuggestQuery(message: string, destination: string): string | null {
+  if (!SUGGEST_INTENT.test(message)) return null;
+  const stop = new Set([
+    'please', 'suggest', 'suggestions', 'recommend', 'recommendations', 'things', 'thing',
+    'places', 'place', 'see', 'do', 'visit', 'what', 'should', 'could', 'can', 'for', 'any',
+    'good', 'best', 'top', 'with', 'in', 'and', 'the', 'a', 'of', 'to', 'i', 'we', 'me',
+    'us', 'that', 'this', 'itinerary', 'ideas', 'day', 'there', 'around', 'near',
+  ]);
+  const words = (message.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+    (w) => w.length > 3 && !stop.has(w),
+  );
+  const focus = words.slice(0, 4).join(' ');
+  if (destination) return focus ? `${destination} ${focus}` : destination;
+  return focus || (message.length > 4 ? message : null);
+}
+
 export async function processTripChat(
   tripId: string,
   userId: string,
@@ -332,13 +408,46 @@ export async function processTripChat(
     return { reply: 'AI is not enabled yet. Set AI_ENABLED=true and configure AI_BASE_URL/AI_MODEL in the server .env.', actions: [] };
   }
 
+  const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { destination: true } });
+  const destination = trip?.destination ?? '';
+
   const system = await buildSystemPrompt(tripId);
+  let userContent = userMessage;
+
+  // If the user is asking for recommendations, pre-fetch suggestions so they
+  // always appear as cards (even if the model doesn't call the tool itself).
+  let autoSuggest: ToolResult | null = null;
+  const suggestQuery = detectSuggestQuery(userMessage, destination);
+  if (suggestQuery) {
+    let suggestions = suggestionCache.get(suggestQuery);
+    if (!suggestions) {
+      suggestions = await fetchSuggestions(suggestQuery, 8);
+      suggestionCache.set(suggestQuery, suggestions);
+    }
+    if (suggestions.length) {
+      autoSuggest = {
+        action: 'get_suggestions',
+        summary: `Found ${suggestions.length} suggestions for "${suggestQuery}"`,
+        ok: true,
+        suggestions,
+      };
+      userContent +=
+        `\n\n[Found recommendations for context. Present these and offer to add them when the user picks one:\n` +
+        suggestions
+          .slice(0, 8)
+          .map((s) => `- ${s.title}${s.summary ? `: ${s.summary.slice(0, 120)}` : ''}`)
+          .join('\n') +
+        `]`;
+    }
+  }
+
   const messages: LlmMessage[] = [{ role: 'system', content: system }];
   for (const h of history.slice(-10)) messages.push({ role: h.role, content: h.content });
-  messages.push({ role: 'user', content: userMessage });
+  messages.push({ role: 'user', content: userContent });
 
   const actions: ToolResult[] = [];
   let loop = 0;
+  const toolContext = { sourceText: userMessage, destination };
 
   for (; loop < 6; loop++) {
     const res = await callLlm(messages, TOOLS);
@@ -348,18 +457,25 @@ export async function processTripChat(
     const toolCalls = msg.tool_calls ?? [];
     if (!toolCalls.length) {
       const reply = msg.content?.trim() || 'Done.';
+      if (autoSuggest && !actions.some((a) => a.action === 'get_suggestions')) {
+        actions.push(autoSuggest);
+      }
       return { reply, actions };
     }
 
     messages.push({ role: 'assistant', content: msg.content ?? '', tool_calls: toolCalls });
     for (const tc of toolCalls) {
       const fnName = tc.function?.name ?? '';
-      const result = await executeTool(tripId, userId, fnName, tc.function?.arguments ?? '{}');
+      const result = await executeTool(tripId, userId, fnName, tc.function?.arguments ?? '{}', toolContext);
       actions.push(result);
       messages.push({ role: 'tool', tool_call_id: tc.id, name: fnName, content: result.summary });
     }
   }
 
   const res = await callLlm(messages, []);
-  return { reply: res.choices?.[0]?.message?.content?.trim() || 'Finished.', actions };
+  const reply = res.choices?.[0]?.message?.content?.trim() || 'Finished.';
+  if (autoSuggest && !actions.some((a) => a.action === 'get_suggestions')) {
+    actions.push(autoSuggest);
+  }
+  return { reply, actions };
 }

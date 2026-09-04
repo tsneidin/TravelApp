@@ -63,4 +63,10 @@ export const config = {
     model: optional('AI_MODEL', 'llama3'),
     timeoutMs: optionalInt('AI_TIMEOUT_MS', 120_000),
   },
+
+  search: {
+    searxngUrl: optional('SEARXNG_URL', 'http://searxng:8080'),
+    timeoutMs: optionalInt('SEARCH_TIMEOUT_MS', 10_000),
+    enabled: optionalBool('SEARCH_ENABLED', true),
+  },
 };

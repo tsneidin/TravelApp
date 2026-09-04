@@ -170,8 +170,18 @@ export interface AiStatus {
   configured: boolean;
 }
 
+export interface Suggestion {
+  title: string;
+  url?: string;
+  thumbnail?: string;
+  summary?: string;
+  lat?: number;
+  lng?: number;
+}
+
 export interface AiAction {
   action: string;
   summary: string;
   ok: boolean;
+  suggestions?: Suggestion[];
 }

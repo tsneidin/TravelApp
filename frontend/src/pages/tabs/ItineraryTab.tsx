@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, MapPin, GripVertical } from 'lucide-react';
-import { apiPost, apiDelete } from '../../lib/api';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil } from 'lucide-react';
+import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
 import { Modal } from '../../components/Modal';
 
@@ -14,9 +15,14 @@ interface PlaceForm {
   notes: string;
 }
 
+const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', notes: '' };
+
 export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<PlaceForm>({ dayId: '', name: '', category: '', address: '', lat: '', lng: '', notes: '' });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<PlaceForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
 
@@ -27,7 +33,22 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   );
 
   const openNew = (dayId: string) => {
-    setEditing({ dayId, name: '', category: '', address: '', lat: '', lng: '', notes: '' });
+    setEditingId(null);
+    setEditing({ ...EMPTY_FORM, dayId });
+    setOpen(true);
+  };
+
+  const openEdit = (p: Place) => {
+    setEditingId(p.id);
+    setEditing({
+      dayId: p.dayId ?? '',
+      name: p.name,
+      category: p.category ?? '',
+      address: p.address ?? '',
+      lat: p.lat != null ? String(p.lat) : '',
+      lng: p.lng != null ? String(p.lng) : '',
+      notes: p.notes ?? '',
+    });
     setOpen(true);
   };
 
@@ -42,13 +63,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const save = async () => {
     setBusy(true);
     try {
-      if (editing.name) {
-        await apiPost(`/trips/${trip.id}/places`, {
-          ...editing,
-          dayId: editing.dayId || undefined,
-          lat: editing.lat ? Number(editing.lat) : undefined,
-          lng: editing.lng ? Number(editing.lng) : undefined,
-        });
+      const payload = {
+        name: editing.name,
+        category: editing.category || undefined,
+        address: editing.address || undefined,
+        lat: editing.lat ? Number(editing.lat) : null,
+        lng: editing.lng ? Number(editing.lng) : null,
+        notes: editing.notes || undefined,
+        dayId: editing.dayId || undefined,
+      };
+      if (editingId) {
+        await apiPatch(`/trips/${trip.id}/places/${editingId}`, payload);
+      } else if (editing.name) {
+        await apiPost(`/trips/${trip.id}/places`, payload);
       }
       setOpen(false);
       await reload();
@@ -60,14 +87,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const reorder = async (placeId: string, targetDayId: string, index: number) => {
     const all = [...(trip.places ?? [])];
     const idx = all.findIndex((p) => p.id === placeId);
+    if (idx < 0) return;
     const [pl] = all.splice(idx, 1);
     pl.dayId = targetDayId;
-    // insert at same position; sort order = index among siblings
     const siblings = all.filter((p) => p.dayId === targetDayId);
     siblings.sort((a, b) => a.sortOrder - b.sortOrder);
     siblings.splice(Math.min(index, siblings.length), 0, pl);
     const entries = siblings.map((p, i) => ({ placeId: p.id, dayId: targetDayId, sortOrder: i }));
-    // also push unchanged sort order for the moved item's old day is handled by day-based fetch
     await apiPost(`/trips/${trip.id}/reorder`, { entries });
     await reload();
   };
@@ -89,6 +115,40 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     await apiDelete(`/trips/${trip.id}/days/${dayId}`);
     await reload();
   };
+
+  const openOnMap = (p: Place) => {
+    navigate(`${location.pathname}?tab=map&focus=${p.id}`);
+  };
+
+  const renderPlaceRow = (p: Place) => (
+    <div
+      key={p.id}
+      className={`list-row ${dragId === p.id ? 'dragging' : ''}`}
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
+      onDragEnd={() => setDragId(null)}
+    >
+      <GripVertical size={14} className="muted" style={{ cursor: 'grab' }} />
+      <div className="grow">
+        <div className="title">{p.name}</div>
+        <div className="sub">
+          <MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || (p.lat != null ? `${p.lat.toFixed(3)}, ${p.lng?.toFixed(3)}` : 'No location')}
+          {p.category ? ` · ${p.category}` : ''}
+          {p.startTime ? ` · ${new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+          {p.notes ? ` · ✏️ ${p.notes}` : ''}
+        </div>
+      </div>
+      <button className="btn sm ghost" title="Show on map" onClick={() => openOnMap(p)}>
+        <MapIcon size={14} />
+      </button>
+      <button className="btn sm ghost" title="Edit / notes" onClick={() => openEdit(p)}>
+        <Pencil size={14} />
+      </button>
+      <button className="btn sm ghost danger" onClick={() => removePlace(p)}>
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
 
   return (
     <div className="grid" style={{ gridTemplateColumns: '1fr' }}>
@@ -131,30 +191,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           {day.places.length === 0 ? (
             <div className="small muted mt">Nothing planned this day yet.</div>
           ) : (
-            day.places.map((p, i) => (
-              <div
-                key={p.id}
-                className={`list-row ${dragId === p.id ? 'dragging' : ''}`}
-                draggable
-                onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
-                onDragEnd={() => setDragId(null)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => dropOnDay(day.id, i)(e)}
-              >
-                <GripVertical size={14} className="muted" style={{ cursor: 'grab' }} />
-                <div className="grow">
-                  <div className="title">{p.name}</div>
-                  <div className="sub">
-                    <MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || (p.lat != null ? `${p.lat.toFixed(3)}, ${p.lng?.toFixed(3)}` : 'No location')}
-                    {p.category ? ` · ${p.category}` : ''}
-                    {p.startTime ? ` · ${new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  </div>
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => dropOnDay(day.id, day.places.length)(e)}
+            >
+              {day.places.map((p) => (
+                <div key={p.id}>
+                  {renderPlaceRow(p)}
                 </div>
-                <button className="btn sm ghost danger" onClick={() => removePlace(p)}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       ))}
@@ -162,28 +208,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       {orphanPlaces.length > 0 && (
         <div className="panel">
           <h2 className="panel-title">Unassigned places</h2>
-          {orphanPlaces.map((p) => (
-            <div className="list-row" key={p.id} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }} onDragEnd={() => setDragId(null)}>
-              <GripVertical size={14} className="muted" />
-              <div className="grow">
-                <div className="title">{p.name}</div>
-                <div className="sub"><MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || 'No location'}</div>
+          <div className="row" style={{ gap: 8 }}>
+            {orphanPlaces.map((p) => (
+              <div key={p.id} className="grow">
+                {renderPlaceRow(p)}
               </div>
-              {days.map((d) => (
-                <button key={d.id} className="btn sm ghost" onClick={() => void reorder(p.id, d.id, 0)}>
-                  → {new Date(d.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                </button>
-              ))}
-              <button className="btn sm ghost danger" onClick={() => void removePlace(p)}>
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       {open && (
-        <Modal title="Add place" onClose={() => setOpen(false)}>
+        <Modal title={editingId ? 'Edit place' : 'Add place'} onClose={() => setOpen(false)}>
           <div className="field">
             <label>Name</label>
             <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. Meiji Shrine" autoFocus />

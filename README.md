@@ -137,14 +137,18 @@ AI_MODEL=llama3
 ### What the assistant can do
 - Answer questions about a trip (uses the current itinerary, bookings, budget).
 - Parse booking confirmation emails you paste and **add them as bookings**
-  (flights, hotels, car rentals, activities).
+  (flights, hotels, car rentals, activities). The raw pasted text is retained —
+  open a booking and click the document icon to view it.
 - Add places to itinerary days, add expense entries, and create days — all via
   tool calls, then it confirms what it changed.
-- Suggest things to do / places to see for the destination.
+- Suggest things to do / places to see for the destination, with **thumbnail,
+  link, and one-tap "Add"** straight into the itinerary.
 - Chat history is saved per trip and shown next time you open it.
 
 > Chat happens per trip. Open a trip, then use the chat button at bottom-right.
 > The page auto-refreshes when the assistant modifies the itinerary.
+> Each itinerary item has an **edit / notes** button and a **map** button that
+> jumps the Map tab to that location.
 
 ## Email import setup
 1. On your Gmail account (or Google Workspace admin for org mailboxes) enable:

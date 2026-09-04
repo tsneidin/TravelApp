@@ -1,8 +1,72 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Send, X, Sparkles } from 'lucide-react';
+import { Bot, Send, X, Sparkles, ExternalLink, Plus, Check, MapPin } from 'lucide-react';
 import { apiGet, apiPost } from '../lib/api';
-import type { ChatMessage, AiStatus, AiAction } from '../lib/types';
+import type { ChatMessage, AiStatus, AiAction, Suggestion } from '../lib/types';
 import { Spinner } from './Spinner';
+
+/** True when a message is likely a pasted itinerary / confirmation to show formatted. */
+function isLongPaste(t: string): boolean {
+  return t.length > 240 && (t.includes('\n') || /\d/.test(t));
+}
+
+function SuggestionCard({
+  s,
+  tripId,
+  onAdded,
+}: {
+  s: Suggestion;
+  tripId: string;
+  onAdded: (title: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
+
+  const addPlace = async () => {
+    if (adding || added) return;
+    setAdding(true);
+    try {
+      await apiPost(`/trips/${tripId}/places`, {
+        name: s.title,
+        lat: s.lat ?? undefined,
+        lng: s.lng ?? undefined,
+        notes: [s.summary, s.url ? `Info: ${s.url}` : ''].filter(Boolean).join('\n'),
+      });
+      setAdded(true);
+      onAdded(s.title);
+      window.dispatchEvent(new CustomEvent('travelapp:mutated', { detail: { tripId } }));
+    } catch {
+      /* ignore */
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <div className="ai-sugg">
+      {s.thumbnail ? (
+        <div className="ai-sugg-thumb" style={{ backgroundImage: `url(${s.thumbnail})` }} />
+      ) : (
+        <div className="ai-sugg-thumb ai-sugg-thumb-none">
+          <MapPin size={16} />
+        </div>
+      )}
+      <div className="ai-sugg-body">
+        <div className="ai-sugg-title">{s.title}</div>
+        {s.summary ? <div className="ai-sugg-sum">{s.summary}</div> : null}
+        <div className="ai-sugg-actions">
+          {s.url && (
+            <a className="btn sm ghost" href={s.url} target="_blank" rel="noreferrer">
+              <ExternalLink size={12} /> Info
+            </a>
+          )}
+          <button className="btn sm primary" onClick={() => void addPlace()} disabled={adding || added}>
+            {added ? <Check size={12} /> : <Plus size={12} />} {added ? 'Added' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AIChat({ tripId }: { tripId: string | null }) {
   const [open, setOpen] = useState(false);
@@ -46,12 +110,13 @@ export function AIChat({ tripId }: { tripId: string | null }) {
       setMessages([]);
       setStatus(null);
       setLoaded(false);
+      setActions([]);
     }
   }, [open, tripId, loaded, loadStatus, loadMessages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, busy]);
+  }, [messages, busy, actions]);
 
   const send = async () => {
     const text = input.trim();
@@ -66,7 +131,6 @@ export function AIChat({ tripId }: { tripId: string | null }) {
       const r = await apiPost<{ reply: string; actions: AiAction[] }>(`/trips/${tripId}/ai/chat`, { message: text });
       setActions(r.actions ?? []);
       setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: r.reply, createdAt: new Date().toISOString() }]);
-      // Broadcast so the page (itinerary/budget/bookings) refreshes with AI changes.
       window.dispatchEvent(new CustomEvent('travelapp:mutated', { detail: { tripId } }));
     } catch (e) {
       setError((e as Error).message);
@@ -74,9 +138,6 @@ export function AIChat({ tripId }: { tripId: string | null }) {
       setBusy(false);
     }
   };
-
-  const actionLabel = (a: AiAction) =>
-    a.ok ? (a.action === 'add_place' ? '➕ Itinerary' : a.action === 'add_booking' ? '🎫 Booking' : a.action === 'add_expense' ? '💸 Expense' : '📅 Day') : '⚠️';
 
   return (
     <>
@@ -116,11 +177,22 @@ export function AIChat({ tripId }: { tripId: string | null }) {
                 </div>
               </div>
             )}
-            {messages.map((m) => (
-              <div key={m.id} className={`ai-bubble ${m.role}`}>
-                {m.content}
-              </div>
-            ))}
+            {messages.map((m) =>
+              m.role === 'user' && isLongPaste(m.content) ? (
+                <div key={m.id} className="ai-bubble user">
+                  <details className="ai-raw">
+                    <summary className="small" style={{ color: 'var(--accent)', cursor: 'pointer' }}>
+                      Pasted item — view raw text
+                    </summary>
+                    <pre className="ai-raw-pre">{m.content}</pre>
+                  </details>
+                </div>
+              ) : (
+                <div key={m.id} className={`ai-bubble ${m.role}`}>
+                  {m.content}
+                </div>
+              ),
+            )}
             {busy && (
               <div className="ai-bubble assistant ai-typing">
                 <Spinner label="Thinking…" />
@@ -133,11 +205,27 @@ export function AIChat({ tripId }: { tripId: string | null }) {
             <div className="ai-actions">
               {actions.map((a, i) => (
                 <span key={i} className="badge" title={a.summary}>
-                  {actionLabel(a)} {a.summary.length > 60 ? a.summary.slice(0, 60) + '…' : a.summary}
+                  {a.ok ? (a.action === 'add_place' ? '➕' : a.action === 'add_booking' ? '🎫' : a.action === 'add_expense' ? '💸' : a.action === 'add_day' ? '📅' : '✨') : '⚠️'} {a.summary.length > 90 ? a.summary.slice(0, 90) + '…' : a.summary}
                 </span>
               ))}
             </div>
           )}
+
+          {actions.some((a) => a.suggestions?.length) && (
+            <div className="ai-suggs">
+              {actions
+                .flatMap((a) => a.suggestions ?? [])
+                .map((s, i) => (
+                  <SuggestionCard
+                    key={`${s.title}-${i}`}
+                    s={s}
+                    tripId={tripId ?? ''}
+                    onAdded={() => undefined}
+                  />
+                ))}
+            </div>
+          )}
+
           {error && <div className="ai-error">{error}</div>}
 
           <div className="ai-input-row">

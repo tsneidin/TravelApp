@@ -33,6 +33,12 @@ function loadGoogleMaps(): Promise<any> {
 
 const geocodeCache = new Map<string, Coord>();
 
+function isTransportation(place: PlaceWithStop): boolean {
+  return /transport|flight|airport|train|rail|bus|coach|drive|driving|car rental|ferry|boat|transfer|taxi|rideshare/i.test(
+    [place.category, place.name, place.notes].filter(Boolean).join(' '),
+  );
+}
+
 export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPlaceClick, height = 480 }: {
   places: PlaceWithStop[];
   destination?: string | null;
@@ -105,11 +111,16 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
         });
         overlaysRef.current.push(marker);
       }
-      if (resolved.length > 1) {
+      // Ordinary itinerary stops are independent pins. Draw a segment only
+      // when the destination entry represents transportation from the prior stop.
+      for (let index = 1; index < resolved.length; index += 1) {
+        if (!isTransportation(resolved[index].place)) continue;
         overlaysRef.current.push(new maps.Polyline({
           map: mapRef.current,
-          path: resolved.map((entry) => entry.coord),
-          strokeColor: '#22d3ee', strokeOpacity: 0.8, strokeWeight: 3,
+          path: [resolved[index - 1].coord, resolved[index].coord],
+          strokeColor: '#22d3ee',
+          strokeOpacity: 0.85,
+          strokeWeight: 3,
         }));
       }
 

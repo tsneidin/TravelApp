@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.30` — check the bottom of the left sidebar for the
+**Current version:** `0.0.31` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -20,7 +20,7 @@ new version number to confirm the rebuild deployed.
 - Budget & expenses (currency, categories, totals)
 - Photos & journal entries
 - Packing checklists
-- Bookings (manual + email-imported)
+- Bookings (manual + email-imported) with multiple editable notes per booking
 - Lightweight multi-user (owner / editor / viewer)
 - Calendar view (global month-grid, click-to-add, drag-to-reschedule, bookings overlaid, iCal export)
 - Email itinerary import (monitor a Gmail/Google Workspace inbox via IMAP + App Password)

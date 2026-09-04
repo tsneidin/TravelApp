@@ -127,6 +127,7 @@ model Place {
   startTime DateTime?
   endTime   DateTime?
   sortOrder Int      @default(0)
+  includeInCalendar Boolean @default(true)
   createdAt DateTime @default(now())
 
   trip     Trip      @relation(fields: [tripId], references: [id])

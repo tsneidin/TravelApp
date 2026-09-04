@@ -43,7 +43,7 @@ contentRouter.get(
       filename: p.filename,
       placeId: p.placeId,
       createdAt: p.createdAt,
-      url: `${config.publicBaseUrl}/api/uploads/${p.filename}`,
+      url: `/api/uploads/${encodeURIComponent(p.filename)}`,
     })) });
   }),
 );
@@ -81,7 +81,7 @@ contentRouter.post(
         filename: p.filename,
         placeId: p.placeId,
         createdAt: p.createdAt,
-        url: `${config.publicBaseUrl}/api/uploads/${p.filename}`,
+        url: `/api/uploads/${encodeURIComponent(p.filename)}`,
       })),
     });
   }),

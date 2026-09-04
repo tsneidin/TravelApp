@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.22` — check the bottom of the left sidebar for the
+**Current version:** `0.0.24` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -161,6 +161,18 @@ AI_MODEL=llama3
 3. Forward booking confirmation emails to the monitored inbox, add senders to
    `EMAIL_ALLOWLIST` if wanted.
 4. Imports appear under **Email imports** in the app for confirmation/assignment.
+
+## Google API key test
+
+After adding the keys to the root `.env`, run:
+
+```bash
+node scripts/test-google-apis.mjs
+# Override the browser-key referrer when needed:
+node scripts/test-google-apis.mjs --referrer http://192.168.86.86:8070/
+```
+
+The utility never displays the keys. The Places test requests one result using the same paid-tier fields used by AI Assist.
 
 ## Verification
 ```bash

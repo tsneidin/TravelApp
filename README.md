@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.31` — check the bottom of the left sidebar for the
+**Current version:** `0.0.32` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -15,10 +15,10 @@ new version number to confirm the rebuild deployed.
   rewrites `version.ts` so the next build carries a new visible version.
 
 ## Features
-- Trips & day-by-day itineraries (drag-to-reorder places)
+- Trips & day-by-day itineraries (drag-to-reorder places, day notes, calendar visibility controls)
 - Google Maps overview with standalone itinerary pins, transportation-only route segments, photos, and item details
-- Budget & expenses (currency, categories, totals)
-- Photos & journal entries
+- Budget & expenses (currency, categories, totals, and editable notes)
+- Photos and editable journal entries, including day-level journal creation
 - Packing checklists
 - Bookings (manual + email-imported) with multiple editable notes per booking
 - Lightweight multi-user (owner / editor / viewer)

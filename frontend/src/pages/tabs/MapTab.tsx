@@ -17,8 +17,13 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
     [trip.days],
   );
   const places = useMemo<PlaceWithStop[]>(() => {
-    const dayNumbers = new Map(sortedDays.map((day, index) => [day.id, index + 1]));
-    return (trip.places ?? []).map((place) => ({ ...place, stopNumber: dayNumbers.get(place.dayId ?? '') }));
+    const scheduled = sortedDays.flatMap((day) => day.places);
+    const scheduledIds = new Set(scheduled.map((place) => place.id));
+    const unassigned = (trip.places ?? []).filter((place) => !scheduledIds.has(place.id));
+    return [...scheduled, ...unassigned].map((place, index) => ({
+      ...place,
+      stopNumber: index + 1,
+    }));
   }, [sortedDays, trip.places]);
 
   const saveDraft = async () => {

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Plus, Trash2, Image as ImageIcon, PenSquare, Pencil } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete, uploadPhotos } from '../../lib/api';
-import type { Trip, JournalEntry } from '../../lib/types';
+import type { Trip, JournalEntry, Photo } from '../../lib/types';
 import { Modal } from '../../components/Modal';
 
 interface JournalForm {
@@ -19,6 +19,9 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
   const [jForm, setJForm] = useState<JournalForm>({ title: '', body: '', date: '' });
   const [busy, setBusy] = useState(false);
+  const [viewingPhoto, setViewingPhoto] = useState<Photo | null>(null);
+
+  const photoUrl = (photo: Photo) => `/api/uploads/${encodeURIComponent(photo.filename)}`;
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -91,7 +94,19 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
           <div className="grid grid-3">
             {photos.map((p) => (
               <div key={p.id} className="card" style={{ padding: 8, position: 'relative' }}>
-                <img src={p.url} alt={p.caption || 'trip photo'} style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 10 }} />
+                <button
+                  type="button"
+                  onClick={() => setViewingPhoto(p)}
+                  title="View full screen"
+                  style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'zoom-in' }}
+                >
+                  <img
+                    src={photoUrl(p)}
+                    alt={p.caption || 'trip photo'}
+                    loading="lazy"
+                    style={{ display: 'block', width: '100%', height: 160, objectFit: 'cover', borderRadius: 10 }}
+                  />
+                </button>
                 <div className="row between mt" style={{ gap: 6 }}>
                   <span className="small muted">{p.caption || 'No caption'}</span>
                   <button className="btn sm ghost danger" onClick={() => removePhoto(p.id)}><Trash2 size={13} /></button>
@@ -130,6 +145,20 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
           ))
         )}
       </div>
+
+      {viewingPhoto && (
+        <div className="photo-lightbox" role="dialog" aria-modal="true" aria-label={viewingPhoto.caption || 'Trip photo'}>
+          <button type="button" className="photo-lightbox-backdrop" aria-label="Close photo" onClick={() => setViewingPhoto(null)} />
+          <div className="photo-lightbox-content">
+            <img src={photoUrl(viewingPhoto)} alt={viewingPhoto.caption || 'trip photo'} />
+            <div className="photo-lightbox-actions">
+              <span className="grow">{viewingPhoto.caption || 'Trip photo'}</span>
+              <a className="btn" href={photoUrl(viewingPhoto)} target="_blank" rel="noreferrer">Open original</a>
+              <button type="button" className="btn primary" onClick={() => setViewingPhoto(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {jOpen && (
         <Modal title={editingJournalId ? "Edit journal entry" : "New journal entry"} onClose={() => setJOpen(false)}>

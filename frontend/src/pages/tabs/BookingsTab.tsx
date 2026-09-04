@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Plus, Trash2, FileText } from 'lucide-react';
-import { apiPost, apiDelete } from '../../lib/api';
+import { Plus, Trash2, FileText, StickyNote } from 'lucide-react';
+import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
 import type { Trip, Booking, BookingType } from '../../lib/types';
 import { Modal } from '../../components/Modal';
@@ -26,6 +26,9 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rawBooking, setRawBooking] = useState<Booking | null>(null);
+  const [noteBooking, setNoteBooking] = useState<Booking | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
+  const [newNote, setNewNote] = useState('');
   const [form, setForm] = useState<BookingForm>({ type: 'hotel', title: '', provider: '', reference: '', startAt: '', endAt: '' });
 
   const save = async () => {
@@ -49,6 +52,39 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
     if (!confirm(`Remove booking "${b.title}"?`)) return;
     await apiDelete(`/trips/${trip.id}/bookings/${b.id}`);
     await reload();
+  };
+
+  const bookingNotes = (booking: Booking): string[] => {
+    const value = booking.details && typeof booking.details === 'object'
+      ? (booking.details as Record<string, unknown>).notes
+      : undefined;
+    return Array.isArray(value) ? value.filter((note): note is string => typeof note === 'string') : [];
+  };
+
+  const openNotes = (booking: Booking) => {
+    setNoteBooking(booking);
+    setNotes(bookingNotes(booking));
+    setNewNote('');
+  };
+
+  const saveNotes = async () => {
+    if (!noteBooking) return;
+    setBusy(true);
+    try {
+      const existing = noteBooking.details && typeof noteBooking.details === 'object'
+        ? noteBooking.details
+        : {};
+      const finalNotes = [...notes, ...(newNote.trim() ? [newNote.trim()] : [])]
+        .map((note) => note.trim())
+        .filter(Boolean);
+      await apiPatch(`/trips/${trip.id}/bookings/${noteBooking.id}`, {
+        details: { ...existing, notes: finalNotes },
+      });
+      setNoteBooking(null);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const typeLabel = (t: BookingType) => TYPES.find((x) => x.value === t)?.label ?? t;
@@ -75,7 +111,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <table>
             <thead>
               <tr>
-                <th>Type</th><th>Title</th><th>Provider</th><th>Reference</th><th>Starts</th><th></th>
+                <th>Type</th><th>Title</th><th>Provider</th><th>Reference</th><th>Starts</th><th>Notes</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -86,8 +122,12 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                   <td>{b.provider || '—'}</td>
                   <td>{b.reference || '—'}</td>
                   <td>{b.startAt ? new Date(b.startAt).toLocaleDateString() : '—'}</td>
+                  <td>{bookingNotes(b).length || '—'}</td>
                   <td>
                     <div className="row" style={{ gap: 4 }}>
+                      <button className="btn sm ghost" title="Add or edit booking notes" onClick={() => openNotes(b)}>
+                        <StickyNote size={13} /> {bookingNotes(b).length || ''}
+                      </button>
                       {hasRaw(b) && (
                         <button className="btn sm ghost" title="View raw source text" onClick={() => setRawBooking(b)}>
                           <FileText size={13} />
@@ -138,6 +178,35 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <div className="modal-actions">
             <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={save} disabled={busy || !form.title}>Save</button>
+          </div>
+        </Modal>
+      )}
+
+
+      {noteBooking && (
+        <Modal title={`Notes — ${noteBooking.title}`} onClose={() => setNoteBooking(null)} wide>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {notes.map((note, index) => (
+              <div className="row" key={index} style={{ alignItems: 'flex-start' }}>
+                <textarea
+                  rows={3}
+                  value={note}
+                  aria-label={`Booking note ${index + 1}`}
+                  onChange={(event) => setNotes((current) => current.map((item, i) => i === index ? event.target.value : item))}
+                />
+                <button className="btn sm ghost danger" title="Delete note" onClick={() => setNotes((current) => current.filter((_, i) => i !== index))}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+            <div className="field">
+              <label>Add another note</label>
+              <textarea rows={3} value={newNote} onChange={(event) => setNewNote(event.target.value)} placeholder="Reservation detail, reminder, special request…" />
+            </div>
+          </div>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setNoteBooking(null)}>Cancel</button>
+            <button className="btn primary" onClick={() => void saveNotes()} disabled={busy}>Save notes</button>
           </div>
         </Modal>
       )}

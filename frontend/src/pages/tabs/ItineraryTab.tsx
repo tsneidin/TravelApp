@@ -12,10 +12,11 @@ interface PlaceForm {
   address: string;
   lat?: string;
   lng?: string;
+  website: string;
   notes: string;
 }
 
-const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', notes: '' };
+const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', website: '', notes: '' };
 
 export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const navigate = useNavigate();
@@ -47,6 +48,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       address: p.address ?? '',
       lat: p.lat != null ? String(p.lat) : '',
       lng: p.lng != null ? String(p.lng) : '',
+      website: p.website ?? '',
       notes: p.notes ?? '',
     });
     setOpen(true);
@@ -69,6 +71,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         address: editing.address || undefined,
         lat: editing.lat ? Number(editing.lat) : null,
         lng: editing.lng ? Number(editing.lng) : null,
+        website: editing.website || undefined,
         notes: editing.notes || undefined,
         dayId: editing.dayId || undefined,
       };
@@ -130,7 +133,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     >
       <GripVertical size={14} className="muted" style={{ cursor: 'grab' }} />
       <div className="grow">
-        <div className="title">{p.name}</div>
+        <div className="title">
+          {p.website ? (
+            <a href={p.website} target="_blank" rel="noreferrer">{p.name} ↗</a>
+          ) : p.name}
+        </div>
         <div className="sub">
           <MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || (p.lat != null ? `${p.lat.toFixed(3)}, ${p.lng?.toFixed(3)}` : 'No location')}
           {p.category ? ` · ${p.category}` : ''}
@@ -257,6 +264,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </select>
             </div>
           )}
+          <div className="field">
+            <label>Website</label>
+            <input
+              type="url"
+              value={editing.website}
+              onChange={(e) => setEditing({ ...editing, website: e.target.value })}
+              placeholder="https://…"
+            />
+          </div>
           <div className="field">
             <label>Notes</label>
             <textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />

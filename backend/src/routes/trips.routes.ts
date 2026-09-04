@@ -74,6 +74,16 @@ tripsRouter.get(
       : {
           OR: [{ ownerId: u.id }, { members: { some: { userId: u.id } } }],
         };
+    const datedTrips = await prisma.trip.findMany({
+      where,
+      select: { id: true, startDate: true, endDate: true },
+    });
+    await prisma.$transaction(async (tx) => {
+      for (const trip of datedTrips) {
+        await ensureTripDays(tx, trip.id, trip.startDate, trip.endDate);
+      }
+    });
+
     const trips = await prisma.trip.findMany({
       where,
       include: {
@@ -120,6 +130,13 @@ tripsRouter.get(
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
     await requireTripAccess(req, tripId, 'viewer');
+    const datedTrip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      select: { startDate: true, endDate: true },
+    });
+    if (datedTrip) {
+      await prisma.$transaction((tx) => ensureTripDays(tx, tripId, datedTrip.startDate, datedTrip.endDate));
+    }
     res.json({ trip: await loadTrip(tripId) });
   }),
 );

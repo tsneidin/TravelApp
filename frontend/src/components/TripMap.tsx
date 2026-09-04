@@ -165,7 +165,7 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
 
     if (focusPlace) {
       if (focusPlace.lat != null && focusPlace.lng != null) return;
-      const q = `${focusPlace.name} ${focusPlace.address ?? ''}`.trim();
+      const q = `${focusPlace.name} ${focusPlace.address ?? ''} ${destination ?? ''}`.trim();
       if (!q) return;
       geocodeDestination(q).then((c) => {
         if (alive && c) setFocusGeo(c);
@@ -225,6 +225,14 @@ export function TripMap({ places, destination, focusPlaceId }: { places: Place[]
           </Popup>
         </Marker>
       ))}
+      {focusPlace && focusGeo && (
+        <Marker position={[focusGeo.lat, focusGeo.lng]} icon={marker}>
+          <Popup>
+            <b>{focusPlace.name}</b>
+            {focusPlace.address ? <div style={{ fontSize: 11, opacity: 0.8 }}>{focusPlace.address}</div> : null}
+          </Popup>
+        </Marker>
+      )}
       {withCoords.length > 1 && (
         <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 500, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: 'var(--muted)' }}>
           {withCoords.length} stops · ~{Math.round(haversineKm(withCoords[0], withCoords[withCoords.length - 1]))} km

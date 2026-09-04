@@ -244,6 +244,7 @@ contentRouter.post(
         tripId,
         userId: user.id,
         description: req.body.description,
+        notes: req.body.notes,
         amount: Number(req.body.amount),
         currency: req.body.currency || 'USD',
         category: req.body.category || 'other',
@@ -264,6 +265,7 @@ contentRouter.patch(
       where: { id: expenseId },
       data: {
         description: req.body.description,
+        notes: req.body.notes,
         amount: req.body.amount !== undefined ? Number(req.body.amount) : undefined,
         currency: req.body.currency,
         category: req.body.category,

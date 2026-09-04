@@ -4,6 +4,7 @@ import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
 import { syncBookingToItinerary } from '../services/bookingHelper.js';
 import type { MemberRole, Prisma } from '@prisma/client';
+import { config } from '../config.js';
 
 const ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
 
@@ -27,7 +28,13 @@ async function loadTrip(tripId: string) {
     },
   });
   if (!trip) throw notFound('Trip not found');
-  return trip;
+  return {
+    ...trip,
+    photos: trip.photos.map((photo) => ({
+      ...photo,
+      url: `${config.publicBaseUrl}/api/uploads/${photo.filename}`,
+    })),
+  };
 }
 
 function isOwner(trip: { ownerId: string }, userId: string) {

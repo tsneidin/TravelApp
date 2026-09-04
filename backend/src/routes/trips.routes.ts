@@ -4,7 +4,6 @@ import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
 import { syncBookingToItinerary } from '../services/bookingHelper.js';
 import type { MemberRole, Prisma } from '@prisma/client';
-import { config } from '../config.js';
 
 const ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
 
@@ -32,7 +31,7 @@ async function loadTrip(tripId: string) {
     ...trip,
     photos: trip.photos.map((photo) => ({
       ...photo,
-      url: `${config.publicBaseUrl}/api/uploads/${photo.filename}`,
+      url: `/api/uploads/${encodeURIComponent(photo.filename)}`,
     })),
   };
 }

@@ -14,12 +14,15 @@ export function MapTab({ trip }: { trip: Trip }) {
         <h2 className="panel-title" style={{ margin: 0 }}>Trip map</h2>
         <span className="badge">OpenStreetMap · CARTO Dark</span>
       </div>
-      <TripMap places={places} />
+      <TripMap places={places} destination={trip.destination} />
 
       {withCoords.length === 0 && (
         <div className="empty-state mt">
           <div className="big">No placed stops yet</div>
-          <p>Add lat/lng to a place in the Itinerary tab to see it on the map.</p>
+          <p>
+            Showing the trip destination (<b>{trip.destination || '—'}</b>) on the map.
+            Add lat/lng to a place in the Itinerary tab to switch focus to your stops.
+          </p>
         </div>
       )}
 

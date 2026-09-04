@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Place } from '../lib/types';
@@ -14,8 +14,7 @@ const marker = L.divIcon({
 });
 
 // Free, no-API-key tile sources. Primary: official OSM standard tiles (reliable,
-// no key required). Fallback: CARTO dark (matches the app theme) if OSM is down,
-// and a plain OSM warm style as a second fallback.
+// no key required). Fallback: subdomain variant if the primary errors.
 const TILE_SOURCES: { url: string; attribution: string; subdomains?: string }[] = [
   {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -39,10 +38,35 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// Small in-memory cache so we don't hammer Nominatim for the same destination.
+const geoCache = new Map<string, { lat: number; lng: number }>();
+
 /**
- * Wraps a TileLayer so that if the primary tile source fails (errors, or the
- * server returns an image that is actually an error notice), we fall back to
- * the next source. This avoids ever showing a "you need an API key" notice.
+ * Geocode a free-text destination via the OpenStreetMap Nominatim search API
+ * (no API key required). Used to centre the map on the trip location.
+ */
+async function geocodeDestination(query: string): Promise<{ lat: number; lng: number } | null> {
+  const key = query.trim().toLowerCase();
+  if (!key) return null;
+  if (geoCache.has(key)) return geoCache.get(key) ?? null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { lat?: string; lon?: string }[];
+    const hit = data?.[0];
+    if (!hit?.lat || !hit?.lon) return null;
+    const coords = { lat: Number(hit.lat), lng: Number(hit.lon) };
+    geoCache.set(key, coords);
+    return coords;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wraps a TileLayer so that if the primary tile source fails, we fall back to
+ * the next source to avoid a blank map or an "API key" notice.
  */
 function ResilientTileLayer({
   sources,
@@ -88,30 +112,82 @@ function ResilientTileLayer({
   );
 }
 
-export function TripMap({ places }: { places: Place[] }) {
+type MapFocusTarget =
+  | { kind: 'bounds'; pts: [number, number][] }
+  | { kind: 'point'; lat: number; lng: number; zoom: number }
+  | { kind: 'world' };
+
+/**
+ * Child of MapContainer that moves the viewport when the focus target changes:
+ *   1. Multiple places with coords  -> fit bounds
+ *   2. Single place with coords     -> centre on it (city zoom)
+ *   3. No place coords, destination -> centre on geocoded destination
+ *   4. Otherwise                   -> world view
+ */
+function MapFocus({ focus }: { focus: MapFocusTarget }) {
+  const map = useMap();
+  const key = useMemo(() => {
+    if (focus.kind === 'bounds') return `b:${focus.pts.map((p) => p.join(',')).join(';')}`;
+    if (focus.kind === 'point') return `p:${focus.lat},${focus.lng},${focus.zoom}`;
+    return 'w';
+  }, [focus]);
+
+  useEffect(() => {
+    if (focus.kind === 'world') {
+      map.setView([20, 0], 2, { animate: false });
+    } else if (focus.kind === 'bounds') {
+      map.fitBounds(L.latLngBounds(focus.pts), { padding: [40, 40] });
+    } else {
+      map.setView([focus.lat, focus.lng], focus.zoom, { animate: true });
+    }
+  }, [key]);
+
+  return null;
+}
+
+export function TripMap({ places, destination }: { places: Place[]; destination?: string | null }) {
   const withCoords = places.filter((p) => p.lat != null && p.lng != null) as (Place & {
     lat: number;
     lng: number;
   })[];
 
-  const bounds: L.LatLngBoundsExpression | undefined =
-    withCoords.length > 1
-      ? L.latLngBounds(withCoords.map((p) => [p.lat, p.lng] as [number, number]))
-      : undefined;
+  const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
 
-  const path =
-    withCoords.length > 1
-      ? withCoords.map((p) => [p.lat, p.lng] as [number, number])
-      : [];
+  // Geocode the destination only when there are no places with coordinates to focus on.
+  useEffect(() => {
+    let alive = true;
+    if (withCoords.length > 0) {
+      setGeo(null);
+      return;
+    }
+    if (!destination) return;
+    setGeo(null);
+    geocodeDestination(destination).then((c) => {
+      if (alive && c) setGeo(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [destination, withCoords.length]);
+
+  const focus = useMemo<MapFocusTarget>(() => {
+    if (withCoords.length >= 2) {
+      return { kind: 'bounds', pts: withCoords.map((p) => [p.lat, p.lng] as [number, number]) };
+    }
+    if (withCoords.length === 1) {
+      const p = withCoords[0];
+      return { kind: 'point', lat: p.lat, lng: p.lng, zoom: 12 };
+    }
+    if (geo) return { kind: 'point', lat: geo.lat, lng: geo.lng, zoom: 8 };
+    return { kind: 'world' };
+  }, [withCoords, geo]);
+
+  const path = withCoords.length > 1 ? withCoords.map((p) => [p.lat, p.lng] as [number, number]) : [];
 
   return (
-    <MapContainer
-      center={withCoords[0] ? [withCoords[0].lat, withCoords[0].lng] : [20, 0]}
-      zoom={2}
-      bounds={bounds}
-      style={{ height: 480, width: '100%' }}
-    >
+    <MapContainer center={[20, 0]} zoom={2} style={{ height: 480, width: '100%' }}>
       <ResilientTileLayer sources={TILE_SOURCES} maxZoom={19} />
+      <MapFocus focus={focus} />
       {path.length > 1 && (
         <Polyline
           positions={path}
@@ -122,9 +198,7 @@ export function TripMap({ places }: { places: Place[] }) {
         <Marker key={p.id} position={[p.lat, p.lng]} icon={marker}>
           <Popup>
             <b>{p.name}</b>
-            {p.address ? (
-              <div style={{ fontSize: 11, opacity: 0.8 }}>{p.address}</div>
-            ) : null}
+            {p.address ? <div style={{ fontSize: 11, opacity: 0.8 }}>{p.address}</div> : null}
             {p.notes ? <div style={{ fontSize: 11, opacity: 0.8 }}>{p.notes}</div> : null}
           </Popup>
         </Marker>

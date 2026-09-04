@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, FileText } from 'lucide-react';
 import { apiPost, apiDelete } from '../../lib/api';
+import { endForStart } from '../../lib/dateRange';
 import type { Trip, Booking, BookingType } from '../../lib/types';
 import { Modal } from '../../components/Modal';
 
@@ -127,11 +128,11 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <div className="grid grid-2">
             <div className="field">
               <label>Starts</label>
-              <input type="datetime-local" value={form.startAt} onChange={(e) => setForm({ ...form, startAt: e.target.value })} />
+              <input type="datetime-local" value={form.startAt} onChange={(e) => { const startAt = e.target.value; setForm({ ...form, startAt, endAt: endForStart(startAt, form.endAt) }); }} />
             </div>
             <div className="field">
               <label>Ends</label>
-              <input type="datetime-local" value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} />
+              <input type="datetime-local" min={form.startAt || undefined} value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} />
             </div>
           </div>
           <div className="modal-actions">

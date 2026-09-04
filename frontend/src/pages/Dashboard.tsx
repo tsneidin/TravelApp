@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, MapPin, ArrowRight } from 'lucide-react';
 import { apiGet, apiPost } from '../lib/api';
+import { endForStart } from '../lib/dateRange';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
 import { Modal } from '../components/Modal';
@@ -123,11 +124,11 @@ export function Dashboard() {
           <div className="grid grid-2">
             <div className="field">
               <label>Start date</label>
-              <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+              <input type="date" value={form.startDate} onChange={(e) => { const startDate = e.target.value; setForm({ ...form, startDate, endDate: endForStart(startDate, form.endDate) }); }} />
             </div>
             <div className="field">
               <label>End date</label>
-              <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+              <input type="date" min={form.startDate || undefined} value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
             </div>
           </div>
           <div className="field small">

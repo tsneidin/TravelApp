@@ -626,8 +626,11 @@ export async function processTripChat(
   const explicitConfirmation =
     /^(yes|yep|yeah|confirm|confirmed|go ahead|do it|proceed|add it|add them)\b/i.test(userMessage.trim()) &&
     /(confirm|shall i|should i|would you like|ready to add|no changes were made)/i.test(lastAssistant);
+  const originalRequest = explicitConfirmation
+    ? [...history].reverse().find((turn) => turn.role === 'user')?.content ?? userMessage
+    : userMessage;
   const toolContext = {
-    sourceText: userMessage,
+    sourceText: originalRequest,
     destination,
     recommendationContext,
     allowMutation: explicitConfirmation,

@@ -1,0 +1,73 @@
+# TravelApp — Unraid Docker Compose
+# Usage:
+#   1. Copy .env.example to .env in this folder and fill in values.
+#   2. docker compose up -d --build
+#   Web UI: http://<unraid-ip>:8070
+#
+# Data persists under /mnt/user/appdata/travelapp/ (db, uploads).
+# Create the directory on Unraid first if it does not exist.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: travelapp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-travel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-travelapp}
+    volumes:
+      - /mnt/user/appdata/travelapp/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-travel} -d ${POSTGRES_DB:-travelapp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - travelapp
+
+  api:
+    build: ./backend
+    container_name: travelapp-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-travel}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-travelapp}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      PORT: 3000
+      UPLOAD_DIR: /data/uploads
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8070}
+      BOOTSTRAP_EMAIL: ${BOOTSTRAP_EMAIL:-}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:-}
+      BOOTSTRAP_NAME: ${BOOTSTRAP_NAME:-Admin}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      IMAP_HOST: ${IMAP_HOST:-imap.gmail.com}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASS: ${IMAP_PASS:-}
+      IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
+      IMAP_POLL_MINUTES: ${IMAP_POLL_MINUTES:-5}
+      EMAIL_ALLOWLIST: ${EMAIL_ALLOWLIST:-}
+      IMPORT_UNSEEN_FIRST: ${IMPORT_UNSEEN_FIRST:-true}
+    volumes:
+      - /mnt/user/appdata/travelapp/uploads:/data/uploads
+    networks:
+      - travelapp
+
+  web:
+    build: ./frontend
+    container_name: travelapp-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8070:80"
+    networks:
+      - travelapp
+
+networks:
+  travelapp:
+    name: travelapp
+    driver: bridge

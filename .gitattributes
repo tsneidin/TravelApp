@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+# Shell scripts / entry points
+*.sh text eol=lf
+
+# Explicitly binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

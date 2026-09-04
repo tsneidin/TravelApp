@@ -656,7 +656,7 @@ tbody tr.total-row td {
   min-height: 100vh;
 }
 .side-nav {
-  width: 232px;
+  width: 248px;
   flex-shrink: 0;
   min-height: 100vh;
   position: sticky;
@@ -670,6 +670,35 @@ tbody tr.total-row td {
   border-right: 1px solid var(--line);
   box-shadow: 2px 0 16px rgba(0, 0, 0, 0.28);
   z-index: 60;
+  overflow: hidden;
+}
+.side-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 8px 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.side-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.side-add-btn:hover {
+  border-color: var(--accent);
+  background: rgba(34, 211, 238, 0.1);
 }
 .side-brand {
   display: flex;
@@ -709,6 +738,90 @@ tbody tr.total-row td {
   color: var(--accent);
   background: rgba(34, 211, 238, 0.1);
   border: 1px solid rgba(34, 211, 238, 0.22);
+}
+
+/* trip folder tree */
+.trip-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.trip-node {
+  display: flex;
+  flex-direction: column;
+}
+.trip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: all 0.12s;
+}
+.trip-row:hover {
+  color: var(--text);
+  background: var(--card);
+}
+.trip-row.active {
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.1);
+}
+.trip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.trip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trip-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px;
+  padding-left: 30px;
+}
+.side-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.12s;
+}
+.side-tab:hover {
+  color: var(--text);
+}
+.side-tab.active {
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.08);
+}
+.side-tab-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.trip-empty {
+  padding: 6px 10px;
+  line-height: 1.4;
 }
 .side-spacer {
   flex: 1;
@@ -781,6 +894,7 @@ tbody tr.total-row td {
     box-shadow: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+    overflow: visible;
   }
   .side-brand {
     padding: 0 10px 0 0;
@@ -790,8 +904,31 @@ tbody tr.total-row td {
     flex-wrap: wrap;
     gap: 6px;
   }
+  .side-section-label {
+    padding: 0 6px;
+  }
+  .trip-tree {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .trip-node {
+    flex-direction: column;
+  }
+  .trip-row {
+    padding: 6px 10px;
+  }
+  .trip-subnav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding-left: 26px;
+    gap: 4px;
+  }
   .side-spacer {
     flex: 0;
+  }
+  .side-version {
+    padding: 0 8px;
   }
   .side-user {
     margin-left: auto;

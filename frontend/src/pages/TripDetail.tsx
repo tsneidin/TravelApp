@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { CalendarDays, Map as MapIcon, Wallet, Image, ListChecks, Ticket } from 'lucide-react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiDelete } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { Trip } from '../lib/types';
@@ -21,22 +20,24 @@ type Tab =
   | 'packing'
   | 'bookings';
 
-const TABS: { key: Tab; label: string; icon: typeof MapIcon }[] = [
-  { key: 'itinerary', label: 'Itinerary', icon: CalendarDays },
-  { key: 'map', label: 'Map', icon: MapIcon },
-  { key: 'budget', label: 'Budget', icon: Wallet },
-  { key: 'photos', label: 'Photos & journal', icon: Image },
-  { key: 'packing', label: 'Packing', icon: ListChecks },
-  { key: 'bookings', label: 'Bookings', icon: Ticket },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'itinerary', label: 'Itinerary' },
+  { key: 'map', label: 'Map' },
+  { key: 'budget', label: 'Budget' },
+  { key: 'photos', label: 'Photos & journal' },
+  { key: 'packing', label: 'Packing' },
+  { key: 'bookings', label: 'Bookings' },
 ];
 
 export function TripDetail() {
   const { tripId } = useParams();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('itinerary');
+  const requestedTab = (searchParams.get('tab') as Tab | null) ?? 'itinerary';
+  const tab = TABS.some((t) => t.key === requestedTab) ? requestedTab : 'itinerary';
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState({ name: '', destination: '', currency: 'USD', startDate: '', endDate: '', description: '' });
 
@@ -110,18 +111,6 @@ export function TripDetail() {
           <button className="btn" onClick={openEdit}>Edit trip</button>
           {isOwner && <button className="btn danger" onClick={remove}>Delete</button>}
         </div>
-      </div>
-
-      <div className="tabs">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
-              <Icon size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
-              {t.label}
-            </button>
-          );
-        })}
       </div>
 
       {tab === 'itinerary' && <ItineraryTab trip={trip} reload={load} />}

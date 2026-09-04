@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, MapPin, ArrowRight } from 'lucide-react';
 import { apiGet, apiPost } from '../lib/api';
 import type { Trip } from '../lib/types';
@@ -7,6 +7,7 @@ import { Spinner } from '../components/Spinner';
 import { Modal } from '../components/Modal';
 
 export function Dashboard() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -20,6 +21,14 @@ export function Dashboard() {
     endDate: '',
     description: '',
   });
+
+  // Sidebar "+" navigates to /?new=1 — open the create dialog and clean the URL.
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowCreate(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const load = async () => {
     try {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
-  Columns, List, Sparkles, Navigation
+  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
@@ -33,6 +33,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [busy, setBusy] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
+  const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string } | null>(null);
+  const [journalDay, setJournalDay] = useState<{ date: string; label: string } | null>(null);
+  const [journalForm, setJournalForm] = useState({ title: '', body: '' });
 
   // Wanderlog Split View State
   const [viewMode, setViewMode] = useState<'split' | 'full'>(() => {
@@ -156,6 +159,30 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     await reload();
   };
 
+  const saveDayNotes = async () => {
+    if (!dayEditor) return;
+    await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, { notes: dayEditor.notes });
+    setDayEditor(null);
+    await reload();
+  };
+
+  const saveDayJournal = async () => {
+    if (!journalDay || !journalForm.title.trim()) return;
+    await apiPost(`/trips/${trip.id}/journal`, {
+      title: journalForm.title.trim(),
+      body: journalForm.body,
+      date: journalDay.date.slice(0, 10),
+    });
+    setJournalDay(null);
+    setJournalForm({ title: '', body: '' });
+    await reload();
+  };
+
+  const setCalendarVisibility = async (place: Place, includeInCalendar: boolean) => {
+    await apiPatch(`/trips/${trip.id}/places/${place.id}`, { includeInCalendar });
+    await reload();
+  };
+
   const handlePlaceClick = (p: Place) => {
     setActivePlaceId(p.id);
     if (viewMode === 'full') {
@@ -193,6 +220,14 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       onClick={() => setActivePlaceId(p.id)}
       onMouseEnter={() => setActivePlaceId(p.id)}
     >
+      <input
+        type="checkbox"
+        checked={p.includeInCalendar !== false}
+        title="Include in trip calendar"
+        aria-label={`Include ${p.name} in trip calendar`}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => void setCalendarVisibility(p, event.target.checked)}
+      />
       <GripVertical size={14} className="muted grip-handle" style={{ cursor: 'grab' }} />
       {stopNumber != null && (
         <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
@@ -329,6 +364,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <span className="day-stop-count small muted">({day.places.length} stops)</span>
                 </div>
                 <div className="row">
+                  <button type="button" className="btn sm ghost" title="Edit day notes" onClick={() => setDayEditor({ id: day.id, label: day.label || `Day ${dayIndex + 1}`, notes: day.notes || '' })}>
+                    <NotebookPen size={13} /> Notes
+                  </button>
+                  <button type="button" className="btn sm ghost" title="Add journal entry for this day" onClick={() => { setJournalDay({ date: day.date, label: day.label || `Day ${dayIndex + 1}` }); setJournalForm({ title: '', body: '' }); }}>
+                    <BookOpen size={13} /> Journal
+                  </button>
                   <button
                     type="button"
                     className="btn sm ghost"
@@ -346,6 +387,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </button>
                 </div>
               </div>
+
+              {day.notes && <div className="small mt mb" style={{ whiteSpace: 'pre-wrap' }}><NotebookPen size={12} style={{ verticalAlign: -2 }} /> {day.notes}</div>}
 
               {day.places.length === 0 ? (
                 <div className="small muted mt mb">Nothing planned this day yet.</div>
@@ -462,6 +505,37 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           </div>
         )}
       </div>
+
+
+      {dayEditor && (
+        <Modal title={`Notes — ${dayEditor.label}`} onClose={() => setDayEditor(null)}>
+          <div className="field">
+            <label>Day notes</label>
+            <textarea rows={7} value={dayEditor.notes} onChange={(event) => setDayEditor({ ...dayEditor, notes: event.target.value })} placeholder="General plans, reminders, weather backup, meeting details…" autoFocus />
+          </div>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setDayEditor(null)}>Cancel</button>
+            <button className="btn primary" onClick={() => void saveDayNotes()}>Save notes</button>
+          </div>
+        </Modal>
+      )}
+
+      {journalDay && (
+        <Modal title={`Journal entry — ${journalDay.label}`} onClose={() => setJournalDay(null)}>
+          <div className="field">
+            <label>Title</label>
+            <input value={journalForm.title} onChange={(event) => setJournalForm({ ...journalForm, title: event.target.value })} autoFocus />
+          </div>
+          <div className="field">
+            <label>Entry</label>
+            <textarea rows={7} value={journalForm.body} onChange={(event) => setJournalForm({ ...journalForm, body: event.target.value })} />
+          </div>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setJournalDay(null)}>Cancel</button>
+            <button className="btn primary" disabled={!journalForm.title.trim()} onClick={() => void saveDayJournal()}>Save journal entry</button>
+          </div>
+        </Modal>
+      )}
 
       {sourcePlace && (
         <Modal title={`Source — ${sourcePlace.name}`} onClose={() => setSourcePlace(null)}>

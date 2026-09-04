@@ -44,35 +44,55 @@ npm install
 npm run dev                # http://localhost:5173  (proxies /api to 3000)
 ```
 
-## Deploy on Unraid via Git (Compose Manager / Container Manager)
+## Deploy on Unraid via Compose Manager
 
-This repo is a git project. `docker-compose.yml` lives at the root, so Unraid's
-**Compose Manager** (or Unraid 7 **Container Manager**) can clone it and bring
-the stack up in one step.
+This repo is git-based and ships a root `docker-compose.yml`. On Unraid use the
+**Compose Manager** plugin (Docker tab → **Compose**). The plugin's native
+"Add New Stack" has a **Stack Directory** field you point at a copy of this
+repo. (The "Pull from GitHub" field is hidden/unwired in this plugin fork, so
+get the files on the server first — either way is fine below.)
 
-1. Create the appdata directory on Unraid:
-   `mkdir -p /mnt/user/appdata/travelapp`
-2. Clone the repo (or point Compose Manager at the repo URL):
-   ```bash
-   git clone <your-repo-url> /mnt/user/appdata/travelapp/repo
-   cd /mnt/user/appdata/travelapp/repo
-   ```
-3. Copy the template and edit real values:
-   ```bash
-   cp .env.example .env
-   nano .env   # set POSTGRES_PASSWORD, JWT_SECRET, PUBLIC_BASE_URL, bootstrap admin, IMAP creds
-   ```
-4. Build & start:
-   ```bash
-   docker compose up -d --build
-   ```
-   - Web UI: `http://<unraid-ip>:8070`
-   - Data persists under `/mnt/user/appdata/travelapp/` (db, uploads)
-   - The API container runs `prisma db push` at startup, so a fresh clone needs no manual migrations.
+### Option A — copy over SMB (no terminal)
+1. On this Windows machine, copy the whole `TravelApp` folder to the Unraid
+   appdata share: `\\TOWER\appdata\travelapp\repo` (via File Explorer).
+2. In the `repo` folder, copy `.env.example` → `.env`, then edit `.env` in
+   Notepad and set real values (see "Required .env values" below).
+3. In Unraid **Docker → Compose**: **Add New Stack** → name `TravelApp`,
+   **Stack Directory** = `/mnt/user/appdata/travelapp/repo`.
+4. Click **Update Stack** (the refresh icon — *not* the Up arrow, which does
+   not build). This runs `docker compose up -d --build`.
+5. Open `http://192.168.86.86:8070`.
 
-> **Note:** the `.env` file is gitignored on purpose — it never gets committed,
-> and it lives inside the cloned repo dir on the Unraid share rather than in the
-> repo itself. Pull to update code without touching your secrets.
+### Option B — git clone on the server (terminal)
+```bash
+mkdir -p /mnt/user/appdata/travelapp
+git clone https://github.com/tsneidin/TravelApp.git /mnt/user/appdata/travelapp/repo
+cd /mnt/user/appdata/travelapp/repo
+cp .env.example .env
+nano .env   # set real values (below), then Ctrl+O, Ctrl+X
+```
+Then follow steps 3–5 above (Add New Stack → Stack Directory
+`/mnt/user/appdata/travelapp/repo` → **Update Stack**).
+
+### Required .env values
+```ini
+POSTGRES_PASSWORD=change_me_strong_password
+JWT_SECRET=somelongrandomstring-of-at-least-32-characters
+PUBLIC_BASE_URL=http://192.168.86.86:8070
+# Optional bootstrap admin (created on first boot if DB is empty):
+BOOTSTRAP_EMAIL=you@example.com
+BOOTSTRAP_PASSWORD=choose_a_password
+# Optional email import — leave false until IMAP is configured:
+EMAIL_ENABLED=false
+```
+- Web UI: `http://192.168.86.86:8070`
+- Data persists under `/mnt/user/appdata/travelapp/` (db, uploads)
+- The API container runs `prisma db push` at startup, so a fresh clone needs no manual migrations.
+- Use the per-stack **autostart** toggle to start TravelApp automatically when the array boots.
+
+> **Note:** the `.env` file is gitignored — it never gets committed — and lives
+> in the repo dir on the Unraid share rather than in git, so `git pull` to
+> update code won't touch your secrets.
 
 Connect via the existing **swag** reverse proxy or **cloudflared** tunnel later
 for remote access.

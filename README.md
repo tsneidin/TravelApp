@@ -18,7 +18,7 @@ new version number to confirm the rebuild deployed.
 - Trips & day-by-day itineraries (drag-to-reorder places, day notes, calendar visibility controls)
 - Interactive Google Maps overview with click-to-preview places with Google Maps and itinerary actions, official website import, pasted Google Maps URL support, uniquely numbered trip-wide itinerary pins, transportation-only route segments, photos, and item details
 - Budget & expenses (currency, categories, totals, and editable notes)
-- Proxy-safe photo uploads/display and editable journal entries, including day-level journal creation
+- Persistent proxy-safe photo uploads, full-screen photo viewing, and editable journal entries, including day-level journal creation
 - Packing checklists with editable items and categories
 - Bookings (manual + email-imported) with multiple editable notes per booking
 - Lightweight multi-user (owner / editor / viewer)

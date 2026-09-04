@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
@@ -46,6 +46,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     () => (trip.places ?? []).filter((p) => !days.some((d) => d.places.some((x) => x.id === p.id))),
     [trip.places, days],
   );
+
+  // React Router updates the hash without performing the browser's normal
+  // anchor scroll. Explicitly scroll the independently scrolling center pane.
+  useEffect(() => {
+    if (!location.hash.startsWith('#day-')) return;
+    const elementId = decodeURIComponent(location.hash.slice(1));
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(elementId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location.hash, days.length]);
 
   // Approximate trip coordinates to bias place searches
   const tripCenter = useMemo(() => {

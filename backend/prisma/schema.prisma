@@ -123,6 +123,7 @@ model Place {
   lng       Float?
   notes     String?
   website   String?
+  sourceText String?
   startTime DateTime?
   endTime   DateTime?
   sortOrder Int      @default(0)

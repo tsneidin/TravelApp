@@ -174,7 +174,19 @@ tripsRouter.delete(
     const user = getUser(req);
     const trip = await loadTrip(tripId);
     if (!isOwner(trip, user.id) && !user.isAdmin) throw forbidden('Only the owner can delete a trip');
-    await prisma.trip.delete({ where: { id: tripId } });
+    await prisma.$transaction(async (tx) => {
+      await tx.photo.deleteMany({ where: { tripId } });
+      await tx.expense.deleteMany({ where: { tripId } });
+      await tx.booking.deleteMany({ where: { tripId } });
+      await tx.journalEntry.deleteMany({ where: { tripId } });
+      await tx.packingItem.deleteMany({ where: { tripId } });
+      await tx.emailImport.deleteMany({ where: { tripId } });
+      await tx.chatMessage.deleteMany({ where: { tripId } });
+      await tx.place.deleteMany({ where: { tripId } });
+      await tx.day.deleteMany({ where: { tripId } });
+      await tx.tripMember.deleteMany({ where: { tripId } });
+      await tx.trip.delete({ where: { id: tripId } });
+    });
     res.status(204).send();
   }),
 );
@@ -313,6 +325,7 @@ tripsRouter.post(
         lat: req.body.lat,
         lng: req.body.lng,
         website: req.body.website,
+        sourceText: req.body.sourceText,
         notes: req.body.notes,
         dayId: req.body.dayId,
         sortOrder: req.body.sortOrder ?? count,

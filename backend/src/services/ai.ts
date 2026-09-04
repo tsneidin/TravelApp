@@ -242,6 +242,7 @@ async function executeTool(
           lat: typeof a.lat === 'number' ? a.lat : undefined,
           lng: typeof a.lng === 'number' ? a.lng : undefined,
           website: a.website ? String(a.website) : undefined,
+          sourceText: ctx.sourceText,
           notes: notes || undefined,
         },
       });

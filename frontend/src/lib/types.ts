@@ -56,6 +56,7 @@ export interface Place {
   lng?: number | null;
   notes?: string | null;
   website?: string | null;
+  sourceText?: string | null;
   startTime?: string | null;
   endTime?: string | null;
   sortOrder: number;

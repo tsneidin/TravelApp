@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil } from 'lucide-react';
+import { Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
 import { Modal } from '../../components/Modal';
@@ -26,6 +26,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [editing, setEditing] = useState<PlaceForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
 
   const days = useMemo(() => trip.days ?? [], [trip.days]);
   const orphanPlaces = useMemo(
@@ -148,6 +149,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       <button className="btn sm ghost" title="Show on map" onClick={() => openOnMap(p)}>
         <MapIcon size={14} />
       </button>
+      {p.sourceText && (
+        <button className="btn sm ghost" title="View source text" onClick={() => setSourcePlace(p)}>
+          <FileText size={14} /> Source
+        </button>
+      )}
       <button className="btn sm ghost" title="Edit / notes" onClick={() => openEdit(p)}>
         <Pencil size={14} />
       </button>
@@ -223,6 +229,17 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             ))}
           </div>
         </div>
+      )}
+
+      {sourcePlace && (
+        <Modal title={`Source — ${sourcePlace.name}`} onClose={() => setSourcePlace(null)}>
+          <pre className="ai-raw-pre" style={{ whiteSpace: 'pre-wrap', maxHeight: '65vh', overflow: 'auto' }}>
+            {sourcePlace.sourceText}
+          </pre>
+          <div className="modal-actions">
+            <button className="btn primary" onClick={() => setSourcePlace(null)}>Close</button>
+          </div>
+        </Modal>
       )}
 
       {open && (

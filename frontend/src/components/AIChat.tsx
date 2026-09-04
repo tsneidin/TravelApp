@@ -29,7 +29,9 @@ function SuggestionCard({
         name: s.title,
         lat: s.lat ?? undefined,
         lng: s.lng ?? undefined,
-        notes: [s.summary, s.url ? `Info: ${s.url}` : ''].filter(Boolean).join('\n'),
+        notes: s.summary || undefined,
+        website: s.url || undefined,
+        sourceText: [s.title, s.summary, s.url].filter(Boolean).join('\n\n'),
       });
       setAdded(true);
       onAdded(s.title);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
-  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen
+  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
@@ -220,14 +220,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       onClick={() => setActivePlaceId(p.id)}
       onMouseEnter={() => setActivePlaceId(p.id)}
     >
-      <input
-        type="checkbox"
-        checked={p.includeInCalendar !== false}
-        title="Include in trip calendar"
-        aria-label={`Include ${p.name} in trip calendar`}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => void setCalendarVisibility(p, event.target.checked)}
-      />
       <GripVertical size={14} className="muted grip-handle" style={{ cursor: 'grab' }} />
       {stopNumber != null && (
         <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
@@ -275,6 +267,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           <FileText size={14} /> Source
         </button>
       )}
+      <button
+        type="button"
+        className="btn sm ghost"
+        title={p.includeInCalendar !== false ? 'Included in trip calendar' : 'Hidden from trip calendar'}
+        aria-label={p.includeInCalendar !== false ? `Hide ${p.name} from trip calendar` : `Include ${p.name} in trip calendar`}
+        onClick={(event) => {
+          event.stopPropagation();
+          void setCalendarVisibility(p, p.includeInCalendar === false);
+        }}
+      >
+        {p.includeInCalendar !== false ? <CalendarCheck size={14} /> : <CalendarX size={14} />}
+      </button>
       <button
         type="button"
         className="btn sm ghost"

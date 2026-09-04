@@ -90,6 +90,7 @@ export function AIChat({ tripId }: { tripId: string | null }) {
   const [actions, setActions] = useState<AiAction[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
+  const [suggestionLimit, setSuggestionLimit] = useState(4);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadStatus = useCallback(async () => {
@@ -137,6 +138,7 @@ export function AIChat({ tripId }: { tripId: string | null }) {
     setBusy(true);
     setError('');
     setActions([]);
+    setSuggestionLimit(4);
     const optimistic: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: text, createdAt: new Date().toISOString() };
     setMessages((m) => [...m, optimistic]);
     setInput('');
@@ -269,6 +271,7 @@ export function AIChat({ tripId }: { tripId: string | null }) {
             <div className="ai-suggs">
               {actions
                 .flatMap((a) => a.suggestions ?? [])
+                .slice(0, suggestionLimit)
                 .map((s, i) => (
                   <SuggestionCard
                     key={`${s.title}-${i}`}
@@ -277,6 +280,15 @@ export function AIChat({ tripId }: { tripId: string | null }) {
                     onAdded={() => undefined}
                   />
                 ))}
+              {actions.flatMap((a) => a.suggestions ?? []).length > suggestionLimit && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => setSuggestionLimit((n) => n + 4)}
+                >
+                  More options
+                </button>
+              )}
             </div>
           )}
 

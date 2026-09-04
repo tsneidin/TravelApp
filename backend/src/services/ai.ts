@@ -353,11 +353,11 @@ async function executeTool(
       const location = String(a.location ?? ctx.destination ?? '').trim();
       if (!location) return { action: name, summary: 'get_suggestions: location required', ok: false };
       const focus = String(a.query ?? '').trim();
-      const count = Math.min(Number(a.count) || 8, 12);
+      const count = Math.min(Number(a.count) || 16, 20);
       const query = focus ? `${location} ${focus}` : `${location} things to see top attractions`;
       let suggestions = suggestionCache.get(query);
       if (!suggestions) {
-        suggestions = await fetchSuggestions(query, count);
+        suggestions = await fetchSuggestions(query, Math.max(count, 16));
         suggestionCache.set(query, suggestions);
       }
       if (!suggestions.length) {
@@ -560,7 +560,17 @@ export async function processTripChat(
 
   const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { destination: true } });
   const destination = trip?.destination ?? '';
-  const recommendationContext = await inferRecommendationContext(tripId, userMessage, destination);
+  let recommendationContext = await inferRecommendationContext(tripId, userMessage, destination);
+  const explicitLocation = /(?:close to|near|nearby|around|in)\s+([^?.!]+)$/i.exec(userMessage)?.[1]?.trim();
+  if (explicitLocation) {
+    recommendationContext = {
+      ...recommendationContext,
+      location: explicitLocation,
+      label: recommendationContext.recommendedAt
+        ? `${explicitLocation} around ${new Date(recommendationContext.recommendedAt).toLocaleString()}`
+        : explicitLocation,
+    };
+  }
 
   const system = await buildSystemPrompt(tripId);
   let userContent = userMessage;
@@ -572,7 +582,7 @@ export async function processTripChat(
   if (suggestQuery) {
     let suggestions = suggestionCache.get(suggestQuery);
     if (!suggestions) {
-      suggestions = await fetchSuggestions(suggestQuery, 8);
+      suggestions = await fetchSuggestions(suggestQuery, 16);
       suggestionCache.set(suggestQuery, suggestions);
     }
     if (suggestions.length) {

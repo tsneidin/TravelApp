@@ -22,6 +22,15 @@ interface SearxngResult {
   thumbnail_src?: string;
 }
 
+interface OverpassElement {
+  type: 'node' | 'way' | 'relation';
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat?: number; lon?: number };
+  tags?: Record<string, string>;
+}
+
 interface NominatimResult {
   osm_type?: 'node' | 'way' | 'relation';
   osm_id?: number;
@@ -88,6 +97,106 @@ function localSearchQuery(query: string): string {
     .replace(/\b[A-Z]{3}\b/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function searchSubject(query: string): string {
+  const match = /(pizza|restaurants?|coffee|cafes?|bars?|breakfast|lunch|dinner|food|shops?|hotels?|laundromat|pharmacy|grocer|market|museums?|parks?|beaches?)/i.exec(query);
+  return match?.[1]?.toLowerCase() ?? 'places';
+}
+
+function anchorQuery(query: string): string {
+  return localSearchQuery(query)
+    .replace(/\b(pizza|restaurants?|coffee|cafes?|bars?|breakfast|lunch|dinner|food|shops?|shopping|hotels?|lodging|laundromat|pharmacy|grocer|market|music|shows?|events?|tours?|museums?|parks?|hikes?|beaches?|close|near|nearby|around|highly|rated|reviews?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function geocodeAnchor(query: string): Promise<{ lat: number; lng: number; label: string } | null> {
+  const url =
+    'https://nominatim.openstreetmap.org/search?' +
+    new URLSearchParams({ q: query, format: 'jsonv2', limit: '1' }).toString();
+  const data = (await fetchJson(url, config.search.timeoutMs)) as NominatimResult[];
+  const hit = data[0];
+  const lat = Number(hit?.lat);
+  const lng = Number(hit?.lon);
+  return Number.isFinite(lat) && Number.isFinite(lng)
+    ? { lat, lng, label: hit.display_name || query }
+    : null;
+}
+
+/** Find many geographically relevant businesses around the requested location. */
+async function fromOverpass(query: string, count: number): Promise<Suggestion[]> {
+  const anchorText = anchorQuery(query);
+  const anchor = await geocodeAnchor(anchorText);
+  if (!anchor) return [];
+
+  const subject = searchSubject(query);
+  const amenity = /coffee|cafe|breakfast/.test(subject)
+    ? 'cafe|restaurant'
+    : /bar/.test(subject)
+      ? 'bar|pub|restaurant'
+      : /pizza|restaurant|lunch|dinner|food/.test(subject)
+        ? 'restaurant|fast_food'
+        : 'restaurant|cafe|fast_food|bar|pub';
+  const radius = /airport/i.test(anchorText) ? 18000 : 10000;
+  const q = `[out:json][timeout:20];(
+    nwr(around:${radius},${anchor.lat},${anchor.lng})["amenity"~"^(${amenity})$"];
+  );out center tags;`;
+  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`;
+  const data = (await fetchJson(url, Math.max(config.search.timeoutMs, 25000))) as { elements?: OverpassElement[] };
+
+  const mapped = (data.elements ?? []).flatMap((el) => {
+    const lat = el.lat ?? el.center?.lat;
+    const lng = el.lon ?? el.center?.lon;
+    const tags = el.tags ?? {};
+    const title = tags.name || tags['name:en'];
+    if (!title || lat == null || lng == null) return [];
+    const cuisine = tags.cuisine ?? '';
+    const pizzaRelevant = /pizza/i.test(title) || /pizza|italian/i.test(cuisine);
+    const km = distanceKm(anchor.lat, anchor.lng, lat, lng);
+    const osmUrl = `https://www.openstreetmap.org/${el.type}/${el.id}`;
+    const website = tags.website || tags['contact:website'];
+    const details = [
+      `${km.toFixed(1)} km from ${anchorText}`,
+      cuisine ? `Cuisine: ${cuisine}` : undefined,
+      tags.opening_hours ? `Hours: ${tags.opening_hours}` : undefined,
+      tags.addr_street ? `${tags.addr_housenumber ?? ''} ${tags.addr_street}`.trim() : undefined,
+    ].filter(Boolean).join(' · ');
+    return [{
+      title,
+      url: website || osmUrl,
+      mapUrl: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+      summary: details,
+      lat,
+      lng,
+      _distance: km,
+      _pizzaRelevant: pizzaRelevant,
+    }];
+  });
+
+  const sorted = mapped.sort((a, b) => {
+    if (/pizza/i.test(subject) && a._pizzaRelevant !== b._pizzaRelevant) return a._pizzaRelevant ? -1 : 1;
+    return a._distance - b._distance;
+  });
+  const seen = new Set<string>();
+  return sorted
+    .filter((item) => {
+      const key = item.title.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return !/pizza/i.test(subject) || item._pizzaRelevant;
+    })
+    .slice(0, count)
+    .map(({ _distance, _pizzaRelevant, ...item }) => item);
 }
 
 /** Local-place fallback using OpenStreetMap's Nominatim index. */
@@ -195,6 +304,21 @@ async function fromWikipedia(query: string, count: number): Promise<Suggestion[]
 export async function fetchSuggestions(query: string, count = 8): Promise<Suggestion[]> {
   const q = query.trim();
   if (!q) return [];
+  if (isLocalDiscovery(q)) {
+    try {
+      const nearby = await fromOverpass(q, count);
+      if (nearby.length) return nearby;
+    } catch (e) {
+      console.warn('[suggest] Overpass unavailable:', (e as Error).message);
+    }
+    try {
+      return await fromNominatim(q, count);
+    } catch (e) {
+      console.error('[suggest] OpenStreetMap fallback failed:', e);
+      return [];
+    }
+  }
+
   if (config.search.enabled) {
     try {
       const r = await fromSearxng(q, count);
@@ -206,15 +330,6 @@ export async function fetchSuggestions(query: string, count = 8): Promise<Sugges
       }
     } catch (e) {
       console.warn('[suggest] SearXNG unavailable:', (e as Error).message);
-    }
-  }
-
-  if (isLocalDiscovery(q)) {
-    try {
-      return await fromNominatim(q, count);
-    } catch (e) {
-      console.error('[suggest] OpenStreetMap fallback failed:', e);
-      return [];
     }
   }
 

@@ -172,6 +172,30 @@ const TOOLS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'add_packing_item',
+      description: 'Add one item to the current trip packing list.',
+      parameters: { type: 'object', properties: { item: { type: 'string' }, category: { type: 'string' }, done: { type: 'boolean' } }, required: ['item'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_packing_item',
+      description: 'Edit, rename, recategorize, or mark an existing packing item done/not done. Use its exact current item text.',
+      parameters: { type: 'object', properties: { currentItem: { type: 'string' }, item: { type: 'string' }, category: { type: 'string' }, done: { type: 'boolean' } }, required: ['currentItem'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_packing_item',
+      description: 'Delete an existing packing item. Use its exact current item text.',
+      parameters: { type: 'object', properties: { item: { type: 'string' } }, required: ['item'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_suggestions',
       description:
         'Fetch structured recommendations (things to do/see/eat, attractions, places) with thumbnails and links for a location. Call this when the user asks for suggestions, ideas, or "things to do/see". The results are also shown to the user as cards in the chat, so prefer calling this over inventing recommendations.',
@@ -220,7 +244,7 @@ async function executeTool(
   const a = parseArgs(argsRaw);
   debugLog('ai', 'tool_requested', { tool: name, mutationAllowed: Boolean(ctx.allowMutation) });
   try {
-    if (['add_place', 'add_booking', 'add_expense', 'add_day'].includes(name) && !ctx.allowMutation) {
+    if (['add_place', 'add_booking', 'add_expense', 'add_day', 'add_packing_item', 'update_packing_item', 'delete_packing_item'].includes(name) && !ctx.allowMutation) {
       return {
         action: name,
         summary: `Confirmation required before ${name.replace('add_', 'adding ')}. No changes were made.`,
@@ -358,6 +382,28 @@ async function executeTool(
       return { action: name, summary: `Added itinerary day ${toDayKey(date)}`, ok: true, ...{ dayId: day.id } };
     }
 
+    if (name === 'add_packing_item') {
+      const item = String(a.item ?? '').trim();
+      if (!item) return { action: name, summary: 'Packing item required', ok: false };
+      const count = await prisma.packingItem.count({ where: { tripId } });
+      const row = await prisma.packingItem.create({ data: { tripId, item, category: a.category ? String(a.category) : undefined, done: Boolean(a.done), sortOrder: count } });
+      return { action: name, summary: `Added packing item "${row.item}"`, ok: true };
+    }
+    if (name === 'update_packing_item') {
+      const currentItem = String(a.currentItem ?? '').trim();
+      const row = await prisma.packingItem.findFirst({ where: { tripId, item: { equals: currentItem, mode: 'insensitive' } } });
+      if (!row) return { action: name, summary: `Packing item "${currentItem}" not found`, ok: false };
+      const updated = await prisma.packingItem.update({ where: { id: row.id }, data: { item: a.item !== undefined ? String(a.item).trim() : undefined, category: a.category !== undefined ? String(a.category) : undefined, done: typeof a.done === 'boolean' ? a.done : undefined } });
+      return { action: name, summary: `Updated packing item "${updated.item}"`, ok: true };
+    }
+    if (name === 'delete_packing_item') {
+      const item = String(a.item ?? '').trim();
+      const row = await prisma.packingItem.findFirst({ where: { tripId, item: { equals: item, mode: 'insensitive' } } });
+      if (!row) return { action: name, summary: `Packing item "${item}" not found`, ok: false };
+      await prisma.packingItem.delete({ where: { id: row.id } });
+      return { action: name, summary: `Deleted packing item "${row.item}"`, ok: true };
+    }
+
     if (name === 'get_suggestions') {
       const location = String(a.location ?? ctx.destination ?? '').trim();
       if (!location) return { action: name, summary: 'get_suggestions: location required', ok: false };
@@ -452,6 +498,7 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `  1. Call add_booking with the reservation details, reference number, dates, and total fare/price. This automatically logs the booking, generates all missing itinerary days, places each flight leg or stay into the itinerary on the proper days, and adds the cost to the budget!`,
     `  2. Call add_place if additional custom activities or notes need to be added to specific days.`,
     `  3. Confirm the reservation reference, itinerary days created, and flight legs added in your response.`,
+    `- Packing-list add, edit, completion, and delete requests use the packing tools and require explicit follow-up confirmation.`,
     `- Resolve every partial city, neighborhood, airport, or venue against CURRENT TRIP before searching. Never select a same-named place in another state or country when the trip destination disambiguates it.`,
     `- Treat searches for restaurants, food, attractions, activities, shopping, events, and similar local options as recommendation requests even if the user does not say "recommend". Infer the relevant day, time, and location from arrivals/bookings/itinerary. Prefer highly reviewed options that appear open at the relevant time, provide linked evidence, and never claim hours are verified unless the source supports it.`,
     `- GUESS the date from trip context when sensible; if genuinely ambiguous, ask a short clarifying question instead of inventing a date.`,

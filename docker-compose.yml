@@ -71,7 +71,10 @@ services:
       - travelapp
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
     container_name: travelapp-web
     restart: unless-stopped
     depends_on:

@@ -33,6 +33,7 @@ export async function buildEvents(opts: { userId?: string; tripId?: string } = {
   const events: CalendarEvent[] = [];
   for (const trip of trips) {
     for (const place of trip.places) {
+      if (!place.includeInCalendar) continue;
       events.push(
         placeEvent(trip.id, place, trip.days.find((d) => d.id === place.dayId)),
       );

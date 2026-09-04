@@ -435,6 +435,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       category: pl.category,
                       lat: pl.lat,
                       lng: pl.lng,
+                      website: pl.website,
                       dayId: day.id,
                     });
                     await reload();

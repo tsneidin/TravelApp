@@ -467,9 +467,23 @@ async function inferRecommendationContext(
 
   if (wantsArrival && transports.length) {
     const destinationWords = destination.toLowerCase().match(/[a-z]{4,}/g) ?? [];
+    const timedTransports = transports
+      .filter(({ place }) => place.startTime || place.endTime)
+      .sort((a, b) => {
+        const aTime = (a.place.startTime ?? a.place.endTime)?.getTime() ?? 0;
+        const bTime = (b.place.startTime ?? b.place.endTime)?.getTime() ?? 0;
+        return aTime - bTime;
+      });
+    let outboundArrival = timedTransports[0];
+    for (let i = 0; i < timedTransports.length; i++) {
+      outboundArrival = timedTransports[i];
+      const currentEnd = timedTransports[i].place.endTime ?? timedTransports[i].place.startTime;
+      const nextStart = timedTransports[i + 1]?.place.startTime ?? timedTransports[i + 1]?.place.endTime;
+      if (currentEnd && nextStart && nextStart.getTime() - currentEnd.getTime() > 24 * 60 * 60 * 1000) break;
+    }
     const destinationLeg =
       transports.find(({ place }) => destinationWords.some((word) => place.name.toLowerCase().includes(word))) ??
-      transports.find(({ place }) => place.endTime != null) ??
+      outboundArrival ??
       transports[0];
     const arrival = destinationLeg.place.endTime ?? destinationLeg.place.startTime ?? destinationLeg.day.date;
     const routeDestination = /(?:→|\bto\b)\s*([^()]+?)(?:\s*\(([A-Z]{3})\))?$/i.exec(destinationLeg.place.name);
@@ -507,7 +521,12 @@ const SUGGEST_INTENT =
   /(suggest|recommend|things? to do|places? to see|what (should|can|could|to) (i|we|you)\s?(do|see|visit|check out)|attractions|top sites|must-see|must see|best places?|ideas|itinerary ideas|where should|restaurants?|pizza|coffee|cafes?|bars?|breakfast|lunch|dinner|food|museums?|tours?|shops?|shopping|parks?|hikes?|beaches?|music|shows?|events?|open when|nearby)/i;
 
 function detectSuggestQuery(message: string, context: RecommendationContext): string | null {
-  if (!SUGGEST_INTENT.test(message)) return null;
+  const wordsInMessage = message.trim().split(/\s+/).filter(Boolean);
+  const shortDiscoveryQuery =
+    wordsInMessage.length > 0 &&
+    wordsInMessage.length <= 10 &&
+    !/\b(add|delete|remove|edit|change|move|book|booking|confirmation|expense|budget|cost|paid)\b/i.test(message);
+  if (!SUGGEST_INTENT.test(message) && !shortDiscoveryQuery) return null;
   const stop = new Set([
     'please', 'suggest', 'suggestions', 'recommend', 'recommendations', 'things', 'thing',
     'places', 'place', 'see', 'do', 'visit', 'what', 'should', 'could', 'can', 'for', 'any',

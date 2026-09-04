@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
-import { apiPost, apiDelete } from '../../lib/api';
+import { Plus, Trash2, StickyNote } from 'lucide-react';
+import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Expense } from '../../lib/types';
 import { Modal } from '../../components/Modal';
 
@@ -10,11 +10,15 @@ interface ExpenseForm {
   currency: string;
   category: string;
   date: string;
+  notes: string;
 }
 
 export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<ExpenseForm>({ description: '', amount: '', currency: trip.currency, category: 'other', date: '' });
+  const [form, setForm] = useState<ExpenseForm>({ description: '', amount: '', currency: trip.currency, category: 'other', date: '', notes: '' });
+
+  const [noteExpense, setNoteExpense] = useState<Expense | null>(null);
+  const [expenseNotes, setExpenseNotes] = useState('');
 
   const expenses = trip.expenses ?? [];
   const currency = trip.currency;
@@ -35,9 +39,22 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
       currency: form.currency || currency,
       category: form.category || 'other',
       date: form.date || undefined,
+      notes: form.notes || undefined,
     });
     setOpen(false);
-    setForm({ description: '', amount: '', currency: currency, category: 'other', date: '' });
+    setForm({ description: '', amount: '', currency: currency, category: 'other', date: '', notes: '' });
+    await reload();
+  };
+
+  const openNotes = (expense: Expense) => {
+    setNoteExpense(expense);
+    setExpenseNotes(expense.notes ?? '');
+  };
+
+  const saveExpenseNotes = async () => {
+    if (!noteExpense) return;
+    await apiPatch(`/trips/${trip.id}/expenses/${noteExpense.id}`, { notes: expenseNotes });
+    setNoteExpense(null);
     await reload();
   };
 
@@ -101,7 +118,10 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                   <td><span className="badge">{e.category}</span></td>
                   <td>{fmt(e.amount)} {e.currency}</td>
                   <td>
-                    <button className="btn sm ghost danger" onClick={() => remove(e)}><Trash2 size={13} /></button>
+                    <div className="row">
+                      <button className="btn sm ghost" title="Add or edit expense notes" onClick={() => openNotes(e)}><StickyNote size={13} /> {e.notes ? 'Notes' : ''}</button>
+                      <button className="btn sm ghost danger" onClick={() => remove(e)}><Trash2 size={13} /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -144,9 +164,26 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
             <label>Date</label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </div>
+          <div className="field">
+            <label>Notes</label>
+            <textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional details, receipt reference, who paid…" />
+          </div>
           <div className="modal-actions">
             <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={save} disabled={!form.description}>Save</button>
+          </div>
+        </Modal>
+      )}
+
+      {noteExpense && (
+        <Modal title={`Notes — ${noteExpense.description}`} onClose={() => setNoteExpense(null)}>
+          <div className="field">
+            <label>Expense notes</label>
+            <textarea rows={7} value={expenseNotes} onChange={(event) => setExpenseNotes(event.target.value)} autoFocus />
+          </div>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setNoteExpense(null)}>Cancel</button>
+            <button className="btn primary" onClick={() => void saveExpenseNotes()}>Save notes</button>
           </div>
         </Modal>
       )}

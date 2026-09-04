@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { Plus, Trash2, Image as ImageIcon, PenSquare } from 'lucide-react';
-import { apiPost, apiDelete, uploadPhotos } from '../../lib/api';
+import { Plus, Trash2, Image as ImageIcon, PenSquare, Pencil } from 'lucide-react';
+import { apiPost, apiPatch, apiDelete, uploadPhotos } from '../../lib/api';
 import type { Trip, JournalEntry } from '../../lib/types';
 import { Modal } from '../../components/Modal';
 
@@ -16,6 +16,7 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [jOpen, setJOpen] = useState(false);
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
   const [jForm, setJForm] = useState<JournalForm>({ title: '', body: '', date: '' });
   const [busy, setBusy] = useState(false);
 
@@ -36,10 +37,27 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
     await reload();
   };
 
+  const openNewJournal = () => {
+    setEditingJournalId(null);
+    setJForm({ title: '', body: '', date: '' });
+    setJOpen(true);
+  };
+
+  const openEditJournal = (entry: JournalEntry) => {
+    setEditingJournalId(entry.id);
+    setJForm({ title: entry.title, body: entry.body, date: entry.date ? entry.date.slice(0, 10) : '' });
+    setJOpen(true);
+  };
+
   const saveJournal = async () => {
     setBusy(true);
     try {
-      await apiPost(`/trips/${trip.id}/journal`, { title: jForm.title, body: jForm.body, date: jForm.date || undefined });
+      const payload = { title: jForm.title, body: jForm.body, date: jForm.date || undefined };
+      if (editingJournalId) {
+        await apiPatch(`/trips/${trip.id}/journal/${editingJournalId}`, payload);
+      } else {
+        await apiPost(`/trips/${trip.id}/journal`, payload);
+      }
       setJOpen(false);
       setJForm({ title: '', body: '', date: '' });
       await reload();
@@ -87,7 +105,7 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
       <div>
         <div className="row between">
           <h2 className="panel-title">Journal</h2>
-          <button className="btn sm" onClick={() => setJOpen(true)}>
+          <button className="btn sm" onClick={openNewJournal}>
             <PenSquare size={14} /> Write entry
           </button>
         </div>
@@ -101,7 +119,10 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
             <div className="panel mb" key={j.id}>
               <div className="row between">
                 <h3 style={{ margin: 0, fontSize: '1rem' }}>{j.title}</h3>
-                <button className="btn sm ghost danger" onClick={() => removeJournal(j.id)}><Trash2 size={13} /></button>
+                <div className="row">
+                  <button className="btn sm ghost" title="Edit journal entry" onClick={() => openEditJournal(j)}><Pencil size={13} /></button>
+                  <button className="btn sm ghost danger" onClick={() => removeJournal(j.id)}><Trash2 size={13} /></button>
+                </div>
               </div>
               <div className="small muted mb">{j.date ? new Date(j.date).toLocaleDateString() : ''}</div>
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.92rem' }}>{j.body}</div>
@@ -111,7 +132,7 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
       </div>
 
       {jOpen && (
-        <Modal title="New journal entry" onClose={() => setJOpen(false)}>
+        <Modal title={editingJournalId ? "Edit journal entry" : "New journal entry" onClose={() => setJOpen(false)}>
           <div className="field">
             <label>Title</label>
             <input value={jForm.title} onChange={(e) => setJForm({ ...jForm, title: e.target.value })} placeholder="Day 2: Shibuya scramble" autoFocus />

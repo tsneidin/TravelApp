@@ -126,8 +126,17 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
               ))}
             </select>
           </div>
-          {draft.website && (
-            <a className="link small" href={draft.website} target="_blank" rel="noreferrer">Open in Google Maps ↗</a>
+          <div className="field">
+            <label>Website</label>
+            <input
+              type="url"
+              value={draft.website || ''}
+              onChange={(event) => setDraft({ ...draft, website: event.target.value })}
+              placeholder="Official place website (when available)"
+            />
+          </div>
+          {draft.mapUrl && (
+            <a className="link small" href={draft.mapUrl} target="_blank" rel="noreferrer">Open Google Maps listing ↗</a>
           )}
           <div className="modal-actions">
             <button type="button" className="btn" onClick={() => setDraft(null)}>Cancel</button>

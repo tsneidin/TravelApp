@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Plane, LayoutDashboard, CalendarDays, Inbox, LogOut, User } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { APP_VERSION } from '../lib/version';
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -33,6 +34,8 @@ export function Layout() {
         </nav>
 
         <div className="side-spacer" />
+
+        <div className="side-version" title={`Build ${APP_VERSION}`}>v{APP_VERSION}</div>
 
         <div className="side-user">
           <div className="side-avatar">{user?.name?.charAt(0)?.toUpperCase() ?? <User size={16} />}</div>

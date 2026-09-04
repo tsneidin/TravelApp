@@ -3,6 +3,17 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
+**Current version:** `0.0.1` — check the bottom of the left sidebar for the
+live build. After any update, run **Update Stack** on Unraid and look for a
+new version number to confirm the rebuild deployed.
+
+## Version workflow
+- The app version is baked into `frontend/src/lib/version.ts` and shown at the
+  bottom of the left sidebar (and on the login page).
+- Before committing/pushing a change, run `node scripts/bump.mjs` (patch by
+  default; use `node scripts/bump.mjs minor` or `major` for those bumps). This
+  rewrites `version.ts` so the next build carries a new visible version.
+
 ## Features
 - Trips & day-by-day itineraries (drag-to-reorder places)
 - Map view with route polyline (Leaflet + OpenStreetMap)

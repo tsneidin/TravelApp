@@ -713,6 +713,17 @@ tbody tr.total-row td {
 .side-spacer {
   flex: 1;
 }
+.side-version {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  opacity: 0.8;
+  padding: 4px 0 8px;
+  user-select: none;
+}
 .side-user {
   display: flex;
   align-items: center;

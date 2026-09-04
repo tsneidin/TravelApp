@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -12,6 +13,21 @@ const marker = L.divIcon({
   popupAnchor: [0, -30],
 });
 
+// Free, no-API-key tile sources. Primary: official OSM standard tiles (reliable,
+// no key required). Fallback: CARTO dark (matches the app theme) if OSM is down,
+// and a plain OSM warm style as a second fallback.
+const TILE_SOURCES: { url: string; attribution: string; subdomains?: string }[] = [
+  {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    subdomains: 'abc',
+  },
+];
+
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -21,6 +37,55 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   const h =
     Math.sin(dLat / 2) ** 2 + Math.cos(la) * Math.cos(lb) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Wraps a TileLayer so that if the primary tile source fails (errors, or the
+ * server returns an image that is actually an error notice), we fall back to
+ * the next source. This avoids ever showing a "you need an API key" notice.
+ */
+function ResilientTileLayer({
+  sources,
+  maxZoom = 19,
+}: {
+  sources: { url: string; attribution: string; subdomains?: string }[];
+  maxZoom?: number;
+}) {
+  const [idx, setIdx] = useState(0);
+  const src = sources[idx];
+  const onError = () => {
+    if (idx < sources.length - 1) setIdx(idx + 1);
+  };
+  return (
+    <>
+      <TileLayer
+        key={src.url}
+        url={src.url}
+        attribution={src.attribution}
+        maxZoom={maxZoom}
+        eventHandlers={{ tileerror: onError }}
+        {...(src.subdomains ? { subdomains: src.subdomains } : {})}
+      />
+      {idx > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 30,
+            left: 8,
+            zIndex: 500,
+            background: 'var(--panel)',
+            border: '1px solid var(--line)',
+            borderRadius: 8,
+            padding: '4px 10px',
+            fontSize: 11,
+            color: 'var(--warn)',
+          }}
+        >
+          Using fallback map tiles (primary source unavailable)
+        </div>
+      )}
+    </>
+  );
 }
 
 export function TripMap({ places }: { places: Place[] }) {
@@ -46,12 +111,7 @@ export function TripMap({ places }: { places: Place[] }) {
       bounds={bounds}
       style={{ height: 480, width: '100%' }}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
-        maxZoom={20}
-      />
+      <ResilientTileLayer sources={TILE_SOURCES} maxZoom={19} />
       {path.length > 1 && (
         <Polyline
           positions={path}

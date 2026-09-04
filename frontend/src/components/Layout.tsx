@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Plane, LogOut } from 'lucide-react';
+import { Plane, LayoutDashboard, CalendarDays, Inbox, LogOut, User } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
 export function Layout() {
@@ -7,33 +7,56 @@ export function Layout() {
   const navigate = useNavigate();
 
   return (
-    <>
-      <nav className="topnav">
-        <NavLink to="/" className="brand">
-          <Plane size={20} /> TravelApp
-        </NavLink>
-        <div className="spacer" />
-        <NavLink to="/calendar" className="nav-item">
-          Calendar
-        </NavLink>
-        {user?.isAdmin && (
-          <NavLink to="/email" className="nav-item">
-            Email imports
+    <div className="app-frame">
+      {/* ---------- Left vertical sidebar (Wanderlog-style) ---------- */}
+      <aside className="side-nav">
+        <div className="side-brand">
+          <Plane size={22} />
+          <span>TravelApp</span>
+        </div>
+
+        <nav className="side-links">
+          <NavLink to="/" className={({ isActive }) => (isActive ? 'side-link active' : 'side-link')}>
+            <LayoutDashboard size={18} />
+            <span>Trips</span>
           </NavLink>
-        )}
-        <span className="badge">{user?.name}</span>
-        <button
-          className="btn ghost icon-only sm"
-          title="Log out"
-          onClick={() => {
-            logout();
-            navigate('/login');
-          }}
-        >
-          <LogOut size={16} />
-        </button>
-      </nav>
-      <Outlet />
-    </>
+          <NavLink to="/calendar" className={({ isActive }) => (isActive ? 'side-link active' : 'side-link')}>
+            <CalendarDays size={18} />
+            <span>Calendar</span>
+          </NavLink>
+          {user?.isAdmin && (
+            <NavLink to="/email" className={({ isActive }) => (isActive ? 'side-link active' : 'side-link')}>
+              <Inbox size={18} />
+              <span>Email imports</span>
+            </NavLink>
+          )}
+        </nav>
+
+        <div className="side-spacer" />
+
+        <div className="side-user">
+          <div className="side-avatar">{user?.name?.charAt(0)?.toUpperCase() ?? <User size={16} />}</div>
+          <div className="side-user-info">
+            <div className="side-user-name">{user?.name}</div>
+            <div className="side-user-role">{user?.isAdmin ? 'Admin' : 'Member'}</div>
+          </div>
+          <button
+            className="btn ghost icon-only sm"
+            title="Log out"
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </aside>
+
+      {/* ---------- Content ---------- */}
+      <main className="side-content">
+        <Outlet />
+      </main>
+    </div>
   );
 }

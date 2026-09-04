@@ -497,6 +497,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   places={displayedMapPlaces}
                   destination={trip.destination}
                   activePlaceId={activePlaceId ?? undefined}
+                  onMapClick={(pl) => {
+                    setEditingId(null);
+                    setEditing({
+                      ...EMPTY_FORM,
+                      dayId: selectedDayId || '',
+                      name: pl.name,
+                      category: pl.category,
+                      address: pl.address,
+                      lat: String(pl.lat),
+                      lng: String(pl.lng),
+                      website: pl.website || '',
+                    });
+                    setOpen(true);
+                  }}
                   onPlaceClick={(id) => {
                     setActivePlaceId(id);
                     const el = document.getElementById(`place-${id}`);
@@ -563,7 +577,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <PlaceSearchInput
               biasLat={tripCenter?.lat}
               biasLng={tripCenter?.lng}
-              placeholder="e.g. Eiffel Tower, Louvre, Joe's Pizza…"
+              placeholder="Search a place or paste a Google Maps URL…"
               autoFocus={!editingId}
               onSelect={(pl) => {
                 setEditing((prev) => ({
@@ -573,6 +587,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   category: pl.category,
                   lat: String(pl.lat),
                   lng: String(pl.lng),
+                  website: pl.website || prev.website,
                 }));
               }}
             />

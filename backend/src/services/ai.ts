@@ -409,7 +409,18 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
 
   const daysDesc = (trip.days ?? [])
     .map((d) => {
-      const places = d.places.map((p, i) => `  ${i + 1}. ${p.name}${p.category ? ` (${p.category})` : ''}`).join('\n');
+      const places = d.places.map((p, i) => {
+        const timing = p.startTime
+          ? ` @ ${p.startTime.toISOString()}${p.endTime ? `–${p.endTime.toISOString()}` : ''}`
+          : '';
+        const details = [
+          p.category ? `category=${p.category}` : undefined,
+          p.address ? `address=${p.address}` : undefined,
+          p.website ? `website=${p.website}` : undefined,
+          p.notes ? `notes=${p.notes.slice(0, 300)}` : undefined,
+        ].filter(Boolean).join('; ');
+        return `  ${i + 1}. ${p.name}${timing}${details ? ` (${details})` : ''}`;
+      }).join('\n');
       return `- ${toDayKey(d.date)}${d.label ? ` — ${d.label}` : ''}\n${places || '  (nothing planned)'}`;
     })
     .join('\n');
@@ -430,6 +441,10 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `\nBOOKINGS:`,
     bookingsDesc || '  (none)',
     `\nEXPENSES: ${trip.expenses?.length ?? 0} recorded (total ${(trip.expenses ?? []).reduce((s, e) => s + e.amount, 0).toFixed(2)} ${trip.currency}).`,
+    ...(trip.expenses ?? []).map((e) => `- ${e.description}: ${e.amount} ${e.currency} (${e.category})${e.date ? ` @ ${toDayKey(e.date)}` : ''}`),
+    `\nPACKING:`,
+    ...(trip.packing ?? []).map((p) => `- [${p.done ? 'x' : ' '}] ${p.item}${p.category ? ` (${p.category})` : ''}`),
+    ...(trip.packing?.length ? [] : ['  (none)']),
     ``,
     `RULES:`,
     `- NEVER add or modify itinerary, booking, day, or budget data on the first request. Summarize exactly what will be added and ask for explicit confirmation. Only call an add_* tool after the user confirms in a follow-up message. Recommendation-card Add buttons are already explicit confirmation.`,
@@ -437,13 +452,23 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `  1. Call add_booking with the reservation details, reference number, dates, and total fare/price. This automatically logs the booking, generates all missing itinerary days, places each flight leg or stay into the itinerary on the proper days, and adds the cost to the budget!`,
     `  2. Call add_place if additional custom activities or notes need to be added to specific days.`,
     `  3. Confirm the reservation reference, itinerary days created, and flight legs added in your response.`,
-    `- Treat searches for restaurants, food, attractions, activities, shopping, events, and similar local options as recommendation requests even if the user does not say "recommend". Infer the relevant day, time, and location from arrivals/bookings/itinerary. Prefer highly reviewed options that appear open at the relevant time, provide linked evidence, and never claim hours are verified unless the source supports it.`,
+    `- Resolve every partial city, neighborhood, airport, or venue against CURRENT TRIP before searching. Never select a same-named place in another state or country when the trip destination disambiguates it.\n    `- Treat searches for restaurants, food, attractions, activities, shopping, events, and similar local options as recommendation requests even if the user does not say "recommend". Infer the relevant day, time, and location from arrivals/bookings/itinerary. Prefer highly reviewed options that appear open at the relevant time, provide linked evidence, and never claim hours are verified unless the source supports it.`,
     `- GUESS the date from trip context when sensible; if genuinely ambiguous, ask a short clarifying question instead of inventing a date.`,
     `- Keep answers under ~150 words unless generating a list of suggestions.`,
   ].join('\n');
 }
 
 // ---------------- main entry ----------------
+
+function qualifyTripLocation(location: string, destination: string): string {
+  const loc = location.trim();
+  const dest = destination.trim();
+  if (!loc || !dest) return loc || dest;
+  const locLower = loc.toLowerCase();
+  const significantDestinationWords = dest.toLowerCase().match(/[a-z]{4,}/g) ?? [];
+  if (significantDestinationWords.some((word) => locLower.includes(word))) return loc;
+  return `${loc}, ${dest}`;
+}
 
 interface RecommendationContext {
   location: string;
@@ -572,14 +597,18 @@ export async function processTripChat(
   const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { destination: true } });
   const destination = trip?.destination ?? '';
   let recommendationContext = await inferRecommendationContext(tripId, userMessage, destination);
+  recommendationContext = {
+    ...recommendationContext,
+    location: qualifyTripLocation(recommendationContext.location, destination),
+  };
   const explicitLocation = /(?:close to|near|nearby|around|in)\s+([^?.!]+)$/i.exec(userMessage)?.[1]?.trim();
   if (explicitLocation) {
     recommendationContext = {
       ...recommendationContext,
-      location: explicitLocation,
+      location: qualifyTripLocation(explicitLocation, destination),
       label: recommendationContext.recommendedAt
-        ? `${explicitLocation} around ${new Date(recommendationContext.recommendedAt).toLocaleString()}`
-        : explicitLocation,
+        ? `${qualifyTripLocation(explicitLocation, destination)} around ${new Date(recommendationContext.recommendedAt).toLocaleString()}`
+        : qualifyTripLocation(explicitLocation, destination),
     };
   }
 

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
-  ChevronDown, ChevronUp, Clock
+  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
@@ -85,6 +85,32 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     () => (trip.places ?? []).filter((p) => !days.some((d) => d.places.some((x) => x.id === p.id))),
     [trip.places, days],
   );
+
+  const totalPlacesCount = useMemo(
+    () => days.reduce((sum, d) => sum + d.places.length, 0) + orphanPlaces.length,
+    [days, orphanPlaces]
+  );
+
+  const selectedDayIndex = useMemo(() => {
+    if (!selectedDayId) return -1;
+    return days.findIndex((d) => d.id === selectedDayId);
+  }, [selectedDayId, days]);
+
+  const handlePrevDay = () => {
+    if (selectedDayIndex <= 0) {
+      setSelectedDayId(null);
+    } else {
+      setSelectedDayId(days[selectedDayIndex - 1].id);
+    }
+  };
+
+  const handleNextDay = () => {
+    if (selectedDayIndex === -1) {
+      if (days.length > 0) setSelectedDayId(days[0].id);
+    } else if (selectedDayIndex < days.length - 1) {
+      setSelectedDayId(days[selectedDayIndex + 1].id);
+    }
+  };
 
   // React Router updates the hash without performing the browser's normal
   // anchor scroll. Explicitly scroll the independently scrolling center pane.
@@ -246,7 +272,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       stopNumber += 1;
     });
     return selectedDayId
-      ? result.filter((place) => place.dayId === selectedDayId)
+      ? selectedDayId === 'unassigned'
+        ? result.filter((place) => !place.dayId)
+        : result.filter((place) => place.dayId === selectedDayId)
       : result;
   }, [days, selectedDayId, orphanPlaces]);
 
@@ -605,33 +633,70 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           <div className="itinerary-right-pane">
             <div className="itinerary-sticky-map-wrapper">
               <div className="map-pane-header">
-                <div className="row small">
-                  <MapIcon size={14} className="text-accent" />
-                  <b>Live Map</b>
-                  <span className="badge muted">
-                    {selectedDayId
-                      ? (days.find((d) => d.id === selectedDayId)?.label || 'Focused Day')
-                      : 'All stops'}
+                <div className="map-pane-header-left">
+                  <MapIcon size={15} className="text-accent" />
+                  <span className="map-pane-title">Live Map</span>
+                  <span className="badge muted map-stops-badge">
+                    {displayedMapPlaces.length} {displayedMapPlaces.length === 1 ? 'stop' : 'stops'}
                   </span>
                 </div>
-                <div className="row small map-day-filter-buttons">
-                  <button
-                    type="button"
-                    className={`btn sm ${!selectedDayId ? 'primary' : 'ghost'}`}
-                    onClick={() => setSelectedDayId(null)}
-                  >
-                    All
-                  </button>
-                  {days.map((d, i) => (
+
+                <div className="map-pane-header-right">
+                  <div className="map-day-nav-group">
                     <button
-                      key={d.id}
                       type="button"
-                      className={`btn sm ${selectedDayId === d.id ? 'primary' : 'ghost'}`}
-                      onClick={() => setSelectedDayId(d.id)}
+                      className="map-nav-step-btn"
+                      title={selectedDayId ? (selectedDayIndex <= 0 ? 'Show all stops' : 'Previous day') : 'No previous day'}
+                      disabled={days.length === 0 || (!selectedDayId && selectedDayIndex === -1)}
+                      onClick={handlePrevDay}
+                      aria-label="Previous day"
                     >
-                      D{i + 1}
+                      <ChevronLeft size={14} />
                     </button>
-                  ))}
+
+                    <select
+                      className="map-day-select"
+                      value={selectedDayId ?? ''}
+                      onChange={(e) => setSelectedDayId(e.target.value || null)}
+                      aria-label="Filter map by day"
+                    >
+                      <option value="">
+                        All Days ({totalPlacesCount} stops)
+                      </option>
+                      {days.map((d, i) => (
+                        <option key={d.id} value={d.id}>
+                          {`Day ${i + 1}${d.date ? ` (${d.date})` : ''}: ${d.label || `Day ${i + 1}`} · ${d.places.length} stop${d.places.length === 1 ? '' : 's'}`}
+                        </option>
+                      ))}
+                      {orphanPlaces.length > 0 && (
+                        <option value="unassigned">
+                          Unassigned ({orphanPlaces.length} stops)
+                        </option>
+                      )}
+                    </select>
+
+                    <button
+                      type="button"
+                      className="map-nav-step-btn"
+                      title="Next day"
+                      disabled={days.length === 0 || selectedDayIndex >= days.length - 1}
+                      onClick={handleNextDay}
+                      aria-label="Next day"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  {selectedDayId && (
+                    <button
+                      type="button"
+                      className="map-reset-btn"
+                      title="Show all stops on map"
+                      onClick={() => setSelectedDayId(null)}
+                    >
+                      Show All
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="itinerary-sticky-map-canvas">

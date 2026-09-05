@@ -1,15 +1,103 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Bot, Send, X, Sparkles, ExternalLink, Plus, Check, MapPin, Settings
+  Bot, Send, X, Sparkles, ExternalLink, Plus, Check, MapPin, Settings,
+  Paperclip, FileText, Mail, File, UploadCloud
 } from 'lucide-react';
-import { apiGet, apiPost } from '../lib/api';
-import type { ChatMessage, AiStatus, AiAction, Suggestion } from '../lib/types';
+import { apiGet, apiPost, uploadAiDocument } from '../lib/api';
+import type { ChatMessage, AiStatus, AiAction, Suggestion, ParsedDocument } from '../lib/types';
 import { Spinner } from './Spinner';
 import { AISettingsModal } from './AISettingsModal';
+
+/** Format byte size to readable B/KB/MB */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Get appropriate file type icon */
+function getFileIcon(filename: string) {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return <FileText size={14} style={{ color: '#f87171' }} />;
+  if (ext === 'eml' || ext === 'msg') return <Mail size={14} style={{ color: '#60a5fa' }} />;
+  return <File size={14} style={{ color: 'var(--accent)' }} />;
+}
 
 /** True when a message is likely a pasted itinerary / confirmation to show formatted. */
 function isLongPaste(t: string): boolean {
   return t.length > 240 && (t.includes('\n') || /\d/.test(t));
+}
+
+/** Renders message content, parsing out attached file badges and collapsible details */
+function MessageBody({ content }: { content: string }) {
+  // Check for <details><summary>...</summary>...</details>
+  const detailsRegex = /<details><summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/;
+  const match = detailsRegex.exec(content);
+
+  if (match) {
+    const beforeText = content.slice(0, match.index).trim();
+    const summaryText = match[1].trim();
+    const detailsBody = match[2].trim();
+
+    return (
+      <div>
+        <FormattedText text={beforeText} />
+        <details className="ai-raw" style={{ marginTop: 8 }}>
+          <summary className="small" style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
+            {summaryText}
+          </summary>
+          <pre className="ai-raw-pre">{detailsBody}</pre>
+        </details>
+      </div>
+    );
+  }
+
+  if (isLongPaste(content)) {
+    return (
+      <details className="ai-raw">
+        <summary className="small" style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
+          Pasted item — view raw text
+        </summary>
+        <pre className="ai-raw-pre">{content}</pre>
+      </details>
+    );
+  }
+
+  return <FormattedText text={content} />;
+}
+
+/** Parse lines starting with "📎 **[TYPE] filename**" into badges */
+function FormattedText({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const badges: Array<{ type: string; name: string }> = [];
+  const normalLines: string[] = [];
+
+  for (const line of lines) {
+    const m = line.match(/^📎 \*\*\[([A-Z]+)\] (.*?)\*\*$/);
+    if (m) {
+      badges.push({ type: m[1], name: m[2] });
+    } else {
+      normalLines.push(line);
+    }
+  }
+
+  const remaining = normalLines.join('\n').trim();
+
+  return (
+    <>
+      {badges.length > 0 && (
+        <div className="ai-bubble-attachments-list">
+          {badges.map((b, idx) => (
+            <div key={`${b.name}-${idx}`} className="ai-bubble-attachment">
+              {getFileIcon(b.name)}
+              <span>{b.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {remaining && <div style={{ whiteSpace: 'pre-wrap' }}>{remaining}</div>}
+    </>
+  );
 }
 
 function SuggestionCard({
@@ -87,13 +175,19 @@ export function AIChat({ tripId }: { tripId: string | null }) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<Array<{ file: File; id: string }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [actions, setActions] = useState<AiAction[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [suggestionLimit, setSuggestionLimit] = useState(4);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounter = useRef(0);
 
   const loadStatus = useCallback(async () => {
     if (!tripId) return;
@@ -127,6 +221,7 @@ export function AIChat({ tripId }: { tripId: string | null }) {
       setStatus(null);
       setLoaded(false);
       setActions([]);
+      setPendingFiles([]);
     }
   }, [open, tripId, loaded, loadStatus, loadMessages]);
 
@@ -142,22 +237,144 @@ export function AIChat({ tripId }: { tripId: string | null }) {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, busy, actions]);
+  }, [messages, busy, actions, pendingFiles]);
+
+  const addFiles = (files: File[]) => {
+    if (!files.length) return;
+    const valid = files.filter((f) => f.size <= 15 * 1024 * 1024);
+    if (valid.length < files.length) {
+      setError('Some files exceeded the 15MB size limit and were skipped.');
+    }
+    setPendingFiles((prev) => [
+      ...prev,
+      ...valid.map((f) => ({ file: f, id: `${f.name}-${Date.now()}-${Math.random()}` })),
+    ]);
+  };
+
+  const removeFile = (id: string) => {
+    setPendingFiles((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  // Drag-and-drop events
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      setIsDragging(false);
+      dragCounter.current = 0;
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      addFiles(Array.from(e.target.files));
+      e.target.value = '';
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      addFiles(Array.from(e.clipboardData.files));
+    }
+  };
 
   const send = async () => {
     const text = input.trim();
-    if (!text || !tripId || busy) return;
+    if ((!text && pendingFiles.length === 0) || !tripId || busy || uploadingFiles) return;
+
     setBusy(true);
     setError('');
     setActions([]);
     setSuggestionLimit(4);
-    const optimistic: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: text, createdAt: new Date().toISOString() };
-    setMessages((m) => [...m, optimistic]);
+
+    const filesToUpload = [...pendingFiles];
+    setPendingFiles([]);
     setInput('');
+
+    // 1. Process and extract text from attached files
+    const parsedDocs: ParsedDocument[] = [];
+    if (filesToUpload.length > 0) {
+      setUploadingFiles(true);
+      try {
+        for (const item of filesToUpload) {
+          const res = await uploadAiDocument(tripId, item.file);
+          if (res.ok && res.document) {
+            parsedDocs.push(res.document);
+          }
+        }
+      } catch (err) {
+        setError(`Failed to extract document text: ${(err as Error).message}`);
+        setUploadingFiles(false);
+        setBusy(false);
+        // restore files on error
+        setPendingFiles(filesToUpload);
+        return;
+      } finally {
+        setUploadingFiles(false);
+      }
+    }
+
+    // 2. Format optimistic display for chat UI
+    let optimisticContent = text;
+    if (parsedDocs.length > 0) {
+      const badges = parsedDocs
+        .map((d) => `📎 **[${(d.fileType || 'FILE').toUpperCase()}] ${d.filename}**`)
+        .join('  \n');
+      const rawCollapsible = parsedDocs
+        .map(
+          (d) =>
+            `\n\n<details><summary>View extracted text: ${d.filename}</summary>\n\n${d.text.trim()}\n</details>`,
+        )
+        .join('\n');
+      optimisticContent = `${badges}\n\n${text || 'Please analyze this attached travel document and extract any reservations, bookings, flights, hotels, or activities to add to our trip.'}${rawCollapsible}`;
+    }
+
+    const optimistic: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: optimisticContent,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((m) => [...m, optimistic]);
+
+    // 3. Send message + parsed attachments to AI chat endpoint
     try {
-      const r = await apiPost<{ reply: string; actions: AiAction[] }>(`/trips/${tripId}/ai/chat`, { message: text });
+      const r = await apiPost<{ reply: string; actions: AiAction[] }>(`/trips/${tripId}/ai/chat`, {
+        message: text,
+        attachments: parsedDocs,
+      });
       setActions(r.actions ?? []);
-      setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: r.reply, createdAt: new Date().toISOString() }]);
+      setMessages((m) => [
+        ...m,
+        { id: `a-${Date.now()}`, role: 'assistant', content: r.reply, createdAt: new Date().toISOString() },
+      ]);
       window.dispatchEvent(new CustomEvent('travelapp:mutated', { detail: { tripId } }));
     } catch (e) {
       setError((e as Error).message);
@@ -173,7 +390,22 @@ export function AIChat({ tripId }: { tripId: string | null }) {
       </button>
 
       {open && (
-        <aside ref={panelRef} className="ai-chat">
+        <aside
+          ref={panelRef}
+          className="ai-chat"
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isDragging && (
+            <div className="ai-dropzone-overlay">
+              <UploadCloud size={44} className="ai-dropzone-icon" />
+              <div className="ai-dropzone-title">Drop travel documents here</div>
+              <div className="small muted">PDFs, booking emails (.eml), itineraries, tickets</div>
+            </div>
+          )}
+
           <div className="ai-chat-head">
             <span className="row" style={{ gap: 8 }}>
               <Sparkles size={15} style={{ color: 'var(--accent)' }} />
@@ -222,7 +454,7 @@ export function AIChat({ tripId }: { tripId: string | null }) {
           </div>
 
           <div className="ai-messages">
-            {messages.length === 0 && !busy && (
+            {messages.length === 0 && !busy && !uploadingFiles && (
               <div className="ai-placeholder">
                 <Bot size={28} style={{ color: 'var(--muted)', marginBottom: 8 }} />
                 {!status?.enabled ? (
@@ -239,31 +471,20 @@ export function AIChat({ tripId }: { tripId: string | null }) {
                   </div>
                 ) : (
                   <div>
-                    Ask questions, paste a booking confirmation to import it, try
-                    &quot;add a sushi place on day 2&quot; or &quot;what should we do for 2 days in Tokyo?&quot;
+                    Drop or attach <strong>PDF reservation tickets</strong> or <strong>booking emails (.eml)</strong> here!
+                    You can also ask questions like &quot;what should we do for 2 days in Tokyo?&quot;
                   </div>
                 )}
               </div>
             )}
-            {messages.map((m) =>
-              m.role === 'user' && isLongPaste(m.content) ? (
-                <div key={m.id} className="ai-bubble user">
-                  <details className="ai-raw">
-                    <summary className="small" style={{ color: 'var(--accent)', cursor: 'pointer' }}>
-                      Pasted item — view raw text
-                    </summary>
-                    <pre className="ai-raw-pre">{m.content}</pre>
-                  </details>
-                </div>
-              ) : (
-                <div key={m.id} className={`ai-bubble ${m.role}`}>
-                  {m.content}
-                </div>
-              ),
-            )}
-            {busy && (
+            {messages.map((m) => (
+              <div key={m.id} className={`ai-bubble ${m.role}`}>
+                <MessageBody content={m.content} />
+              </div>
+            ))}
+            {(busy || uploadingFiles) && (
               <div className="ai-bubble assistant ai-typing">
-                <Spinner label="Thinking…" />
+                <Spinner label={uploadingFiles ? 'Extracting document text…' : 'Thinking…'} />
               </div>
             )}
             <div ref={bottomRef} />
@@ -306,13 +527,59 @@ export function AIChat({ tripId }: { tripId: string | null }) {
 
           {error && <div className="ai-error">{error}</div>}
 
+          {pendingFiles.length > 0 && (
+            <div className="ai-attached-files">
+              {pendingFiles.map((item) => (
+                <div key={item.id} className="ai-file-chip">
+                  {getFileIcon(item.file.name)}
+                  <span className="ai-file-chip-name" title={item.file.name}>
+                    {item.file.name}
+                  </span>
+                  <span className="ai-file-chip-size">{formatFileSize(item.file.size)}</span>
+                  <button
+                    type="button"
+                    className="ai-file-chip-del"
+                    onClick={() => removeFile(item.id)}
+                    title="Remove file"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="ai-input-row">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.eml,.msg,.txt,.html,.htm,.ics"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
+            <button
+              type="button"
+              className="btn ghost icon-only ai-attach-btn"
+              title="Attach PDF, email (.eml), or document"
+              disabled={!tripId || busy || uploadingFiles}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip size={16} />
+            </button>
             <textarea
               rows={2}
-              placeholder={tripId ? 'Ask or paste a confirmation email…' : 'Open a trip to chat'}
+              placeholder={
+                pendingFiles.length > 0
+                  ? 'Add instructions (optional) and send…'
+                  : tripId
+                  ? 'Ask, paste text, or drop PDFs / emails…'
+                  : 'Open a trip to chat'
+              }
               value={input}
-              disabled={!tripId || busy}
+              disabled={!tripId || busy || uploadingFiles}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -320,8 +587,12 @@ export function AIChat({ tripId }: { tripId: string | null }) {
                 }
               }}
             />
-            <button className="btn primary" onClick={() => void send()} disabled={!input.trim() || !tripId || busy}>
-              <Send size={15} />
+            <button
+              className="btn primary"
+              onClick={() => void send()}
+              disabled={(!input.trim() && pendingFiles.length === 0) || !tripId || busy || uploadingFiles}
+            >
+              {uploadingFiles ? <Spinner /> : <Send size={15} />}
             </button>
           </div>
 

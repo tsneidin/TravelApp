@@ -1,9 +1,16 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { asyncHandler, badRequest } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess } from '../middleware/auth.js';
 import { processTripChat, suggestTitleAndDescription } from '../services/ai.js';
 import { getAiConfig, saveAiConfig, testAiConnection } from '../services/settings.service.js';
+import { extractDocumentText } from '../services/fileParser.js';
+
+const docUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
 
 export const aiRouter = Router();
 
@@ -112,13 +119,67 @@ aiRouter.get(
 );
 
 aiRouter.post(
+  '/:tripId/ai/upload-file',
+  docUpload.single('file'),
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    if (!req.file) throw badRequest('No file uploaded');
+
+    const document = await extractDocumentText({
+      buffer: req.file.buffer,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+    });
+
+    res.json({ ok: true, document });
+  }),
+);
+
+aiRouter.post(
   '/:tripId/ai/chat',
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
     const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
-    const message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
-    if (!message) throw badRequest('message is required');
+    let message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
+    const attachments = Array.isArray(req.body.attachments)
+      ? (req.body.attachments as Array<{ filename: string; fileType: string; size?: number; text?: string; summary?: string }>)
+      : [];
+
+    if (!message && !attachments.length) {
+      throw badRequest('message or at least one document attachment is required');
+    }
+
+    if (!message && attachments.length) {
+      message = 'Please analyze the attached travel document and extract any reservations, bookings, flights, hotels, or activities to add to our trip.';
+    }
+
+    // Format prompt for LLM including full document content
+    let llmPrompt = message;
+    for (const att of attachments) {
+      const cleanDocText = (att.text || '').trim();
+      llmPrompt +=
+        `\n\n[Attached Document: "${att.filename}" (${att.fileType || 'file'})]\n` +
+        `--- DOCUMENT CONTENT ---\n` +
+        `${cleanDocText}\n` +
+        `--- END OF DOCUMENT ---`;
+    }
+
+    // Format stored user message with badges and collapsible raw text
+    let storedContent = message;
+    if (attachments.length > 0) {
+      const badges = attachments
+        .map((a) => `📎 **[${(a.fileType || 'FILE').toUpperCase()}] ${a.filename}**`)
+        .join('  \n');
+      const rawSections = attachments
+        .map(
+          (a) =>
+            `\n\n<details><summary>View extracted text: ${a.filename}</summary>\n\n${(a.text || '').trim()}\n</details>`,
+        )
+        .join('\n');
+      storedContent = `${badges}\n\n${message}${rawSections}`;
+    }
 
     // Load recent history for conversational context.
     const prior = await prisma.chatMessage.findMany({
@@ -131,11 +192,11 @@ aiRouter.post(
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    const { reply, actions } = await processTripChat(tripId, user.id, message, history);
+    const { reply, actions } = await processTripChat(tripId, user.id, llmPrompt, history);
 
     await prisma.chatMessage.createMany({
       data: [
-        { tripId, userId: user.id, role: 'user', content: message },
+        { tripId, userId: user.id, role: 'user', content: storedContent },
         { tripId, userId: user.id, role: 'assistant', content: reply },
       ],
     });

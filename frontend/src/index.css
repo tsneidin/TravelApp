@@ -1781,3 +1781,126 @@ a.link:hover {
   gap: 10px;
   color: #fff;
 }
+
+/* AI Chat File Drag & Drop */
+.ai-chat {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: 400px;
+  max-width: calc(100vw - 28px);
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, var(--panel), #0c1524);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.ai-dropzone-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(12, 21, 36, 0.94);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.ai-dropzone-icon {
+  color: var(--accent);
+}
+.ai-dropzone-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.ai-attached-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border-top: 1px solid var(--line);
+  max-height: 85px;
+  overflow-y: auto;
+}
+.ai-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card-2);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--text);
+  max-width: 100%;
+}
+.ai-file-chip-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-file-chip-size {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.ai-file-chip-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 2px;
+}
+.ai-file-chip-del:hover {
+  color: var(--danger);
+}
+.ai-attach-btn {
+  height: 42px;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.ai-attach-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.08);
+}
+.ai-bubble-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+.ai-bubble-attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+

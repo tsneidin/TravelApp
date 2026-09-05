@@ -57,3 +57,9 @@ export function uploadPhotos(tripId: string, files: File[], placeId?: string, ca
   if (caption) fd.append('caption', caption);
   return api<{ photos: { id: string; url: string }[] }>('POST', `/trips/${tripId}/photos`, fd);
 }
+
+export function uploadAiDocument(tripId: string, file: File) {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api<{ ok: boolean; document: import('./types').ParsedDocument }>('POST', `/trips/${tripId}/ai/upload-file`, fd);
+}

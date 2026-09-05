@@ -227,3 +227,12 @@ export interface GeocodedPlace {
   website?: string;
   mapUrl?: string;
 }
+
+export interface ParsedDocument {
+  filename: string;
+  fileType: 'pdf' | 'email' | 'text' | 'html' | 'calendar' | 'unknown';
+  size: number;
+  text: string;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}

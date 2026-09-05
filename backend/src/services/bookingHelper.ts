@@ -319,6 +319,43 @@ export async function syncBookingToItinerary(
         });
         placesAdded++;
       }
+
+      // If flight arrives on the next day (overnight flight), add arrival place on arrival day
+      if (leg.arriveTime && leg.departTime && toDayKey(leg.arriveTime) !== toDayKey(leg.departTime)) {
+        const arrivalDayId = await getOrCreateDay(leg.arriveTime);
+        const arrivalTitle = leg.flightNumber
+          ? `🛬 Arrive ${leg.toCity} (${leg.toCode}) — ${leg.carrier} ${leg.flightNumber}`
+          : `🛬 Arrive ${leg.toCity} (${leg.toCode}) — ${leg.carrier}`;
+
+        const existingArrival = await prisma.place.findFirst({
+          where: { tripId, dayId: arrivalDayId, name: arrivalTitle },
+        });
+
+        if (!existingArrival) {
+          const count = await prisma.place.count({ where: { tripId } });
+          const notesParts = [
+            `Arrives ${leg.arriveTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+            info.reference ? `Confirmation: ${info.reference}` : '',
+            leg.seat ? `Seat: ${leg.seat}` : '',
+          ].filter(Boolean);
+
+          await prisma.place.create({
+            data: {
+              tripId,
+              dayId: arrivalDayId,
+              name: arrivalTitle,
+              category: 'Transport',
+              address: `${leg.toCity} Airport (${leg.toCode})`,
+              startTime: leg.arriveTime,
+              endTime: leg.arriveTime,
+              notes: notesParts.join(' · ') || undefined,
+              sortOrder: count,
+              sourceText: rawSourceText.slice(0, 10_000),
+            },
+          });
+          placesAdded++;
+        }
+      }
     }
   } else {
     // Fallback: create a useful itinerary item from the AI's structured dates.

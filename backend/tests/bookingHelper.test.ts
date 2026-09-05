@@ -126,5 +126,28 @@ $2,054.66 USD
     expect(info.legs[3].fromCity).toBe('Chicago');
     expect(info.legs[3].toCity).toBe('Madison');
   });
+
+  it('correctly records overnight flight dates where depart and arrive are on different days', () => {
+    const info = extractFlightLegs(sampleReceipt);
+    const ordToNap = info.legs[1];
+    expect(ordToNap.departTime).toBeDefined();
+    expect(ordToNap.arriveTime).toBeDefined();
+    const departDay = ordToNap.departTime?.toISOString().slice(0, 10);
+    const arriveDay = ordToNap.arriveTime?.toISOString().slice(0, 10);
+    expect(departDay).toBe('2026-09-28');
+    expect(arriveDay).toBe('2026-09-29');
+  });
+});
+
+describe('cleanAirportCity', () => {
+  it('strips OCR stray artifacts and carrier prefixes', async () => {
+    const { cleanAirportCity } = await import('../src/services/dayReconciliation.js');
+    expect(cleanAirportCity('E Chicago')).toBe('Chicago');
+    expect(cleanAirportCity('Operated by Envoy Air Chicago')).toBe('Chicago');
+    expect(cleanAirportCity('American Airlines Madison')).toBe('Madison');
+    expect(cleanAirportCity('Arrive Naples Airport')).toBe('Naples');
+    expect(cleanAirportCity('New York')).toBe('New York');
+    expect(cleanAirportCity('San Francisco')).toBe('San Francisco');
+  });
 });
 

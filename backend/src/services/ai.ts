@@ -1,6 +1,5 @@
 import { config } from '../config.js';
 import { prisma } from '../db.js';
-import { fetchSuggestions, type Suggestion } from './suggestions.js';
 import { getAiConfig, type AiConfigData } from './settings.service.js';
 import { debugLog } from '../lib/debug.js';
 import {
@@ -18,8 +17,6 @@ export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
 }
-
-const suggestionCache = new Map<string, Suggestion[]>();
 
 export const aiConfig = config.ai;
 
@@ -274,33 +271,6 @@ async function inferRecommendationContext(
   };
 }
 
-const SUGGEST_INTENT =
-  /(suggest|recommend|things? to do|places? to see|what (should|can|could|to) (i|we|you)\s?(do|see|visit|check out)|attractions|top sites|must-see|must see|best places?|ideas|itinerary ideas|where should|restaurants?|pizza|coffee|cafes?|bars?|breakfast|lunch|dinner|food|museums?|tours?|shops?|shopping|parks?|hikes?|beaches?|music|shows?|events?|open when|nearby)/i;
-
-function detectSuggestQuery(message: string, context: RecommendationContext): string | null {
-  const wordsInMessage = message.trim().split(/\s+/).filter(Boolean);
-  const shortDiscoveryQuery =
-    wordsInMessage.length > 0 &&
-    wordsInMessage.length <= 10 &&
-    !/\b(add|delete|remove|edit|change|move|book|booking|confirmation|expense|budget|cost|paid)\b/i.test(message);
-  if (!SUGGEST_INTENT.test(message) && !shortDiscoveryQuery) return null;
-  const stop = new Set([
-    'please', 'suggest', 'suggestions', 'recommend', 'recommendations', 'things', 'thing',
-    'places', 'place', 'see', 'do', 'visit', 'what', 'should', 'could', 'can', 'for', 'any',
-    'good', 'best', 'top', 'with', 'in', 'and', 'the', 'a', 'of', 'to', 'i', 'we', 'me',
-    'us', 'that', 'this', 'itinerary', 'ideas', 'day', 'there', 'around', 'near',
-  ]);
-  const words = (message.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
-    (w) => w.length > 3 && !stop.has(w),
-  );
-  const focus = words.slice(0, 4).join(' ');
-  const timing = context.recommendedAt
-    ? ` open around ${new Date(context.recommendedAt).toLocaleString()} highly rated reviews`
-    : ' highly rated reviews';
-  if (context.location) return `${context.location} ${focus || message} ${timing}`.trim();
-  return focus ? `${focus} ${timing}`.trim() : (message.length > 4 ? message : null);
-}
-
 export async function processTripChat(
   tripId: string,
   userId: string,
@@ -335,43 +305,7 @@ export async function processTripChat(
   }
 
   const system = await buildSystemPrompt(tripId);
-  let userContent = userMessage;
-
-  // If the user is asking for recommendations, pre-fetch suggestions so they
-  // always appear as cards (even if the model doesn't call the tool itself).
-  let autoSuggest: ToolResult | null = null;
-  const suggestQuery = detectSuggestQuery(userMessage, recommendationContext);
-  if (suggestQuery) {
-    let suggestions = suggestionCache.get(suggestQuery);
-    if (!suggestions) {
-      debugLog('ai', 'suggestion_cache_miss', { query: suggestQuery });
-      suggestions = await fetchSuggestions(suggestQuery, 16);
-      suggestionCache.set(suggestQuery, suggestions);
-    } else {
-      debugLog('ai', 'suggestion_cache_hit', { query: suggestQuery, results: suggestions.length });
-    }
-    if (suggestions.length) {
-      suggestions = suggestions.map((suggestion) => ({
-        ...suggestion,
-        dayId: recommendationContext.dayId,
-        recommendedAt: recommendationContext.recommendedAt,
-        context: recommendationContext.label,
-      }));
-      autoSuggest = {
-        action: 'get_suggestions',
-        summary: `Found ${suggestions.length} suggestions for "${suggestQuery}"`,
-        ok: true,
-        suggestions,
-      };
-      userContent +=
-        `\n\n[Recommendation context: ${recommendationContext.label || destination || 'trip destination'}. Verify opening-hours claims against the linked sources. Found options; present the strongest matches and offer to add them:\n` +
-        suggestions
-          .slice(0, 8)
-          .map((s) => `- ${s.title}${s.summary ? `: ${s.summary.slice(0, 120)}` : ''}`)
-          .join('\n') +
-        `]`;
-    }
-  }
+  const userContent = userMessage;
 
   const messages: LlmMessage[] = [{ role: 'system', content: system }];
   for (const h of history.slice(-10)) messages.push({ role: h.role, content: h.content });
@@ -393,9 +327,6 @@ export async function processTripChat(
     const toolCalls = msg.tool_calls ?? [];
     if (!toolCalls.length) {
       const reply = msg.content?.trim() || 'Done.';
-      if (autoSuggest && !actions.some((a) => a.action === 'get_suggestions')) {
-        actions.push(autoSuggest);
-      }
       return { reply, actions };
     }
 
@@ -411,9 +342,6 @@ export async function processTripChat(
 
   const res = await callLlm(messages, [], activeConfig);
   const reply = res.choices?.[0]?.message?.content?.trim() || 'Finished.';
-  if (autoSuggest && !actions.some((a) => a.action === 'get_suggestions')) {
-    actions.push(autoSuggest);
-  }
   return { reply, actions };
 }
 

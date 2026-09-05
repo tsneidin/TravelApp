@@ -393,6 +393,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 className="place-title-group"
                 onClick={(e) => {
                   e.stopPropagation();
+                  setActivePlaceId(p.id);
+                  if (p.dayId && selectedDayId && p.dayId !== selectedDayId) {
+                    setSelectedDayId(p.dayId);
+                  }
                   toggleExpand(p.id);
                 }}
                 role="button"
@@ -400,6 +404,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.stopPropagation();
+                    setActivePlaceId(p.id);
+                    if (p.dayId && selectedDayId && p.dayId !== selectedDayId) {
+                      setSelectedDayId(p.dayId);
+                    }
                     toggleExpand(p.id);
                   }
                 }}

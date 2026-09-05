@@ -48,6 +48,35 @@ function isTransportation(place: PlaceWithStop): boolean {
   );
 }
 
+function getGeocodeQueries(place: PlaceWithStop, destination?: string | null): string[] {
+  const queries: string[] = [];
+  const addr = place.address?.trim();
+  if (addr) {
+    queries.push(addr);
+    if (destination && !addr.toLowerCase().includes(destination.toLowerCase())) {
+      queries.push(`${addr}, ${destination}`);
+    }
+  }
+
+  if (/→|->/.test(place.name)) {
+    const originMatch = /:\s*([^→\-]+?)(?:\s*\([A-Z]{3}\))?\s*(?:→|->)/.exec(place.name) || /^([^→\-]+?)\s*(?:→|->)/.exec(place.name);
+    if (originMatch?.[1]) {
+      const originCity = originMatch[1].replace(/^[^\w]+/, '').trim();
+      if (originCity) queries.push(`${originCity} Airport`);
+    }
+  }
+
+  const cleanName = place.name.replace(/^[^\w]+/, '').trim();
+  if (cleanName && !queries.includes(cleanName)) {
+    queries.push(cleanName);
+    if (destination && !cleanName.toLowerCase().includes(destination.toLowerCase())) {
+      queries.push(`${cleanName}, ${destination}`);
+    }
+  }
+
+  return queries;
+}
+
 export function TripMap({
   places,
   destination,
@@ -217,18 +246,24 @@ export function TripMap({
         let coord: Coord | undefined = place.lat != null && place.lng != null
           ? { lat: place.lat, lng: place.lng }
           : undefined;
-        const query = [place.name, place.address, destination].filter(Boolean).join(', ');
-        if (!coord && query) {
-          coord = geocodeCache.get(query);
-          if (!coord) {
-            try {
-              const response = await geocoder.geocode({ address: query });
-              const point = response.results?.[0]?.geometry?.location;
-              if (point) {
-                coord = { lat: point.lat(), lng: point.lng() };
-                geocodeCache.set(query, coord);
-              }
-            } catch { /* Item remains listed even when it cannot be geocoded. */ }
+
+        if (!coord) {
+          const queries = getGeocodeQueries(place, destination);
+          for (const query of queries) {
+            coord = geocodeCache.get(query);
+            if (!coord) {
+              try {
+                const response = await geocoder.geocode({ address: query });
+                const point = response.results?.[0]?.geometry?.location;
+                if (point) {
+                  coord = { lat: point.lat(), lng: point.lng() };
+                  geocodeCache.set(query, coord);
+                  break;
+                }
+              } catch { /* Try next fallback query */ }
+            } else {
+              break;
+            }
           }
         }
         if (coord) resolved.push({ place, coord });

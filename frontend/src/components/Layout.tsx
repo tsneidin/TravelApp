@@ -183,20 +183,25 @@ export function Layout() {
                               deduped.push(day);
                             }
                           }
+                          let currentCity: string | null = null;
                           return deduped.map((day, index) => {
                             const dateStr = formatSidebarDate(day.date);
-                            const lastCity = getLastCityForDay(day);
+                            const explicitCity = getLastCityForDay(day);
+                            if (explicitCity) {
+                              currentCity = explicitCity;
+                            }
+                            const displayCity = explicitCity || currentCity || t.destination || null;
                             return (
                               <Link
                                 key={day.id}
                                 to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}
                                 className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
-                                title={`Day ${index + 1} · ${dateStr}${lastCity ? ` · ${lastCity}` : ''}`}
+                                title={`Day ${index + 1} · ${dateStr}${displayCity ? ` · ${displayCity}` : ''}`}
                               >
                                 <span className="side-tab-dot" />
                                 <span className="side-day-num">{index + 1}</span>
                                 <span className="side-day-date">{dateStr}</span>
-                                {lastCity && <span className="side-day-city">{lastCity}</span>}
+                                {displayCity && <span className="side-day-city">{displayCity}</span>}
                               </Link>
                             );
                           });

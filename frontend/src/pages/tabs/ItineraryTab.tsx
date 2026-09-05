@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
@@ -169,10 +169,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     return trip.destination ? { address: trip.destination } : undefined;
   }, [selectedDayId, days, trip.destination]);
 
+  const lastHashRef = useRef<string | null>(null);
+
   // React Router updates the hash without performing the browser's normal
-  // anchor scroll. Explicitly scroll the independently scrolling center pane.
+  // anchor scroll. Explicitly scroll the independently scrolling center pane ONLY when hash changes.
   useEffect(() => {
-    if (!location.hash.startsWith('#day-')) return;
+    if (!location.hash.startsWith('#day-')) {
+      lastHashRef.current = null;
+      return;
+    }
+    if (lastHashRef.current === location.hash) return;
+    lastHashRef.current = location.hash;
+
     const elementId = decodeURIComponent(location.hash.slice(1));
     const dayId = decodeURIComponent(location.hash.slice(5));
     if (dayId && days.some((d) => d.id === dayId)) {
@@ -253,24 +261,53 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
-  const reorder = async (placeId: string, targetDayId: string, index: number) => {
-    const all = [...(trip.places ?? [])];
-    const idx = all.findIndex((p) => p.id === placeId);
-    if (idx < 0) return;
-    const [pl] = all.splice(idx, 1);
-    pl.dayId = targetDayId;
-    const siblings = all.filter((p) => p.dayId === targetDayId);
-    siblings.sort((a, b) => a.sortOrder - b.sortOrder);
-    siblings.splice(Math.min(index, siblings.length), 0, pl);
-    const entries = siblings.map((p, i) => ({ placeId: p.id, dayId: targetDayId, sortOrder: i }));
+  const reorder = async (placeId: string, targetDayId: string, targetIndex: number) => {
+    let sourcePlace: Place | undefined;
+    let sourceDayId: string | null = null;
+
+    for (const d of days) {
+      const found = d.places.find((p) => p.id === placeId);
+      if (found) {
+        sourcePlace = found;
+        sourceDayId = d.id;
+        break;
+      }
+    }
+    if (!sourcePlace) {
+      sourcePlace = orphanPlaces.find((p) => p.id === placeId);
+      sourceDayId = null;
+    }
+    if (!sourcePlace) return;
+
+    const targetDay = days.find((d) => d.id === targetDayId);
+    const targetPlaces = [...(targetDay?.places ?? [])].filter((p) => p.id !== placeId);
+    const clampedIndex = Math.max(0, Math.min(targetIndex, targetPlaces.length));
+
+    const updatedPlace = { ...sourcePlace, dayId: targetDayId || null };
+    targetPlaces.splice(clampedIndex, 0, updatedPlace);
+
+    const entries: { placeId: string; dayId?: string; sortOrder: number }[] = targetPlaces.map(
+      (p, i) => ({ placeId: p.id, dayId: targetDayId || undefined, sortOrder: i }),
+    );
+
+    // If moved from a different day, also re-index remaining places in source day
+    if (sourceDayId && sourceDayId !== targetDayId) {
+      const sourceDay = days.find((d) => d.id === sourceDayId);
+      const sourceRemaining = (sourceDay?.places ?? []).filter((p) => p.id !== placeId);
+      sourceRemaining.forEach((p, i) => {
+        entries.push({ placeId: p.id, dayId: sourceDayId!, sortOrder: i });
+      });
+    }
+
+    setDragId(null);
     await apiPost(`/trips/${trip.id}/reorder`, { entries });
     await reload();
   };
 
   const dropOnDay = (dayId: string, index: number) => (e: React.DragEvent) => {
     e.preventDefault();
-    const placeId = e.dataTransfer.getData('text/plain');
-    if (placeId && dragId) void reorder(dragId, dayId, index);
+    const placeId = e.dataTransfer.getData('text/plain') || dragId;
+    if (placeId) void reorder(placeId, dayId, index);
   };
 
   const removePlace = async (p: Place) => {
@@ -362,12 +399,31 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const hasMeta = Boolean(locationText || categoryText || formattedTime);
 
     return (
-      <div key={p.id} className="place-item-wrap">
+      <div
+        key={p.id}
+        className="place-item-wrap"
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const movingId = dragId || e.dataTransfer.getData('text/plain');
+          if (movingId && p.dayId) {
+            void reorder(movingId, p.dayId, Math.max(0, (stopNumber ?? 1) - 1));
+          }
+        }}
+      >
         <div
           id={`place-${p.id}`}
           className={`place-card-compact ${dragId === p.id ? 'dragging' : ''} ${activePlaceId === p.id ? 'active-highlight' : ''} ${isExpanded ? 'active-row' : ''}`}
           draggable
-          onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', p.id);
+            e.dataTransfer.effectAllowed = 'move';
+            setDragId(p.id);
+          }}
           onDragEnd={() => setDragId(null)}
           onClick={() => {
             setActivePlaceId(p.id);
@@ -670,11 +726,37 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               {day.notes && <div className="small mt mb" style={{ whiteSpace: 'pre-wrap' }}><NotebookPen size={12} style={{ verticalAlign: -2 }} /> {day.notes}</div>}
 
               {day.places.length === 0 ? (
-                <div className="small muted mt mb">Nothing planned this day yet.</div>
+                <div
+                  className="small muted mt mb"
+                  style={{
+                    minHeight: 48,
+                    border: '1px dashed var(--border)',
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '8px 12px',
+                    background: dragId ? 'rgba(34, 211, 238, 0.08)' : 'transparent',
+                    transition: 'background 0.15s ease',
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    dropOnDay(day.id, 0)(e);
+                  }}
+                >
+                  Nothing planned this day yet. Drag items here to schedule.
+                </div>
               ) : (
                 <div
                   className="day-places-list"
-                  onDragOver={(e) => e.preventDefault()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }}
                   onDrop={(e) => dropOnDay(day.id, day.places.length)(e)}
                 >
                   {day.places.map((p, pIdx) => {
@@ -721,7 +803,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           ))}
 
           {orphanPlaces.length > 0 && (
-            <div className="panel orphan-panel" id="places-unassigned" style={{ scrollMarginTop: 16, marginBottom: 18 }}>
+            <div
+              className="panel orphan-panel"
+              id="places-unassigned"
+              style={{ scrollMarginTop: 16, marginBottom: 18 }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const movingId = dragId || e.dataTransfer.getData('text/plain');
+                if (movingId) void reorder(movingId, '', orphanPlaces.length);
+              }}
+            >
               <div className="row between day-header">
                 <div className="row">
                   <span className="badge">Unassigned</span>
@@ -730,7 +825,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 </div>
               </div>
               <div className="place-list">
-                {orphanPlaces.map((p) => renderPlaceRow(p))}
+                {orphanPlaces.map((p, idx) => (
+                  <div
+                    key={p.id}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const movingId = dragId || e.dataTransfer.getData('text/plain');
+                      if (movingId) void reorder(movingId, '', idx);
+                    }}
+                  >
+                    {renderPlaceRow(p)}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -842,7 +953,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   onPlaceClick={(id) => {
                     setActivePlaceId(id);
                     const el = document.getElementById(`place-${id}`);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   }}
                   height="100%"
                 />

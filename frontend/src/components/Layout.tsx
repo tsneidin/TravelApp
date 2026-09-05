@@ -144,6 +144,27 @@ export function Layout() {
   const activeTab = new URLSearchParams(location.search).get('tab') ?? 'itinerary';
   const activeDayId = location.hash.startsWith('#day-') ? location.hash.slice(5) : null;
 
+  const [collapsedItineraries, setCollapsedItineraries] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('travelapp_collapsed_itin');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleItineraryCollapse = (tripId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCollapsedItineraries((prev) => {
+      const next = { ...prev, [tripId]: !prev[tripId] };
+      try {
+        localStorage.setItem('travelapp_collapsed_itin', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Refresh the trip folder list whenever the route changes or data mutates so the tree stays current.
   useEffect(() => {
     let alive = true;
@@ -214,49 +235,74 @@ export function Layout() {
                   <div className="trip-subnav">
                     {TRIP_TABS.map((tb) => (
                       <div key={tb.key}>
-                        <Link
-                          to={`/trips/${t.id}?tab=${tb.key}`}
-                          className={`side-tab ${activeTab === tb.key && !(tb.key === 'itinerary' && activeDayId) ? 'active' : ''}`}
-                        >
-                          <span className="side-tab-dot" />
-                          {tb.label}
-                        </Link>
-                        {tb.key === 'itinerary' && (() => {
-                          const sorted = [...(t.days ?? [])].sort(
-                            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
-                          );
-                          const deduped: typeof sorted = [];
-                          const seen = new Set<string>();
-                          for (const day of sorted) {
-                            const key = String(day.date).slice(0, 10);
-                            if (!seen.has(key)) {
-                              seen.add(key);
-                              deduped.push(day);
-                            }
-                          }
-                          let currentCity: string | null = null;
-                          return deduped.map((day, index) => {
-                            const dateStr = formatSidebarDate(day.date);
-                            const explicitCity = getLastCityForDay(day);
-                            if (explicitCity) {
-                              currentCity = explicitCity;
-                            }
-                            const displayCity = explicitCity || currentCity || t.destination || null;
-                            return (
+                        {tb.key === 'itinerary' ? (
+                          <div className="side-tab-group">
+                            <div className={`side-tab side-tab-parent ${activeTab === tb.key && !activeDayId ? 'active' : ''}`}>
                               <Link
-                                key={day.id}
-                                to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}
-                                className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
-                                title={`Day ${index + 1} · ${dateStr}${displayCity ? ` · ${displayCity}` : ''}`}
+                                to={`/trips/${t.id}?tab=${tb.key}`}
+                                className="side-tab-link"
                               >
                                 <span className="side-tab-dot" />
-                                <span className="side-day-num">{index + 1}</span>
-                                <span className="side-day-date">{dateStr}</span>
-                                {displayCity && <span className="side-day-city">{displayCity}</span>}
+                                {tb.label}
                               </Link>
-                            );
-                          });
-                        })()}
+                              {(t.days ?? []).length > 0 && (
+                                <button
+                                  type="button"
+                                  className="side-tab-collapse-btn"
+                                  onClick={(e) => toggleItineraryCollapse(t.id, e)}
+                                  title={collapsedItineraries[t.id] ? 'Expand itinerary days' : 'Collapse itinerary days'}
+                                  aria-label={collapsedItineraries[t.id] ? 'Expand itinerary days' : 'Collapse itinerary days'}
+                                >
+                                  {collapsedItineraries[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                </button>
+                              )}
+                            </div>
+                            {!collapsedItineraries[t.id] && (() => {
+                              const sorted = [...(t.days ?? [])].sort(
+                                (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
+                              );
+                              const deduped: typeof sorted = [];
+                              const seen = new Set<string>();
+                              for (const day of sorted) {
+                                const key = String(day.date).slice(0, 10);
+                                if (!seen.has(key)) {
+                                  seen.add(key);
+                                  deduped.push(day);
+                                }
+                              }
+                              let currentCity: string | null = null;
+                              return deduped.map((day, index) => {
+                                const dateStr = formatSidebarDate(day.date);
+                                const explicitCity = getLastCityForDay(day);
+                                if (explicitCity) {
+                                  currentCity = explicitCity;
+                                }
+                                const displayCity = explicitCity || currentCity || t.destination || null;
+                                return (
+                                  <Link
+                                    key={day.id}
+                                    to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}
+                                    className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
+                                    title={`Day ${index + 1} · ${dateStr}${displayCity ? ` · ${displayCity}` : ''}`}
+                                  >
+                                    <span className="side-tab-dot" />
+                                    <span className="side-day-num">{index + 1}</span>
+                                    <span className="side-day-date">{dateStr}</span>
+                                    {displayCity && <span className="side-day-city">{displayCity}</span>}
+                                  </Link>
+                                );
+                              });
+                            })()}
+                          </div>
+                        ) : (
+                          <Link
+                            to={`/trips/${t.id}?tab=${tb.key}`}
+                            className={`side-tab ${activeTab === tb.key ? 'active' : ''}`}
+                          >
+                            <span className="side-tab-dot" />
+                            {tb.label}
+                          </Link>
+                        )}
                       </div>
                     ))}
                   </div>

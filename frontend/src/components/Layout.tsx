@@ -25,10 +25,33 @@ function hashHue(s: string): number {
   return h % 360;
 }
 
+function cleanCityToken(tok: string): string | null {
+  if (!tok) return null;
+  let c = tok.trim();
+
+  // Strip leading postal codes (e.g. "84091 Battipaglia SA" -> "Battipaglia SA", "75001 Paris" -> "Paris", "I-84091 Battipaglia" -> "Battipaglia")
+  c = c.replace(/^(?:[A-Z]{1,2}-)?\d{4,6}\s+/, '');
+  // Strip trailing postal codes (e.g. "Chicago 60613" -> "Chicago")
+  c = c.replace(/\s+\d{5}(?:-\d{4})?$/, '');
+  // Strip trailing 2-letter state / province codes (e.g. "Battipaglia SA" -> "Battipaglia", "Chicago IL" -> "Chicago")
+  c = c.replace(/\s+[A-Z]{2}$/, '');
+  // Strip leading numbers e.g. "1060 W Addison"
+  c = c.replace(/^\d+[\s\w]*\s+/, '');
+
+  c = c.trim();
+  if (c.length >= 2 && c.length <= 35 && !/^\d+$/.test(c)) {
+    return c;
+  }
+  return null;
+}
+
 function extractCityFromLocation(raw?: string | null): string | null {
   if (!raw) return null;
   let s = raw.trim();
   if (!s) return null;
+
+  // Ignore raw coordinates e.g. "40.853, 14.268" or "40.85321,-73.9872"
+  if (/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(s)) return null;
 
   // If contains flight arrow "A -> B" or "A → B", take the destination
   if (/→|->/.test(s)) {
@@ -42,26 +65,44 @@ function extractCityFromLocation(raw?: string | null): string | null {
   s = s.replace(/\s+(?:Central\s+)?Station\b/gi, '');
   s = s.replace(/\s+Terminal\b/gi, '');
 
-  // Strip carrier prefixes like "Operated by Envoy Air Chicago" -> "Chicago"
+  // Strip carrier prefixes and action words like "Operated by Envoy Air Chicago" -> "Chicago"
   s = s.replace(/^Operated\s+by[^\n]*\n+/i, '');
   s = s.replace(/^Operated\s+by\s+(?:Envoy\s+Air|SkyWest|American\s+Eagle|[A-Za-z\s]+?)\s+(?=[A-Z][a-z]+)/i, '');
+  s = s.replace(/^(?:Arrive|Arrival|Depart|Departure|From|To|At|In)\s+/i, '');
   s = s.replace(/^[A-Za-z]\s+/i, ''); // stray single letter OCR artifact
 
-  // Comma separated e.g. "Naples, Italy" or "Via Toledo 10, Naples, Italy"
+  // Comma separated e.g. "Via Spineta, 84091 Battipaglia SA, Italy" or "Naples, Italy"
   const tokens = s.split(',').map((t) => t.trim()).filter(Boolean);
+
   if (tokens.length >= 2) {
     if (tokens.length === 2) {
-      return tokens[0].replace(/^\d+[\s\w]*\s+/, '').trim();
+      const city = cleanCityToken(tokens[0]);
+      if (city) return city;
     }
-    const penultimate = tokens[tokens.length - 2].replace(/^\d+[\s\w]*\s+/, '').trim();
-    if (/^[A-Z]{2}(?:\s+\d{5})?$/.test(penultimate) && tokens.length >= 4) {
-      return tokens[tokens.length - 3].replace(/^\d+[\s\w]*\s+/, '').trim();
+
+    // If 3+ tokens, e.g. ["Via Spineta", "84091 Battipaglia SA", "Italy"]
+    // Inspect tokens starting from penultimate backwards (skipping country)
+    for (let i = tokens.length - 2; i >= 0; i--) {
+      // Don't treat street names (e.g. "Via Spineta", "123 Main St") as city
+      if (/^(?:via|viale|corso|piazza|strada|rue|calle|street|st|ave|avenue|blvd|rd|road|\d+)\b/i.test(tokens[i])) {
+        continue;
+      }
+      const city = cleanCityToken(tokens[i]);
+      if (city) return city;
     }
-    return penultimate;
+
+    // Fallback to cleaning the penultimate token
+    const fallback = cleanCityToken(tokens[tokens.length - 2]);
+    if (fallback) return fallback;
   }
 
-  if (tokens.length === 1 && !/^\d+/.test(tokens[0])) {
-    return tokens[0].trim();
+  // Single token: only return if it looks like a city, not a business/hotel name
+  if (tokens.length === 1) {
+    if (/\b(hotel|b&b|albergo|resort|hostel|inn|motel|restaurant|ristorante|bar|cafe|pizzeria|trattoria|shop|store|museum|park)\b/i.test(tokens[0])) {
+      return null;
+    }
+    const clean = cleanCityToken(tokens[0]);
+    if (clean && !/^\d+/.test(clean)) return clean;
   }
 
   return null;
@@ -112,9 +153,19 @@ export function Layout() {
         .catch(() => alive && setTrips([]));
     };
     fetchTrips();
+
+    const onTripUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { trip?: Trip } | undefined;
+      if (detail?.trip && alive) {
+        setTrips((prev) => prev.map((t) => (t.id === detail.trip!.id ? { ...t, ...detail.trip } : t)));
+      }
+    };
+
+    window.addEventListener('travelapp:trip-updated', onTripUpdated);
     window.addEventListener('travelapp:mutated', fetchTrips);
     return () => {
       alive = false;
+      window.removeEventListener('travelapp:trip-updated', onTripUpdated);
       window.removeEventListener('travelapp:mutated', fetchTrips);
     };
   }, [location.key]);

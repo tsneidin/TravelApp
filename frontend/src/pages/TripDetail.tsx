@@ -46,6 +46,7 @@ export function TripDetail() {
     try {
       const r = await apiGet<{ trip: Trip }>(`/trips/${tripId}`);
       setTrip(r.trip);
+      window.dispatchEvent(new CustomEvent('travelapp:trip-updated', { detail: { trip: r.trip } }));
     } catch (e) {
       setError((e as Error).message);
     } finally {

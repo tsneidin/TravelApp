@@ -490,13 +490,40 @@ export function AIChat({ tripId }: { tripId: string | null }) {
             <div ref={bottomRef} />
           </div>
 
-          {actions.length > 0 && (
+          {actions.filter((a) => a.action !== 'get_suggestions').length > 0 && (
             <div className="ai-actions">
-              {actions.map((a, i) => (
-                <span key={i} className="badge" title={a.summary}>
-                  {a.ok ? (a.action === 'add_place' ? '➕' : a.action === 'add_booking' ? '🎫' : a.action === 'add_expense' ? '💸' : a.action === 'add_day' ? '📅' : '✨') : '⚠️'} {a.summary.length > 90 ? a.summary.slice(0, 90) + '…' : a.summary}
-                </span>
-              ))}
+              {actions
+                .filter((a) => a.action !== 'get_suggestions')
+                .map((a, i) => {
+                  const isDelete = a.action.startsWith('delete_');
+                  const isUpdate = a.action.startsWith('update_');
+                  const icon = !a.ok
+                    ? '⚠️'
+                    : isDelete
+                    ? '🗑️'
+                    : isUpdate
+                    ? '✏️'
+                    : a.action.includes('place')
+                    ? '📍'
+                    : a.action.includes('booking')
+                    ? '🎫'
+                    : a.action.includes('expense')
+                    ? '💸'
+                    : a.action.includes('day')
+                    ? '📅'
+                    : a.action.includes('packing')
+                    ? '🎒'
+                    : a.action.includes('journal')
+                    ? '📖'
+                    : a.action.includes('trip')
+                    ? '🗺️'
+                    : '✨';
+                  return (
+                    <span key={i} className={`badge ${a.ok ? 'success' : 'warn'}`} title={a.summary}>
+                      {icon} {a.summary.length > 95 ? a.summary.slice(0, 95) + '…' : a.summary}
+                    </span>
+                  );
+                })}
             </div>
           )}
 

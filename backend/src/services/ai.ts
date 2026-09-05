@@ -1,26 +1,25 @@
 import { config } from '../config.js';
 import { prisma } from '../db.js';
-import { fetchSuggestions } from './suggestions.js';
-import type { Suggestion } from './suggestions.js';
+import { fetchSuggestions, type Suggestion } from './suggestions.js';
 import { getAiConfig, type AiConfigData } from './settings.service.js';
-import { syncBookingToItinerary } from './bookingHelper.js';
 import { debugLog } from '../lib/debug.js';
-import type { BookingType, ExpenseCategory } from '@prisma/client';
+import {
+  TRIP_TOOLS,
+  executeTripTool,
+  type ToolResult,
+  type ToolDef,
+  cleanFallbackTitleAndDescription,
+  toDayKey,
+} from './tripTools.js';
 
-const BOOKING_TYPES = ['flight', 'hotel', 'car', 'activity'] as const;
-const EXPENSE_CATEGORIES = ['transport', 'lodging', 'food', 'activity', 'shopping', 'entertainment', 'other'] as const;
-
-export interface ToolResult {
-  action: string;
-  summary: string;
-  ok: boolean;
-  suggestions?: Suggestion[];
-}
+export { cleanFallbackTitleAndDescription, type ToolResult };
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
 }
+
+const suggestionCache = new Map<string, Suggestion[]>();
 
 export const aiConfig = config.ai;
 
@@ -84,381 +83,7 @@ async function callLlm(
   }
 }
 
-// ---------------- tools ----------------
-
-interface ToolDef {
-  type: 'function';
-  function: { name: string; description: string; parameters: unknown };
-}
-
-const TOOLS: ToolDef[] = [
-  {
-    type: 'function',
-    function: {
-      name: 'add_place',
-      description:
-        'Add a place / stop / activity / restaurant / sightseeing spot to a specific day of the itinerary. Use "date" (YYYY-MM-DD) to pick a day; if the trip has no matching day, one is automatically created. Infer and include the most likely address, latitude, longitude, and website whenever the user gives a recognizable place, venue, city, or airport code. Preserve route text such as "MSN to ORD" in the name.',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: {
-            type: 'string',
-            description:
-              'Short, punchy title for the itinerary list (strictly 2-5 words, max 35 chars, e.g. "Louvre Museum", "Trastevere Food Tour"). Never put lengthy sentences or paragraphs in name.',
-          },
-          description: {
-            type: 'string',
-            description: 'Full description, context, schedule, highlights, or tour details.',
-          },
-          date: { type: 'string', description: 'Itinerary date in YYYY-MM-DD format' },
-          category: { type: 'string', description: 'e.g. Restaurant, Sightseeing, Activity, Transport, Accommodation' },
-          address: { type: 'string', description: 'Full useful address; include whenever known so map focus works' },
-          lat: { type: 'number', description: 'Latitude; include whenever known' },
-          lng: { type: 'number', description: 'Longitude; include whenever known' },
-          website: { type: 'string', description: 'Official or useful source URL for the place; include whenever known' },
-          notes: { type: 'string', description: 'Any extra practical tips or notes' },
-        },
-        required: ['name'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'add_booking',
-      description:
-        'Add a reservation or booking (flight, hotel, car, activity) to the trip. Automatically parses confirmation codes, extracts flight legs or stay dates into the itinerary, creates missing itinerary days, and logs ticket prices in the trip budget.',
-      parameters: {
-        type: 'object',
-        properties: {
-          type: { type: 'string', enum: BOOKING_TYPES, description: 'flight | hotel | car | activity' },
-          title: { type: 'string', description: 'Human-readable title e.g. "American Airlines Madison to Naples"' },
-          provider: { type: 'string', description: 'Airline / hotel chain / rental company' },
-          reference: { type: 'string', description: 'Confirmation or PNR number if present' },
-          startAt: { type: 'string', description: 'Start ISO datetime or YYYY-MM-DD' },
-          endAt: { type: 'string', description: 'Optional end ISO datetime or YYYY-MM-DD' },
-          price: { type: 'number', description: 'Confirmed total, amount paid, or ticketed fare only. Do not use estimates, optional charges, points values, or advertised prices.' },
-          currency: { type: 'string', description: 'Currency code for the confirmed price, e.g. USD or EUR' },
-        },
-        required: ['type', 'title'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'add_expense',
-      description: 'Add a trip expense (budget item).',
-      parameters: {
-        type: 'object',
-        properties: {
-          description: { type: 'string' },
-          notes: { type: 'string', description: 'Optional notes about this expense' },
-          amount: { type: 'number', description: 'Numerical amount, no currency symbol' },
-          currency: { type: 'string', description: 'ISO currency code, default USD' },
-          category: { type: 'string', enum: EXPENSE_CATEGORIES },
-          date: { type: 'string', description: 'YYYY-MM-DD' },
-        },
-        required: ['description', 'amount'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'add_day',
-      description: 'Add a new day to the itinerary (used when the user references a date not yet in the plan).',
-      parameters: {
-        type: 'object',
-        properties: {
-          date: { type: 'string', description: 'YYYY-MM-DD' },
-          label: { type: 'string', description: 'Optional short label e.g. "Arrival day"' },
-        },
-        required: ['date'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'add_packing_item',
-      description: 'Add one item to the current trip packing list.',
-      parameters: { type: 'object', properties: { item: { type: 'string' }, category: { type: 'string' }, done: { type: 'boolean' } }, required: ['item'] },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'update_packing_item',
-      description: 'Edit, rename, recategorize, or mark an existing packing item done/not done. Use its exact current item text.',
-      parameters: { type: 'object', properties: { currentItem: { type: 'string' }, item: { type: 'string' }, category: { type: 'string' }, done: { type: 'boolean' } }, required: ['currentItem'] },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'delete_packing_item',
-      description: 'Delete an existing packing item. Use its exact current item text.',
-      parameters: { type: 'object', properties: { item: { type: 'string' } }, required: ['item'] },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_suggestions',
-      description:
-        'Fetch structured recommendations (things to do/see/eat, attractions, places) with thumbnails and links for a location. Call this when the user asks for suggestions, ideas, or "things to do/see". The results are also shown to the user as cards in the chat, so prefer calling this over inventing recommendations.',
-      parameters: {
-        type: 'object',
-        properties: {
-          location: { type: 'string', description: 'City / destination, e.g. "Tokyo" or "Rome"' },
-          query: { type: 'string', description: 'Optional focus, e.g. "food", "museums", "nature"' },
-          count: { type: 'number', description: 'Max suggestions, default 8' },
-        },
-        required: ['location'],
-      },
-    },
-  },
-];
-
-function parseArgs(raw: string): Record<string, unknown> {
-  try {
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-function toDate(v: unknown): Date | undefined {
-  if (typeof v !== 'string' || !v) return undefined;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? undefined : d;
-}
-
-function toDayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// ---------------- executor ----------------
-
-const suggestionCache = new Map<string, Suggestion[]>();
-
-async function executeTool(
-  tripId: string,
-  userId: string,
-  name: string,
-  argsRaw: string,
-  ctx: { sourceText?: string; destination?: string; recommendationContext?: RecommendationContext; allowMutation?: boolean } = {},
-): Promise<ToolResult> {
-  const a = parseArgs(argsRaw);
-  debugLog('ai', 'tool_requested', { tool: name, mutationAllowed: Boolean(ctx.allowMutation) });
-  try {
-    if (['add_place', 'add_booking', 'add_expense', 'add_day', 'add_packing_item', 'update_packing_item', 'delete_packing_item'].includes(name) && !ctx.allowMutation) {
-      return {
-        action: name,
-        summary: `Confirmation required before ${name.replace('add_', 'adding ')}. No changes were made.`,
-        ok: false,
-      };
-    }
-    if (name === 'add_place') {
-      let nameStr = String(a.name ?? '').trim();
-      let descStr = typeof a.description === 'string' ? a.description.trim() : '';
-      if (!nameStr && descStr) {
-        const suggested = cleanFallbackTitleAndDescription(descStr);
-        nameStr = suggested.title;
-        descStr = suggested.description;
-      } else if (nameStr.length > 35 || nameStr.includes('\n')) {
-        const suggested = cleanFallbackTitleAndDescription(nameStr);
-        if (!descStr) descStr = suggested.description;
-        nameStr = suggested.title;
-      }
-      if (!nameStr) return { action: name, summary: 'add_place: missing name', ok: false };
-      let dayId: string | undefined;
-      const date = toDate(a.date);
-      if (date) {
-        const days = await prisma.day.findMany({ where: { tripId }, orderBy: { date: 'asc' } });
-        const hit = days.find((d) => toDayKey(d.date) === toDayKey(date));
-        if (hit) {
-          dayId = hit.id;
-        } else {
-          const created = await prisma.day.create({
-            data: { tripId, date, label: a.label ? String(a.label) : undefined, sortOrder: days.length },
-          });
-          dayId = created.id;
-        }
-      }
-      const count = await prisma.place.count({ where: { tripId } });
-      const notes = [a.notes ? String(a.notes) : undefined]
-        .filter(Boolean)
-        .join('\n');
-      const place = await prisma.place.create({
-        data: {
-          tripId,
-          name: nameStr,
-          dayId,
-          sortOrder: count,
-          category: a.category ? String(a.category) : undefined,
-          address: a.address ? String(a.address) : undefined,
-          lat: typeof a.lat === 'number' ? a.lat : undefined,
-          lng: typeof a.lng === 'number' ? a.lng : undefined,
-          website: a.website ? String(a.website) : undefined,
-          sourceText: ctx.sourceText,
-          description: descStr || undefined,
-          notes: notes || undefined,
-        },
-      });
-      const when = dayId ? ` (on ${date ? toDayKey(date) : 'itinerary day'})` : ' (unassigned)';
-      return { action: name, summary: `Added place "${nameStr}"${when}`, ok: true, ...{ placeId: place.id } };
-    }
-
-    if (name === 'add_booking') {
-      const rawType = String(a.type ?? '').toLowerCase();
-      const type = BOOKING_TYPES.includes(rawType as BookingType) ? (rawType as BookingType) : null;
-      const title = String(a.title ?? '').trim();
-      if (!type || !title) return { action: name, summary: 'add_booking: valid type and title required', ok: false };
-      const confirmedPrice = typeof a.price === 'number' ? a.price : parseFloat(String(a.price ?? ''));
-      const details = ctx.sourceText
-        ? {
-            sourceRaw: ctx.sourceText.slice(0, 12_000),
-            ...(Number.isFinite(confirmedPrice) && confirmedPrice > 0 ? { confirmedPrice } : {}),
-            ...(a.currency ? { currency: String(a.currency).toUpperCase() } : {}),
-          }
-        : undefined;
-
-      const booking = await prisma.booking.create({
-        data: {
-          tripId,
-          userId,
-          type,
-          title,
-          provider: a.provider ? String(a.provider) : undefined,
-          reference: a.reference ? String(a.reference) : undefined,
-          startAt: toDate(a.startAt),
-          endAt: toDate(a.endAt),
-          details,
-        },
-      });
-
-      // Synchronize booking with itinerary days, places, and budget expense!
-      const sync = await syncBookingToItinerary(
-        tripId,
-        userId,
-        booking.id,
-        ctx.sourceText || `${title} ${a.provider ?? ''} ${a.reference ?? ''}`,
-        title,
-        {
-          type,
-          provider: a.provider ? String(a.provider) : undefined,
-          reference: a.reference ? String(a.reference) : undefined,
-          startAt: toDate(a.startAt),
-          endAt: toDate(a.endAt),
-          totalAmount: confirmedPrice,
-          currency: a.currency ? String(a.currency) : undefined,
-        },
-      );
-
-      const extras: string[] = [];
-      if (sync.daysAdded > 0) extras.push(`${sync.daysAdded} day(s) created`);
-      if (sync.placesAdded > 0) extras.push(`${sync.placesAdded} stop(s) added to itinerary`);
-      if (sync.expenseAdded) extras.push('expense logged in budget');
-
-      const extraSummary = extras.length > 0 ? ` (${extras.join(', ')})` : '';
-
-      return {
-        action: name,
-        summary: `Added ${type} booking "${title}"${booking.reference ? ` (ref ${booking.reference})` : ''}${extraSummary}`,
-        ok: true,
-        ...{ bookingId: booking.id },
-      };
-    }
-
-    if (name === 'add_expense') {
-      const desc = String(a.description ?? '').trim();
-      const amount = typeof a.amount === 'number' ? a.amount : parseFloat(String(a.amount ?? ''));
-      if (!desc || !Number.isFinite(amount)) return { action: name, summary: 'add_expense: description and amount required', ok: false };
-      const cat = String(a.category ?? 'other').toLowerCase();
-      const category: ExpenseCategory = EXPENSE_CATEGORIES.includes(cat as ExpenseCategory) ? (cat as ExpenseCategory) : 'other';
-      const expense = await prisma.expense.create({
-        data: {
-          tripId,
-          userId,
-          description: desc,
-          notes: a.notes ? String(a.notes) : undefined,
-          amount,
-          currency: a.currency ? String(a.currency).toUpperCase() : 'USD',
-          category,
-          date: toDate(a.date),
-        },
-      });
-      return { action: name, summary: `Added expense "${desc}" ${amount} ${expense.currency}`, ok: true, ...{ expenseId: expense.id } };
-    }
-
-    if (name === 'add_day') {
-      const date = toDate(a.date);
-      if (!date) return { action: name, summary: 'add_day: valid date required', ok: false };
-      const count = await prisma.day.count({ where: { tripId } });
-      const day = await prisma.day.create({
-        data: { tripId, date, label: a.label ? String(a.label) : undefined, sortOrder: count },
-      });
-      return { action: name, summary: `Added itinerary day ${toDayKey(date)}`, ok: true, ...{ dayId: day.id } };
-    }
-
-    if (name === 'add_packing_item') {
-      const item = String(a.item ?? '').trim();
-      if (!item) return { action: name, summary: 'Packing item required', ok: false };
-      const count = await prisma.packingItem.count({ where: { tripId } });
-      const row = await prisma.packingItem.create({ data: { tripId, item, category: a.category ? String(a.category) : undefined, done: Boolean(a.done), sortOrder: count } });
-      return { action: name, summary: `Added packing item "${row.item}"`, ok: true };
-    }
-    if (name === 'update_packing_item') {
-      const currentItem = String(a.currentItem ?? '').trim();
-      const row = await prisma.packingItem.findFirst({ where: { tripId, item: { equals: currentItem, mode: 'insensitive' } } });
-      if (!row) return { action: name, summary: `Packing item "${currentItem}" not found`, ok: false };
-      const updated = await prisma.packingItem.update({ where: { id: row.id }, data: { item: a.item !== undefined ? String(a.item).trim() : undefined, category: a.category !== undefined ? String(a.category) : undefined, done: typeof a.done === 'boolean' ? a.done : undefined } });
-      return { action: name, summary: `Updated packing item "${updated.item}"`, ok: true };
-    }
-    if (name === 'delete_packing_item') {
-      const item = String(a.item ?? '').trim();
-      const row = await prisma.packingItem.findFirst({ where: { tripId, item: { equals: item, mode: 'insensitive' } } });
-      if (!row) return { action: name, summary: `Packing item "${item}" not found`, ok: false };
-      await prisma.packingItem.delete({ where: { id: row.id } });
-      return { action: name, summary: `Deleted packing item "${row.item}"`, ok: true };
-    }
-
-    if (name === 'get_suggestions') {
-      const location = String(a.location ?? ctx.destination ?? '').trim();
-      if (!location) return { action: name, summary: 'get_suggestions: location required', ok: false };
-      const focus = String(a.query ?? '').trim();
-      const count = Math.min(Number(a.count) || 16, 20);
-      const query = focus ? `${location} ${focus}` : `${location} things to see top attractions`;
-      let suggestions = suggestionCache.get(query);
-      if (!suggestions) {
-        suggestions = await fetchSuggestions(query, Math.max(count, 16));
-        suggestionCache.set(query, suggestions);
-      }
-      if (!suggestions.length) {
-        return { action: name, summary: `No suggestions found for "${query}"`, ok: false };
-      }
-      const contextualSuggestions = suggestions.map((suggestion) => ({
-        ...suggestion,
-        dayId: ctx.recommendationContext?.dayId,
-        recommendedAt: ctx.recommendationContext?.recommendedAt,
-        context: ctx.recommendationContext?.label,
-      }));
-      return {
-        action: name,
-        summary: `Found ${contextualSuggestions.length} suggestions for "${query}"`,
-        ok: true,
-        suggestions: contextualSuggestions,
-      };
-    }
-
-    return { action: name, summary: `Unknown tool: ${name}`, ok: false };
-  } catch (e) {
-    console.error('[ai] tool failed', name, e);
-    return { action: name, summary: `Tool ${name} failed: ${(e as Error).message}`, ok: false };
-  }
-}
+// Tools and tool execution are handled by tripTools.ts
 
 // ---------------- context / prompt ----------------
 
@@ -468,62 +93,90 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     include: {
       days: { orderBy: { date: 'asc' }, include: { places: { orderBy: { sortOrder: 'asc' } } } },
       bookings: { orderBy: { startAt: 'asc' } },
-      expenses: true,
-      packing: true,
+      expenses: { orderBy: { date: 'asc' } },
+      packing: { orderBy: { sortOrder: 'asc' } },
+      journal: { orderBy: { date: 'asc' } },
     },
   });
   if (!trip) return "You are TravelApp's assistant. (Trip not found.)";
 
   const daysDesc = (trip.days ?? [])
-    .map((d) => {
-      const places = d.places.map((p, i) => {
-        const timing = p.startTime
-          ? ` @ ${p.startTime.toISOString()}${p.endTime ? `–${p.endTime.toISOString()}` : ''}`
-          : '';
-        const details = [
-          p.category ? `category=${p.category}` : undefined,
-          p.address ? `address=${p.address}` : undefined,
-          p.website ? `website=${p.website}` : undefined,
-          p.notes ? `notes=${p.notes.slice(0, 300)}` : undefined,
-        ].filter(Boolean).join('; ');
-        return `  ${i + 1}. ${p.name}${timing}${details ? ` (${details})` : ''}`;
-      }).join('\n');
-      return `- ${toDayKey(d.date)}${d.label ? ` — ${d.label}` : ''}\n${places || '  (nothing planned)'}`;
+    .map((d, dayIdx) => {
+      const places = d.places
+        .map((p, i) => {
+          const timing = p.startTime
+            ? ` @ ${p.startTime.toISOString()}${p.endTime ? `–${p.endTime.toISOString()}` : ''}`
+            : '';
+          const details = [
+            p.category ? `category=${p.category}` : undefined,
+            p.address ? `address=${p.address}` : undefined,
+            p.website ? `website=${p.website}` : undefined,
+            p.notes ? `notes=${p.notes.slice(0, 250)}` : undefined,
+          ]
+            .filter(Boolean)
+            .join('; ');
+          return `  ${i + 1}. [id=${p.id}] ${p.name}${timing}${details ? ` (${details})` : ''}`;
+        })
+        .join('\n');
+      return `- Day ${dayIdx + 1} (${toDayKey(d.date)}) [id=${d.id}]${d.label ? ` — ${d.label}` : ''}\n${places || '  (nothing planned)'}`;
     })
     .join('\n');
 
   const orphanPlaces = await prisma.place.findMany({ where: { tripId, dayId: null } });
+  const orphanDesc = orphanPlaces
+    .map((p) => `- [id=${p.id}] ${p.name}${p.category ? ` (${p.category})` : ''}${p.address ? ` - ${p.address}` : ''}`)
+    .join('\n');
+
   const bookingsDesc = (trip.bookings ?? [])
-    .map((b) => `- ${b.type}: ${b.title}${b.provider ? ` (${b.provider})` : ''}${b.startAt ? ` @ ${toDayKey(b.startAt)}` : ''}${b.reference ? ` ref=${b.reference}` : ''}`)
+    .map(
+      (b) =>
+        `- [id=${b.id}] ${b.type.toUpperCase()}: "${b.title}"${b.provider ? ` (${b.provider})` : ''}${b.startAt ? ` @ ${toDayKey(b.startAt)}` : ''}${b.reference ? ` ref=${b.reference}` : ''}`,
+    )
+    .join('\n');
+
+  const totalExpense = (trip.expenses ?? []).reduce((s, e) => s + e.amount, 0);
+  const expenseDesc = (trip.expenses ?? [])
+    .map(
+      (e) =>
+        `- [id=${e.id}] "${e.description}": ${e.amount} ${e.currency} (${e.category})${e.date ? ` @ ${toDayKey(e.date)}` : ''}`,
+    )
+    .join('\n');
+
+  const packingDesc = (trip.packing ?? [])
+    .map((p) => `- [${p.done ? 'x' : ' '}] ${p.item}${p.category ? ` (${p.category})` : ''}`)
+    .join('\n');
+
+  const journalDesc = (trip.journal ?? [])
+    .map((j) => `- [id=${j.id}] "${j.title}"${j.date ? ` (${toDayKey(j.date)})` : ''}`)
     .join('\n');
 
   return [
     `You are the AI travel assistant embedded in TravelApp, a self-hosted trip planner.`,
-    `CURRENT TRIP: "${trip.name}" (destination: ${trip.destination || 'unknown'}, currency: ${trip.currency}).`,
+    `CURRENT TRIP: "${trip.name}" [id=${trip.id}] (destination: ${trip.destination || 'unknown'}, currency: ${trip.currency}${trip.startDate ? `, from ${toDayKey(trip.startDate)}` : ''}${trip.endDate ? ` to ${toDayKey(trip.endDate)}` : ''}).`,
     ``,
     `ITINERARY:`,
     daysDesc || '  (no days yet)',
     `\nPLACES NOT YET ASSIGNED TO A DAY:`,
-    orphanPlaces.map((p) => `- ${p.name}`).join('\n') || '  (none)',
-    `\nBOOKINGS:`,
+    orphanDesc || '  (none)',
+    `\nBOOKINGS / RESERVATIONS:`,
     bookingsDesc || '  (none)',
-    `\nEXPENSES: ${trip.expenses?.length ?? 0} recorded (total ${(trip.expenses ?? []).reduce((s, e) => s + e.amount, 0).toFixed(2)} ${trip.currency}).`,
-    ...(trip.expenses ?? []).map((e) => `- ${e.description}: ${e.amount} ${e.currency} (${e.category})${e.date ? ` @ ${toDayKey(e.date)}` : ''}`),
-    `\nPACKING:`,
-    ...(trip.packing ?? []).map((p) => `- [${p.done ? 'x' : ' '}] ${p.item}${p.category ? ` (${p.category})` : ''}`),
-    ...(trip.packing?.length ? [] : ['  (none)']),
+    `\nEXPENSES / BUDGET: ${trip.expenses?.length ?? 0} recorded (total ${totalExpense.toFixed(2)} ${trip.currency}):`,
+    expenseDesc || '  (none)',
+    `\nPACKING LIST:`,
+    packingDesc || '  (none)',
+    `\nJOURNAL ENTRIES:`,
+    journalDesc || '  (none)',
     ``,
-    `RULES:`,
-    `- NEVER add or modify itinerary, booking, day, or budget data on the first request. Summarize exactly what will be added and ask for explicit confirmation. Only call an add_* tool after the user confirms in a follow-up message. Recommendation-card Add buttons are already explicit confirmation.`,
-    `- When the user pastes or mentions a reservation confirmation (flights, hotel, car, activity):`,
-    `  1. Call add_booking with the reservation details, reference number, dates, and total fare/price. This automatically logs the booking, generates all missing itinerary days, places each flight leg or stay into the itinerary on the proper days, and adds the cost to the budget!`,
-    `  2. Call add_place if additional custom activities or notes need to be added to specific days.`,
-    `  3. Confirm the reservation reference, itinerary days created, and flight legs added in your response.`,
-    `- Packing-list add, edit, completion, and delete requests use the packing tools and require explicit follow-up confirmation.`,
-    `- Resolve every partial city, neighborhood, airport, or venue against CURRENT TRIP before searching. Never select a same-named place in another state or country when the trip destination disambiguates it.`,
-    `- Treat searches for restaurants, food, attractions, activities, shopping, events, and similar local options as recommendation requests even if the user does not say "recommend". Infer the relevant day, time, and location from arrivals/bookings/itinerary. Prefer highly reviewed options that appear open at the relevant time, provide linked evidence, and never claim hours are verified unless the source supports it.`,
-    `- GUESS the date from trip context when sensible; if genuinely ambiguous, ask a short clarifying question instead of inventing a date.`,
-    `- Keep answers under ~150 words unless generating a list of suggestions.`,
+    `RULES & CAPABILITIES:`,
+    `- You have FULL authority and capability to READ, WRITE, UPDATE, and DELETE everything about this trip using your tools.`,
+    `- When the user instructs you to add, edit, move, or delete any place, day, booking, expense, packing item, or journal entry, execute the appropriate tool IMMEDIATELY and report what was changed clearly and concisely.`,
+    `- When updating or deleting, identify the item by its ID (preferred if known) or by its matching title/name.`,
+    `- When the user uploads, pastes, or references a reservation confirmation (flight, hotel, rental car, activity):`,
+    `  1. Call add_booking with confirmation code, provider, dates, and total confirmed price. This automatically creates missing days, logs flight legs or stays into the itinerary, and adds the cost to the budget!`,
+    `  2. Call add_place if additional custom stops or activities are requested.`,
+    `- For packing items, use add_packing_item, update_packing_item, or delete_packing_item.`,
+    `- When asked for recommendations (things to do, see, eat), call get_suggestions to return structured cards.`,
+    `- Keep responses clear, friendly, and concise.`,
   ].join('\n');
 }
 
@@ -726,22 +379,14 @@ export async function processTripChat(
 
   const actions: ToolResult[] = [];
   let loop = 0;
-  const lastAssistant = [...history].reverse().find((turn) => turn.role === 'assistant')?.content ?? '';
-  const explicitConfirmation =
-    /^(yes|yep|yeah|confirm|confirmed|go ahead|do it|proceed|add it|add them)\b/i.test(userMessage.trim()) &&
-    /(confirm|shall i|should i|would you like|ready to add|no changes were made)/i.test(lastAssistant);
-  const originalRequest = explicitConfirmation
-    ? [...history].reverse().find((turn) => turn.role === 'user')?.content ?? userMessage
-    : userMessage;
   const toolContext = {
-    sourceText: originalRequest,
+    sourceText: userMessage,
     destination,
     recommendationContext,
-    allowMutation: explicitConfirmation,
   };
 
-  for (; loop < 6; loop++) {
-    const res = await callLlm(messages, TOOLS, activeConfig);
+  for (; loop < 8; loop++) {
+    const res = await callLlm(messages, TRIP_TOOLS, activeConfig);
     const msg = res.choices?.[0]?.message;
     if (!msg) throw new Error('AI returned no choices');
 
@@ -757,7 +402,8 @@ export async function processTripChat(
     messages.push({ role: 'assistant', content: msg.content ?? '', tool_calls: toolCalls });
     for (const tc of toolCalls) {
       const fnName = tc.function?.name ?? '';
-      const result = await executeTool(tripId, userId, fnName, tc.function?.arguments ?? '{}', toolContext);
+      debugLog('ai', 'executing_tool', { tool: fnName, args: tc.function?.arguments });
+      const result = await executeTripTool(tripId, userId, fnName, tc.function?.arguments ?? '{}', toolContext);
       actions.push(result);
       messages.push({ role: 'tool', tool_call_id: tc.id, name: fnName, content: result.summary });
     }
@@ -769,63 +415,6 @@ export async function processTripChat(
     actions.push(autoSuggest);
   }
   return { reply, actions };
-}
-
-/**
- * Heuristic fallback when LLM is unavailable or disabled.
- * Produces a concise, meaningful title (max ~35 chars, 2-5 words)
- * and preserves the remaining / full text as the description.
- */
-export function cleanFallbackTitleAndDescription(rawText: string): { title: string; description: string } {
-  const clean = rawText.trim().replace(/\r\n/g, '\n');
-  if (!clean) return { title: 'New Activity', description: '' };
-
-  const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
-  const firstLine = lines[0] || clean;
-
-  // If first line has a delimiter like " - ", ": ", " — ", " · "
-  const sepMatch = firstLine.match(/^(.*?)\s*(?:—|–|-|:|\/|\||·)\s*(.+)$/);
-  if (sepMatch && sepMatch[1].trim().length >= 3 && sepMatch[1].trim().length <= 35) {
-    const title = sepMatch[1].trim();
-    const remainingFirst = sepMatch[2].trim();
-    const restLines = lines.slice(1);
-    const description = [remainingFirst, ...restLines].filter(Boolean).join('\n');
-    return { title, description: description || clean };
-  }
-
-  // If first line is already punchy (<= 35 chars)
-  if (firstLine.length <= 35) {
-    const rest = lines.slice(1).join('\n').trim();
-    return { title: firstLine, description: rest };
-  }
-
-  // Remove common verbose filler prefixes
-  const stripped = firstLine.replace(/^(?:visit (?:the )?|go to (?:the )?|guided tour of (?:the )?|take a (?:tour of )?|explore (?:the )?)/i, '');
-
-  // Look for sentence boundary
-  const sentenceMatch = stripped.match(/^([^.!?]+)[.!?]/);
-  const candidate = (sentenceMatch ? sentenceMatch[1] : stripped).trim();
-  if (candidate.length <= 35 && candidate.length >= 4) {
-    const remaining = clean.slice(clean.indexOf(candidate) + candidate.length).replace(/^[.!?\s]+/, '').trim();
-    return { title: candidate, description: remaining || clean };
-  }
-
-  // Break at word boundary near 32 chars
-  const words = candidate.split(/\s+/);
-  let title = '';
-  for (const w of words) {
-    if (!title) {
-      title = w;
-    } else if ((title + ' ' + w).length <= 32) {
-      title += ' ' + w;
-    } else {
-      break;
-    }
-  }
-  if (!title) title = candidate.slice(0, 30).trim();
-  title = title.replace(/\s+(?:making|with|in|of|and|for|at|to|the|a|an|from|by)$/i, '');
-  title = title.replace(/[,;:\s]+$/, '');
-  return { title, description: clean };
 }
 
 export async function suggestTitleAndDescription(

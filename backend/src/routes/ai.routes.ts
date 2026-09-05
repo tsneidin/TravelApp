@@ -6,6 +6,7 @@ import { getUser, requireTripAccess } from '../middleware/auth.js';
 import { processTripChat, suggestTitleAndDescription } from '../services/ai.js';
 import { getAiConfig, saveAiConfig, testAiConnection } from '../services/settings.service.js';
 import { extractDocumentText } from '../services/fileParser.js';
+import { TRIP_TOOLS, executeTripTool } from '../services/tripTools.js';
 
 const docUpload = multer({
   storage: multer.memoryStorage(),
@@ -219,3 +220,137 @@ aiRouter.post(
     res.json(result);
   }),
 );
+
+// ---------------- MCP (Model Context Protocol) JSON-RPC 2.0 ----------------
+
+const mcpHandler = asyncHandler(async (req, res) => {
+  const { tripId } = req.params;
+  const user = getUser(req);
+  await requireTripAccess(req, tripId, 'editor');
+
+  const { id, method, params } = req.body ?? {};
+
+  if (method === 'initialize') {
+    return res.json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        protocolVersion: '2024-11-05',
+        serverInfo: { name: 'travelapp-mcp-server', version: '1.0.0' },
+        capabilities: {
+          tools: { listChanged: false },
+          resources: { subscribe: false, listChanged: false },
+        },
+      },
+    });
+  }
+
+  if (method === 'notifications/initialized' || method === 'initialized') {
+    return res.json({ jsonrpc: '2.0', id, result: {} });
+  }
+
+  if (method === 'tools/list') {
+    return res.json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        tools: TRIP_TOOLS.map((t) => ({
+          name: t.function.name,
+          description: t.function.description,
+          inputSchema: t.function.parameters,
+        })),
+      },
+    });
+  }
+
+  if (method === 'tools/call') {
+    const toolName = String(params?.name ?? '');
+    const toolArgs = (params?.arguments as Record<string, unknown>) ?? {};
+    const result = await executeTripTool(tripId, user.id, toolName, toolArgs, {
+      sourceText: JSON.stringify(toolArgs),
+    });
+
+    return res.json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        content: [{ type: 'text', text: result.summary }],
+        isError: !result.ok,
+        data: result.data,
+      },
+    });
+  }
+
+  if (method === 'resources/list') {
+    return res.json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        resources: [
+          {
+            uri: `trip://${tripId}/overview`,
+            name: 'Trip Overview',
+            mimeType: 'application/json',
+          },
+          {
+            uri: `trip://${tripId}/itinerary`,
+            name: 'Trip Itinerary',
+            mimeType: 'text/plain',
+          },
+        ],
+      },
+    });
+  }
+
+  if (method === 'resources/read') {
+    const uri = String(params?.uri ?? '');
+    if (uri === `trip://${tripId}/overview`) {
+      const overview = await executeTripTool(tripId, user.id, 'get_trip_details', {});
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          contents: [
+            {
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(overview.data ?? {}, null, 2),
+            },
+          ],
+        },
+      });
+    }
+
+    if (uri === `trip://${tripId}/itinerary`) {
+      const days = await executeTripTool(tripId, user.id, 'list_days', {});
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          contents: [
+            {
+              uri,
+              mimeType: 'text/plain',
+              text: days.summary,
+            },
+          ],
+        },
+      });
+    }
+
+    return res.status(404).json({
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32602, message: `Resource not found: ${uri}` },
+    });
+  }
+
+  return res.status(400).json({
+    jsonrpc: '2.0',
+    id,
+    error: { code: -32601, message: `Method not supported: ${method}` },
+  });
+});
+
+aiRouter.post('/:tripId/ai/mcp', mcpHandler);
+aiRouter.post('/:tripId/mcp', mcpHandler);

@@ -104,6 +104,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   }, [selectedDayId, days]);
 
   const handlePrevDay = () => {
+    setActivePlaceId(null);
     if (selectedDayIndex <= 0) {
       setSelectedDayId(null);
     } else {
@@ -112,6 +113,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   };
 
   const handleNextDay = () => {
+    setActivePlaceId(null);
     if (selectedDayIndex === -1) {
       if (days.length > 0) setSelectedDayId(days[0].id);
     } else if (selectedDayIndex < days.length - 1) {
@@ -119,11 +121,64 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
+  // When a day has no locations, find the most recent prior day that has a location.
+  const fallbackLocation = useMemo(() => {
+    if (!selectedDayId || selectedDayId === 'unassigned') {
+      return trip.destination ? { address: trip.destination } : undefined;
+    }
+
+    const sortedDays = [...days].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
+    );
+    const currentIndex = sortedDays.findIndex((d) => d.id === selectedDayId);
+    if (currentIndex < 0) {
+      return trip.destination ? { address: trip.destination } : undefined;
+    }
+
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const priorDay = sortedDays[i];
+      if (priorDay.places && priorDay.places.length > 0) {
+        const validPlaces = priorDay.places.filter(
+          (p) => (p.lat != null && p.lng != null) || p.address?.trim() || p.name?.trim(),
+        );
+        if (validPlaces.length > 0) {
+          const lastPlace = validPlaces[validPlaces.length - 1];
+          if (lastPlace.lat != null && lastPlace.lng != null) {
+            return {
+              coord: { lat: lastPlace.lat, lng: lastPlace.lng },
+              name: lastPlace.name,
+              address: lastPlace.address || lastPlace.name,
+            };
+          }
+          if (lastPlace.address?.trim()) {
+            return {
+              address: lastPlace.address.trim(),
+              name: lastPlace.name,
+            };
+          }
+          if (lastPlace.name?.trim()) {
+            return {
+              address: [lastPlace.name.trim(), trip.destination].filter(Boolean).join(', '),
+              name: lastPlace.name,
+            };
+          }
+        }
+      }
+    }
+
+    return trip.destination ? { address: trip.destination } : undefined;
+  }, [selectedDayId, days, trip.destination]);
+
   // React Router updates the hash without performing the browser's normal
   // anchor scroll. Explicitly scroll the independently scrolling center pane.
   useEffect(() => {
     if (!location.hash.startsWith('#day-')) return;
     const elementId = decodeURIComponent(location.hash.slice(1));
+    const dayId = decodeURIComponent(location.hash.slice(5));
+    if (dayId && days.some((d) => d.id === dayId)) {
+      setSelectedDayId(dayId);
+      setActivePlaceId(null);
+    }
     const frame = requestAnimationFrame(() => {
       document.getElementById(elementId)?.scrollIntoView({
         behavior: 'smooth',
@@ -131,7 +186,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [location.hash, days.length]);
+  }, [location.hash, days]);
 
   // Approximate trip coordinates to bias place searches
   const tripCenter = useMemo(() => {
@@ -260,6 +315,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
   const handlePlaceClick = (p: Place) => {
     setActivePlaceId(p.id);
+    if (p.dayId && selectedDayId && p.dayId !== selectedDayId) {
+      setSelectedDayId(p.dayId);
+    }
     if (viewMode === 'full') {
       navigate(`${location.pathname}?tab=map&focus=${p.id}`);
     }
@@ -311,8 +369,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           draggable
           onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
           onDragEnd={() => setDragId(null)}
-          onClick={() => setActivePlaceId(p.id)}
-          onMouseEnter={() => setActivePlaceId(p.id)}
+          onClick={() => {
+            setActivePlaceId(p.id);
+            if (p.dayId && selectedDayId && p.dayId !== selectedDayId) {
+              setSelectedDayId(p.dayId);
+            }
+          }}
         >
           {/* Left: Drag grip & Stop number */}
           <div className="place-card-gutter">
@@ -580,7 +642,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     type="button"
                     className="btn sm ghost"
                     title="Focus this day on the map"
-                    onClick={() => setSelectedDayId(selectedDayId === day.id ? null : day.id)}
+                    onClick={() => {
+                      setActivePlaceId(null);
+                      setSelectedDayId(selectedDayId === day.id ? null : day.id);
+                    }}
                   >
                     <Navigation size={13} />
                     <span>{selectedDayId === day.id ? 'Showing all' : 'Focus day'}</span>
@@ -692,7 +757,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     <select
                       className="map-day-select"
                       value={selectedDayId ?? ''}
-                      onChange={(e) => setSelectedDayId(e.target.value || null)}
+                      onChange={(e) => {
+                        setActivePlaceId(null);
+                        setSelectedDayId(e.target.value || null);
+                      }}
                       aria-label="Filter map by day"
                     >
                       <option value="">
@@ -733,7 +801,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       type="button"
                       className="map-reset-btn"
                       title="Show all stops on map"
-                      onClick={() => setSelectedDayId(null)}
+                      onClick={() => {
+                        setActivePlaceId(null);
+                        setSelectedDayId(null);
+                      }}
                     >
                       Show All
                     </button>
@@ -744,6 +815,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <TripMap
                   places={displayedMapPlaces}
                   destination={trip.destination}
+                  fallbackLocation={fallbackLocation}
                   activePlaceId={activePlaceId ?? undefined}
                   onMapClick={(pl) => {
                     setEditingId(null);
@@ -766,6 +838,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   }}
                   height="100%"
                 />
+
               </div>
             </div>
           </div>

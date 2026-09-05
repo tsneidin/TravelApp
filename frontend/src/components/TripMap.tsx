@@ -48,9 +48,19 @@ function isTransportation(place: PlaceWithStop): boolean {
   );
 }
 
-export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPlaceClick, onMapClick, height = 480 }: {
+export function TripMap({
+  places,
+  destination,
+  fallbackLocation,
+  focusPlaceId,
+  activePlaceId,
+  onPlaceClick,
+  onMapClick,
+  height = 480,
+}: {
   places: PlaceWithStop[];
   destination?: string | null;
+  fallbackLocation?: { coord?: Coord; address?: string; name?: string } | null;
   focusPlaceId?: string;
   activePlaceId?: string;
   onPlaceClick?: (placeId: string) => void;
@@ -60,14 +70,23 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
+  const markersMapRef = useRef<Map<string, { marker: any; coord: Coord; place: PlaceWithStop; infoContent: string }>>(new Map());
+  const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
   const mapClickRef = useRef(onMapClick);
   const [error, setError] = useState('');
   const targetId = activePlaceId || focusPlaceId;
+
   useEffect(() => { mapClickRef.current = onMapClick; }, [onMapClick]);
+
   const signature = useMemo(
     () => places.map((p) => [p.id, p.name, p.address, p.lat, p.lng, p.stopNumber].join(':')).join('|'),
     [places],
+  );
+
+  const fallbackSig = useMemo(
+    () => fallbackLocation ? `${fallbackLocation.address || ''}:${fallbackLocation.coord?.lat ?? ''}:${fallbackLocation.coord?.lng ?? ''}` : '',
+    [fallbackLocation],
   );
 
   useEffect(() => {
@@ -76,8 +95,12 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
       if (cancelled || !elementRef.current) return;
       if (!mapRef.current) {
         mapRef.current = new maps.Map(elementRef.current, {
-          center: { lat: 20, lng: 0 }, zoom: 2, mapTypeControl: true, streetViewControl: false,
+          center: { lat: 20, lng: 0 },
+          zoom: 2,
+          mapTypeControl: true,
+          streetViewControl: false,
         });
+
         mapRef.current.addListener('click', async (event: any) => {
           const callback = mapClickRef.current;
           if (!callback || !event.latLng) return;
@@ -178,8 +201,15 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
           }
         });
       }
+
       overlaysRef.current.forEach((overlay) => overlay.setMap?.(null));
       overlaysRef.current = [];
+      markersMapRef.current.clear();
+
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new maps.InfoWindow();
+      }
+
       const geocoder = new maps.Geocoder();
       const resolved: { place: PlaceWithStop; coord: Coord }[] = [];
 
@@ -206,7 +236,6 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
       if (cancelled) return;
 
       const bounds = new maps.LatLngBounds();
-      const info = new maps.InfoWindow();
       for (const { place, coord } of resolved) {
         bounds.extend(coord);
         const marker = new maps.Marker({
@@ -215,14 +244,20 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
           label: place.stopNumber != null ? { text: String(place.stopNumber), color: '#fff' } : undefined,
           title: place.name,
         });
+
+        const detail = [place.category, place.address, place.notes].filter(Boolean).join(' · ');
+        const infoContent = `<div style="max-width:260px;color:#111827"><strong>${place.name}</strong><div style="font-size:12px;margin-top:4px;color:#4b5563">${detail}</div></div>`;
+
         marker.addListener('click', () => {
-          const detail = [place.category, place.address, place.notes].filter(Boolean).join(' · ');
-          info.setContent(`<div style="max-width:260px"><strong>${place.name}</strong><div style="font-size:12px;margin-top:4px">${detail}</div></div>`);
-          info.open({ map: mapRef.current, anchor: marker });
+          infoWindowRef.current?.setContent(infoContent);
+          infoWindowRef.current?.open({ map: mapRef.current, anchor: marker });
           onPlaceClick?.(place.id);
         });
+
         overlaysRef.current.push(marker);
+        markersMapRef.current.set(place.id, { marker, coord, place, infoContent });
       }
+
       // Ordinary itinerary stops are independent pins. Draw a segment only
       // when the destination entry represents transportation from the prior stop.
       for (let index = 1; index < resolved.length; index += 1) {
@@ -236,26 +271,71 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
         }));
       }
 
-      const target = resolved.find((entry) => entry.place.id === targetId);
-      if (target) {
-        mapRef.current.setCenter(target.coord);
+      // Handle focus and centering
+      const targetMarkerInfo = targetId ? markersMapRef.current.get(targetId) : undefined;
+      if (targetMarkerInfo) {
+        mapRef.current.setCenter(targetMarkerInfo.coord);
         mapRef.current.setZoom(15);
+        infoWindowRef.current?.setContent(targetMarkerInfo.infoContent);
+        infoWindowRef.current?.open({ map: mapRef.current, anchor: targetMarkerInfo.marker });
       } else if (resolved.length > 1) {
+        infoWindowRef.current?.close();
         mapRef.current.fitBounds(bounds, 48);
       } else if (resolved.length === 1) {
+        infoWindowRef.current?.close();
         mapRef.current.setCenter(resolved[0].coord);
-        mapRef.current.setZoom(12);
-      } else if (destination) {
-        try {
-          const response = await geocoder.geocode({ address: destination });
-          const point = response.results?.[0]?.geometry?.location;
-          if (point) { mapRef.current.setCenter(point); mapRef.current.setZoom(7); }
-        } catch { /* Retain world view. */ }
+        mapRef.current.setZoom(13);
+      } else {
+        infoWindowRef.current?.close();
+        // Day has no places: use the previous day's location (fallbackLocation)
+        let handledFallback = false;
+        if (fallbackLocation) {
+          if (fallbackLocation.coord) {
+            mapRef.current.setCenter(fallbackLocation.coord);
+            mapRef.current.setZoom(12);
+            handledFallback = true;
+          } else if (fallbackLocation.address) {
+            let coord = geocodeCache.get(fallbackLocation.address);
+            if (!coord) {
+              try {
+                const response = await geocoder.geocode({ address: fallbackLocation.address });
+                const point = response.results?.[0]?.geometry?.location;
+                if (point) {
+                  coord = { lat: point.lat(), lng: point.lng() };
+                  geocodeCache.set(fallbackLocation.address, coord);
+                }
+              } catch { /* Fall back to destination */ }
+            }
+            if (coord && !cancelled) {
+              mapRef.current.setCenter(coord);
+              mapRef.current.setZoom(12);
+              handledFallback = true;
+            }
+          }
+        }
+
+        if (!handledFallback && destination) {
+          let destCoord = geocodeCache.get(destination);
+          if (!destCoord) {
+            try {
+              const response = await geocoder.geocode({ address: destination });
+              const point = response.results?.[0]?.geometry?.location;
+              if (point) {
+                destCoord = { lat: point.lat(), lng: point.lng() };
+                geocodeCache.set(destination, destCoord);
+              }
+            } catch { /* Retain world view. */ }
+          }
+          if (destCoord && !cancelled) {
+            mapRef.current.setCenter(destCoord);
+            mapRef.current.setZoom(8);
+          }
+        }
       }
       setError('');
     }).catch((e: Error) => setError(e.message));
     return () => { cancelled = true; };
-  }, [signature, destination, targetId, onPlaceClick]);
+  }, [signature, fallbackSig, destination, targetId, onPlaceClick]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: typeof height === 'number' ? `${height}px` : height }}>
@@ -264,3 +344,4 @@ export function TripMap({ places, destination, focusPlaceId, activePlaceId, onPl
     </div>
   );
 }
+

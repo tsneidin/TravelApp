@@ -837,7 +837,8 @@ export async function suggestTitleAndDescription(
     return { title: '', description: '' };
   }
 
-  if (!config.ai.enabled) {
+  const activeConfig = await getAiConfig();
+  if (!activeConfig.enabled) {
     return cleanFallbackTitleAndDescription(trimmed);
   }
 
@@ -863,6 +864,7 @@ export async function suggestTitleAndDescription(
         { role: 'user', content: prompt },
       ],
       [],
+      activeConfig,
     );
 
     const rawReply = res.choices?.[0]?.message?.content?.trim() || '';

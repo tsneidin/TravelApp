@@ -25,6 +25,73 @@ function hashHue(s: string): number {
   return h % 360;
 }
 
+function extractCityFromLocation(raw?: string | null): string | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  if (!s) return null;
+
+  // If contains flight arrow "A -> B" or "A → B", take the destination
+  if (/→|->/.test(s)) {
+    const parts = s.split(/→|->/);
+    s = parts[parts.length - 1].trim();
+  }
+
+  // Remove airport / station suffixes like "Naples Airport (NAP)" -> "Naples"
+  s = s.replace(/\s*\([A-Z]{3}\)/g, '');
+  s = s.replace(/\s+(?:International\s+)?Airport\b/gi, '');
+  s = s.replace(/\s+(?:Central\s+)?Station\b/gi, '');
+  s = s.replace(/\s+Terminal\b/gi, '');
+
+  // Strip carrier prefixes like "Operated by Envoy Air Chicago" -> "Chicago"
+  s = s.replace(/^Operated\s+by[^\n]*\n+/i, '');
+  s = s.replace(/^Operated\s+by\s+(?:Envoy\s+Air|SkyWest|American\s+Eagle|[A-Za-z\s]+?)\s+(?=[A-Z][a-z]+)/i, '');
+  s = s.replace(/^[A-Za-z]\s+/i, ''); // stray single letter OCR artifact
+
+  // Comma separated e.g. "Naples, Italy" or "Via Toledo 10, Naples, Italy"
+  const tokens = s.split(',').map((t) => t.trim()).filter(Boolean);
+  if (tokens.length >= 2) {
+    if (tokens.length === 2) {
+      return tokens[0].replace(/^\d+[\s\w]*\s+/, '').trim();
+    }
+    const penultimate = tokens[tokens.length - 2].replace(/^\d+[\s\w]*\s+/, '').trim();
+    if (/^[A-Z]{2}(?:\s+\d{5})?$/.test(penultimate) && tokens.length >= 4) {
+      return tokens[tokens.length - 3].replace(/^\d+[\s\w]*\s+/, '').trim();
+    }
+    return penultimate;
+  }
+
+  if (tokens.length === 1 && !/^\d+/.test(tokens[0])) {
+    return tokens[0].trim();
+  }
+
+  return null;
+}
+
+function getLastCityForDay(day?: { places?: { name?: string; address?: string | null }[] }): string | null {
+  if (!day?.places || day.places.length === 0) return null;
+  for (let i = day.places.length - 1; i >= 0; i--) {
+    const p = day.places[i];
+    const fromAddr = extractCityFromLocation(p.address);
+    if (fromAddr && fromAddr.length >= 2 && fromAddr.length <= 30) return fromAddr;
+
+    const fromName = extractCityFromLocation(p.name);
+    if (fromName && fromName.length >= 2 && fromName.length <= 30) return fromName;
+  }
+  return null;
+}
+
+function formatSidebarDate(dateVal: string | Date): string {
+  const str = typeof dateVal === 'string' ? dateVal : dateVal.toISOString();
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(str);
+  const d = ymd
+    ? new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10), 12, 0, 0)
+    : new Date(dateVal);
+  const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
+  const month = d.toLocaleDateString(undefined, { month: 'short' });
+  const dayNum = d.getDate();
+  return `${weekday} ${month} ${dayNum}`;
+}
+
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -36,14 +103,19 @@ export function Layout() {
   const activeTab = new URLSearchParams(location.search).get('tab') ?? 'itinerary';
   const activeDayId = location.hash.startsWith('#day-') ? location.hash.slice(5) : null;
 
-  // Refresh the trip folder list whenever the route changes so the tree stays current.
+  // Refresh the trip folder list whenever the route changes or data mutates so the tree stays current.
   useEffect(() => {
     let alive = true;
-    apiGet<{ trips: Trip[] }>('/trips')
-      .then((r) => alive && setTrips(r.trips))
-      .catch(() => alive && setTrips([]));
+    const fetchTrips = () => {
+      apiGet<{ trips: Trip[] }>('/trips')
+        .then((r) => alive && setTrips(r.trips))
+        .catch(() => alive && setTrips([]));
+    };
+    fetchTrips();
+    window.addEventListener('travelapp:mutated', fetchTrips);
     return () => {
       alive = false;
+      window.removeEventListener('travelapp:mutated', fetchTrips);
     };
   }, [location.key]);
 
@@ -98,19 +170,37 @@ export function Layout() {
                           <span className="side-tab-dot" />
                           {tb.label}
                         </Link>
-                        {tb.key === 'itinerary' && [...(t.days ?? [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder).map((day, index) => (
-                          <Link
-                            key={day.id}
-                            to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}
-                            className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
-                          >
-                            <span className="side-tab-dot" />
-                            <span>Day {index + 1}</span>
-                            <span className="muted small">
-                              {new Date(day.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
-                          </Link>
-                        ))}
+                        {tb.key === 'itinerary' && (() => {
+                          const sorted = [...(t.days ?? [])].sort(
+                            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
+                          );
+                          const deduped: typeof sorted = [];
+                          const seen = new Set<string>();
+                          for (const day of sorted) {
+                            const key = String(day.date).slice(0, 10);
+                            if (!seen.has(key)) {
+                              seen.add(key);
+                              deduped.push(day);
+                            }
+                          }
+                          return deduped.map((day, index) => {
+                            const dateStr = formatSidebarDate(day.date);
+                            const lastCity = getLastCityForDay(day);
+                            return (
+                              <Link
+                                key={day.id}
+                                to={`/trips/${t.id}?tab=itinerary#day-${day.id}`}
+                                className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
+                                title={`Day ${index + 1} · ${dateStr}${lastCity ? ` · ${lastCity}` : ''}`}
+                              >
+                                <span className="side-tab-dot" />
+                                <span className="side-day-num">{index + 1}</span>
+                                <span className="side-day-date">{dateStr}</span>
+                                {lastCity && <span className="side-day-city">{lastCity}</span>}
+                              </Link>
+                            );
+                          });
+                        })()}
                       </div>
                     ))}
                   </div>

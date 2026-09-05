@@ -175,7 +175,7 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `  1. Call add_booking with confirmation code, provider, dates, and total confirmed price. This automatically creates missing days, logs flight legs or stays into the itinerary, and adds the cost to the budget!`,
     `  2. Call add_place if additional custom stops or activities are requested.`,
     `- For packing items, use add_packing_item, update_packing_item, or delete_packing_item.`,
-    `- When asked for recommendations (things to do, see, eat), call get_suggestions to return structured cards.`,
+    `- When asked for recommendations (things to do, see, eat, explore), call get_suggestions to return interactive discovery cards. Do NOT automatically add recommendations to the itinerary via add_place unless the user explicitly tells you to add them.`,
     `- Keep responses clear, friendly, and concise.`,
   ].join('\n');
 }

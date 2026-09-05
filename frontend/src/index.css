@@ -820,6 +820,35 @@ tbody tr.total-row td {
   opacity: 0.6;
   flex-shrink: 0;
 }
+.side-day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-day-num {
+  font-weight: 700;
+  color: var(--text);
+  min-width: 14px;
+}
+.side-day-date {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.side-day-city {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: 2px;
+}
 .trip-empty {
   padding: 6px 10px;
   line-height: 1.4;

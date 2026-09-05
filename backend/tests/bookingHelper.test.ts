@@ -115,11 +115,16 @@ $2,054.66 USD
     expect(info.legs[2].flightNumber).toBe('181');
     expect(info.legs[2].fromCode).toBe('NAP');
     expect(info.legs[2].toCode).toBe('ORD');
+    expect(info.legs[2].fromCity).toBe('Naples');
+    expect(info.legs[2].toCity).toBe('Chicago');
     expect(info.legs[2].seat).toContain('28D');
 
     // Leg 4: ORD -> MSN (Oct 22)
     expect(info.legs[3].flightNumber).toBe('4601');
     expect(info.legs[3].fromCode).toBe('ORD');
     expect(info.legs[3].toCode).toBe('MSN');
+    expect(info.legs[3].fromCity).toBe('Chicago');
+    expect(info.legs[3].toCity).toBe('Madison');
   });
 });
+

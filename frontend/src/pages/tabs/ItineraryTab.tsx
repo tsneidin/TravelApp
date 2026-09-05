@@ -26,6 +26,13 @@ interface PlaceForm {
 
 const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', website: '', description: '', notes: '' };
 
+function isGenericDayLabel(label?: string | null): boolean {
+  if (!label) return true;
+  const trimmed = label.trim();
+  if (!trimmed) return true;
+  return /^day\s*\d+$/i.test(trimmed);
+}
+
 export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -37,7 +44,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [dragId, setDragId] = useState<string | null>(null);
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
-  const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string } | null>(null);
+  const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string; dayNumber?: number } | null>(null);
   const [journalDay, setJournalDay] = useState<{ date: string; label: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ title: '', body: '' });
 
@@ -161,7 +168,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const base = trip.startDate ? new Date(trip.startDate) : new Date();
     const date = new Date(base);
     date.setDate(base.getDate() + days.length);
-    await apiPost(`/trips/${trip.id}/days`, { date: date.toISOString(), label: `Day ${days.length + 1}` });
+    await apiPost(`/trips/${trip.id}/days`, { date: date.toISOString() });
     await reload();
   };
 
@@ -225,8 +232,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
   const saveDayNotes = async () => {
     if (!dayEditor) return;
+    const trimmed = dayEditor.label.trim();
     await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
-      label: dayEditor.label.trim() || undefined,
+      label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
       notes: dayEditor.notes,
     });
     setDayEditor(null);
@@ -524,12 +532,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <span className="badge accent">
                     {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                   </span>
-                  <b>{day.label || `Day ${dayIndex + 1}`}</b>
+                  <b>Day {dayIndex + 1}</b>
+                  {!isGenericDayLabel(day.label) && (
+                    <span className="day-custom-label" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                      : {day.label}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="btn xs ghost muted-hover"
                     title="Rename day or edit notes"
-                    onClick={() => setDayEditor({ id: day.id, label: day.label || `Day ${dayIndex + 1}`, notes: day.notes || '' })}
+                    onClick={() => {
+                      const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
+                      setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
+                    }}
                     style={{ padding: '2px 4px' }}
                   >
                     <Pencil size={12} />
@@ -537,10 +553,27 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <span className="day-stop-count small muted">({day.places.length} stops)</span>
                 </div>
                 <div className="row">
-                  <button type="button" className="btn sm ghost" title="Edit day notes" onClick={() => setDayEditor({ id: day.id, label: day.label || `Day ${dayIndex + 1}`, notes: day.notes || '' })}>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    title="Edit day notes"
+                    onClick={() => {
+                      const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
+                      setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
+                    }}
+                  >
                     <NotebookPen size={13} /> Notes
                   </button>
-                  <button type="button" className="btn sm ghost" title="Add journal entry for this day" onClick={() => { setJournalDay({ date: day.date, label: day.label || `Day ${dayIndex + 1}` }); setJournalForm({ title: '', body: '' }); }}>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    title="Add journal entry for this day"
+                    onClick={() => {
+                      const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
+                      setJournalDay({ date: day.date, label: `Day ${dayIndex + 1}${customTitle}` });
+                      setJournalForm({ title: '', body: '' });
+                    }}
+                  >
                     <BookOpen size={13} /> Journal
                   </button>
                   <button
@@ -594,7 +627,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               {/* Quick-add place search bar inside day panel */}
               <div className="day-quick-add mt">
                 <PlaceSearchInput
-                  placeholder={`+ Quick add to ${day.label || `Day ${dayIndex + 1}`}…`}
+                  placeholder={`+ Quick add to ${!isGenericDayLabel(day.label) ? day.label : `Day ${dayIndex + 1}`}…`}
                   biasLat={tripCenter?.lat}
                   biasLng={tripCenter?.lng}
                   onSelect={async (pl) => {
@@ -615,14 +648,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           ))}
 
           {orphanPlaces.length > 0 && (
-            <div className="panel mt">
-              <h2 className="panel-title">Unassigned places</h2>
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                {orphanPlaces.map((p) => (
-                  <div key={p.id} style={{ width: '100%' }}>
-                    {renderPlaceRow(p)}
-                  </div>
-                ))}
+            <div className="panel orphan-panel" id="places-unassigned" style={{ scrollMarginTop: 16, marginBottom: 18 }}>
+              <div className="row between day-header">
+                <div className="row">
+                  <span className="badge">Unassigned</span>
+                  <b>Places not assigned to a day</b>
+                  <span className="small muted">({orphanPlaces.length} places)</span>
+                </div>
+              </div>
+              <div className="place-list">
+                {orphanPlaces.map((p) => renderPlaceRow(p))}
               </div>
             </div>
           )}
@@ -663,11 +698,17 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       <option value="">
                         All Days ({totalPlacesCount} stops)
                       </option>
-                      {days.map((d, i) => (
-                        <option key={d.id} value={d.id}>
-                          {`Day ${i + 1}${d.date ? ` (${d.date})` : ''}: ${d.label || `Day ${i + 1}`} · ${d.places.length} stop${d.places.length === 1 ? '' : 's'}`}
-                        </option>
-                      ))}
+                      {days.map((d, i) => {
+                        const customTitle = !isGenericDayLabel(d.label) ? `: ${d.label}` : '';
+                        const dateFormatted = d.date
+                          ? ` (${new Date(d.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`
+                          : '';
+                        return (
+                          <option key={d.id} value={d.id}>
+                            {`Day ${i + 1}${dateFormatted}${customTitle} · ${d.places.length} stop${d.places.length === 1 ? '' : 's'}`}
+                          </option>
+                        );
+                      })}
                       {orphanPlaces.length > 0 && (
                         <option value="unassigned">
                           Unassigned ({orphanPlaces.length} stops)
@@ -733,7 +774,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
 
       {dayEditor && (
-        <Modal title={`Day details — ${dayEditor.label}`} onClose={() => setDayEditor(null)}>
+        <Modal title={`Day ${dayEditor.dayNumber ?? ''} details${dayEditor.label ? ` — ${dayEditor.label}` : ''}`} onClose={() => setDayEditor(null)}>
           <div className="field">
             <label>Day title / label</label>
             <input
@@ -888,7 +929,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <option value="">No day (unassigned)</option>
                 {days.map((d, i) => (
                   <option key={d.id} value={d.id}>
-                    {d.label || `Day ${i + 1}`} ({new Date(d.date).toLocaleDateString()})
+                    {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
                   </option>
                 ))}
               </select>

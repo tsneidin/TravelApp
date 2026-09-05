@@ -1,5 +1,6 @@
 import { prisma } from '../db.js';
 import { syncBookingToItinerary } from './bookingHelper.js';
+import { reconcileTripDays, isGenericDayLabel } from './dayReconciliation.js';
 import { fetchSuggestions, type Suggestion } from './suggestions.js';
 import type { BookingType, ExpenseCategory } from '@prisma/client';
 
@@ -128,33 +129,6 @@ export function cleanFallbackTitleAndDescription(rawText: string): { title: stri
   return { title, description: clean };
 }
 
-function tripDates(startDate?: Date | null, endDate?: Date | null): Date[] {
-  if (!startDate || !endDate) return [];
-  const start = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
-  const end = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate()));
-  if (end < start) return [];
-
-  const dates: Date[] = [];
-  for (const date = new Date(start); date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
-    dates.push(new Date(date));
-  }
-  return dates;
-}
-
-async function ensureTripDays(tripId: string, startDate?: Date | null, endDate?: Date | null) {
-  const dates = tripDates(startDate, endDate);
-  if (dates.length === 0) return;
-
-  const existing = await prisma.day.findMany({ where: { tripId }, select: { date: true } });
-  const existingDates = new Set(existing.map((day) => day.date.toISOString().slice(0, 10)));
-  const missing = dates
-    .map((date, index) => ({ tripId, date, label: `Day ${index + 1}`, sortOrder: index }))
-    .filter((day) => !existingDates.has(day.date.toISOString().slice(0, 10)));
-
-  if (missing.length > 0) {
-    await prisma.day.createMany({ data: missing });
-  }
-}
 
 // ---------------- Tool Definitions ----------------
 
@@ -686,9 +660,9 @@ export async function executeTripTool(
 
       const updated = await prisma.trip.update({ where: { id: tripId }, data });
 
-      // Automatically generate missing days if start/end dates were provided
+      // Automatically generate missing days and reconcile bounds
       if (newStart || newEnd || (updated.startDate && updated.endDate)) {
-        await ensureTripDays(tripId, updated.startDate, updated.endDate);
+        await reconcileTripDays(tripId);
       }
 
       const changes = Object.keys(data).join(', ');
@@ -715,16 +689,19 @@ export async function executeTripTool(
     if (name === 'add_day') {
       const date = toDate(a.date);
       if (!date) return { action: name, summary: 'add_day: valid date (YYYY-MM-DD) required', ok: false };
+      const rawLabel = a.label ? String(a.label).trim() : undefined;
+      const label = rawLabel && !isGenericDayLabel(rawLabel) ? rawLabel : undefined;
       const count = await prisma.day.count({ where: { tripId } });
       const day = await prisma.day.create({
         data: {
           tripId,
           date,
-          label: a.label ? String(a.label).trim() : undefined,
+          label,
           notes: a.notes ? String(a.notes).trim() : undefined,
           sortOrder: count,
         },
       });
+      await reconcileTripDays(tripId);
       return { action: name, summary: `Added itinerary day ${toDayKey(date)}${day.label ? ` (${day.label})` : ''}`, ok: true, dayId: day.id };
     }
 
@@ -845,10 +822,13 @@ export async function executeTripTool(
         if (hit) {
           dayId = hit.id;
         } else {
+          const rawLabel = a.label ? String(a.label) : undefined;
+          const label = rawLabel && !isGenericDayLabel(rawLabel) ? rawLabel : undefined;
           const created = await prisma.day.create({
-            data: { tripId, date, label: a.label ? String(a.label) : undefined, sortOrder: days.length },
+            data: { tripId, date, label, sortOrder: days.length },
           });
           dayId = created.id;
+          await reconcileTripDays(tripId);
         }
       }
 

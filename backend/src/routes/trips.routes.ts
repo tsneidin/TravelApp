@@ -3,7 +3,8 @@ import { asyncHandler, badRequest, notFound, forbidden } from '../lib/errors.js'
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
 import { syncBookingToItinerary } from '../services/bookingHelper.js';
-import type { MemberRole, Prisma } from '@prisma/client';
+import { reconcileTripDays, isGenericDayLabel } from '../services/dayReconciliation.js';
+import type { MemberRole } from '@prisma/client';
 
 const ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
 
@@ -40,37 +41,6 @@ function isOwner(trip: { ownerId: string }, userId: string) {
   return trip.ownerId === userId;
 }
 
-function tripDates(startDate?: Date | null, endDate?: Date | null): Date[] {
-  if (!startDate || !endDate) return [];
-  const start = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
-  const end = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate()));
-  if (end < start) throw badRequest('End date must be on or after start date');
-
-  const dates: Date[] = [];
-  for (const date = new Date(start); date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
-    dates.push(new Date(date));
-  }
-  return dates;
-}
-
-async function ensureTripDays(
-  db: Prisma.TransactionClient,
-  tripId: string,
-  startDate?: Date | null,
-  endDate?: Date | null,
-) {
-  const dates = tripDates(startDate, endDate);
-  if (dates.length === 0) return;
-
-  const existing = await db.day.findMany({ where: { tripId }, select: { date: true } });
-  const existingDates = new Set(existing.map((day) => day.date.toISOString().slice(0, 10)));
-  const missing = dates
-    .map((date, index) => ({ tripId, date, label: `Day ${index + 1}`, sortOrder: index }))
-    .filter((day) => !existingDates.has(day.date.toISOString().slice(0, 10)));
-
-  if (missing.length > 0) await db.day.createMany({ data: missing });
-}
-
 // ---------- CRUD ----------
 tripsRouter.get(
   '/',
@@ -83,13 +53,11 @@ tripsRouter.get(
         };
     const datedTrips = await prisma.trip.findMany({
       where,
-      select: { id: true, startDate: true, endDate: true },
+      select: { id: true },
     });
-    await prisma.$transaction(async (tx) => {
-      for (const trip of datedTrips) {
-        await ensureTripDays(tx, trip.id, trip.startDate, trip.endDate);
-      }
-    });
+    for (const trip of datedTrips) {
+      await reconcileTripDays(trip.id);
+    }
 
     const trips = await prisma.trip.findMany({
       where,
@@ -112,23 +80,20 @@ tripsRouter.post(
     const { name, destination, currency, startDate, endDate, description, coverUrl } = req.body;
     const parsedStart = startDate ? new Date(startDate) : undefined;
     const parsedEnd = endDate ? new Date(endDate) : undefined;
-    const trip = await prisma.$transaction(async (tx) => {
-      const created = await tx.trip.create({
-        data: {
-          name,
-          destination: destination ?? '',
-          currency: currency ?? 'USD',
-          startDate: parsedStart,
-          endDate: parsedEnd,
-          description,
-          coverUrl,
-          ownerId: u.id,
-        },
-      });
-      await ensureTripDays(tx, created.id, parsedStart, parsedEnd);
-      return created;
+    const created = await prisma.trip.create({
+      data: {
+        name,
+        destination: destination ?? '',
+        currency: currency ?? 'USD',
+        startDate: parsedStart,
+        endDate: parsedEnd,
+        description,
+        coverUrl,
+        ownerId: u.id,
+      },
     });
-    res.status(201).json({ trip });
+    await reconcileTripDays(created.id);
+    res.status(201).json({ trip: created });
   }),
 );
 
@@ -137,13 +102,7 @@ tripsRouter.get(
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
     await requireTripAccess(req, tripId, 'viewer');
-    const datedTrip = await prisma.trip.findUnique({
-      where: { id: tripId },
-      select: { startDate: true, endDate: true },
-    });
-    if (datedTrip) {
-      await prisma.$transaction((tx) => ensureTripDays(tx, tripId, datedTrip.startDate, datedTrip.endDate));
-    }
+    await reconcileTripDays(tripId);
 
     // Backfill confirmations imported before booking-to-itinerary synchronization
     // was reliable. The helper performs duplicate checks, so this is idempotent.
@@ -192,9 +151,9 @@ tripsRouter.patch(
     delete (data as { coverUrl?: unknown }).coverUrl; // reset via multipart endpoint
     const updated = await prisma.$transaction(async (tx) => {
       const saved = await tx.trip.update({ where: { id: tripId }, data });
-      await ensureTripDays(tx, tripId, saved.startDate, saved.endDate);
       return saved;
     });
+    await reconcileTripDays(tripId);
     res.json({ trip: updated });
   }),
 );
@@ -299,9 +258,11 @@ tripsRouter.post(
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['date']);
     const date = new Date(req.body.date);
-    const label = req.body.label || undefined;
+    const rawLabel = typeof req.body.label === 'string' ? req.body.label.trim() : undefined;
+    const label = rawLabel && !isGenericDayLabel(rawLabel) ? rawLabel : undefined;
     const sortOrder = req.body.sortOrder ?? (await prisma.day.count({ where: { tripId } }));
     const day = await prisma.day.create({ data: { tripId, date, label, sortOrder } });
+    await reconcileTripDays(tripId);
     res.status(201).json({ day });
   }),
 );

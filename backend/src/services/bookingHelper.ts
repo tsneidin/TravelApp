@@ -1,5 +1,6 @@
 import { prisma } from '../db.js';
 import type { BookingType } from '@prisma/client';
+import { cleanAirportCity, toDayKey, reconcileTripDays } from './dayReconciliation.js';
 
 export interface ExtractedFlightLeg {
   carrier: string;
@@ -91,9 +92,6 @@ function parseDateTimeString(dateStr: string): Date | undefined {
   return undefined;
 }
 
-function toDayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   const text = sanitizeReceiptText(rawText);
@@ -147,8 +145,8 @@ export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
     const toCode = destination[2].toUpperCase();
     if (fromCode === toCode) continue;
 
-    const fromCity = origin[1].trim();
-    const toCity = destination[1].trim();
+    const fromCity = cleanAirportCity(origin[1]);
+    const toCity = cleanAirportCity(destination[1]);
     const departTime = parseDateTimeString(origin[3].trim());
     const arriveTime = parseDateTimeString(destination[3].trim());
 
@@ -275,10 +273,8 @@ export async function syncBookingToItinerary(
     const hit = existing.find((d) => toDayKey(d.date) === key);
     if (hit) return hit.id;
 
-    const count = existing.length;
-    const label = `Day ${count + 1}`;
     const newDay = await prisma.day.create({
-      data: { tripId, date, label, sortOrder: count },
+      data: { tripId, date, label: null, sortOrder: existing.length },
     });
     daysAdded++;
     return newDay.id;
@@ -418,6 +414,9 @@ export async function syncBookingToItinerary(
       data: updateData,
     });
   }
+
+  const recon = await reconcileTripDays(tripId);
+  daysAdded += recon.daysAdded;
 
   return { daysAdded, placesAdded, expenseAdded };
 }

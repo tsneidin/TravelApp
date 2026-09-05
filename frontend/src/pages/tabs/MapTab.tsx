@@ -126,7 +126,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
               <option value="">No day (unassigned)</option>
               {sortedDays.map((day, index) => (
                 <option key={day.id} value={day.id}>
-                  {day.label || `Day ${index + 1}`} ({new Date(day.date).toLocaleDateString()})
+                  {`Day ${index + 1}${day.label && !/^day\s*\d+$/i.test(day.label.trim()) ? `: ${day.label}` : ''} (${new Date(day.date).toLocaleDateString()})`}
                 </option>
               ))}
             </select>

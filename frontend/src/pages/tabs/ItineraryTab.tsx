@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Clock
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
@@ -254,143 +254,168 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const hasDetails = Boolean(p.description?.trim() || p.notes?.trim());
     const isExpanded = expandedPlaceIds.has(p.id);
 
+    const locationText = p.address?.trim()
+      ? p.address.trim()
+      : p.lat != null && p.lng != null
+      ? `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`
+      : null;
+
+    const formattedTime = p.startTime
+      ? new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : null;
+
+    const categoryText = p.category?.trim() || null;
+    const hasMeta = Boolean(locationText || categoryText || formattedTime);
+
     return (
       <div key={p.id} className="place-item-wrap">
         <div
           id={`place-${p.id}`}
-          className={`list-row place-card ${dragId === p.id ? 'dragging' : ''} ${activePlaceId === p.id ? 'active-highlight' : ''} ${isExpanded ? 'active-row' : ''}`}
+          className={`place-card-compact ${dragId === p.id ? 'dragging' : ''} ${activePlaceId === p.id ? 'active-highlight' : ''} ${isExpanded ? 'active-row' : ''}`}
           draggable
           onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
           onDragEnd={() => setDragId(null)}
           onClick={() => setActivePlaceId(p.id)}
           onMouseEnter={() => setActivePlaceId(p.id)}
         >
-          <GripVertical size={14} className="muted grip-handle" style={{ cursor: 'grab' }} />
-          {stopNumber != null && (
-            <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
-              {stopNumber}
-            </span>
-          )}
-          <div className="grow" style={{ minWidth: 0 }}>
-            <div
-              className="title-row"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(p.id);
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+          {/* Left: Drag grip & Stop number */}
+          <div className="place-card-gutter">
+            <GripVertical size={13} className="muted grip-handle" style={{ cursor: 'grab' }} />
+            {stopNumber != null && (
+              <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
+                {stopNumber}
+              </span>
+            )}
+          </div>
+
+          {/* Center/Main: Title + Meta */}
+          <div className="place-card-main">
+            <div className="place-card-top">
+              <div
+                className="place-title-group"
+                onClick={(e) => {
                   e.stopPropagation();
                   toggleExpand(p.id);
-                }
-              }}
-              title={hasDetails ? 'Click to view full description' : 'Click to expand'}
-            >
-              <span className="title title-clickable">
-                {p.name}
-              </span>
-              {p.website && (
-                <a
-                  href={p.website}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="website-ext-link"
-                  onClick={(e) => e.stopPropagation()}
-                  title="Open official website"
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation();
+                    toggleExpand(p.id);
+                  }
+                }}
+                title={hasDetails ? 'Click to toggle full description' : undefined}
+              >
+                <span className="place-title">{p.name}</span>
+                {p.website && (
+                  <a
+                    href={p.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="website-ext-link"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Open official website"
+                  >
+                    ↗
+                  </a>
+                )}
+                {hasDetails && (
+                  <span className="title-detail-badge">
+                    {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                    <span>{isExpanded ? 'Hide' : 'Details'}</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Right: Sleek, compact action icons */}
+              <div className="place-card-actions" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="place-action-btn"
+                  title="Show on map"
+                  onClick={() => handlePlaceClick(p)}
                 >
-                  ↗
-                </a>
-              )}
-              {hasDetails && (
-                <span className="title-detail-badge">
-                  {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  <span>{isExpanded ? 'Hide' : 'Details'}</span>
-                </span>
-              )}
+                  <MapIcon size={13} />
+                </button>
+                {p.sourceText && (
+                  <button
+                    type="button"
+                    className="place-action-btn"
+                    title="View source confirmation text"
+                    onClick={() => setSourcePlace(p)}
+                  >
+                    <FileText size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`place-action-btn ${p.includeInCalendar === false ? 'place-action-inactive' : ''}`}
+                  title={p.includeInCalendar !== false ? 'Included in trip calendar' : 'Hidden from trip calendar'}
+                  aria-label={p.includeInCalendar !== false ? `Hide ${p.name} from trip calendar` : `Include ${p.name} in trip calendar`}
+                  onClick={() => void setCalendarVisibility(p, p.includeInCalendar === false)}
+                >
+                  {p.includeInCalendar !== false ? <CalendarCheck size={13} /> : <CalendarX size={13} />}
+                </button>
+                <button
+                  type="button"
+                  className="place-action-btn"
+                  title="Edit place"
+                  onClick={() => openEdit(p)}
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="place-action-btn danger"
+                  title="Delete place"
+                  onClick={() => void removePlace(p)}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </div>
-            <div className="sub">
-              <MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || (p.lat != null ? `${p.lat.toFixed(3)}, ${p.lng?.toFixed(3)}` : 'No location')}
-              {p.category ? ` · ${p.category}` : ''}
-              {p.startTime ? ` · ${new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-            </div>
+
+            {/* Bottom: Only render if there's actual metadata */}
+            {hasMeta && (
+              <div className="place-card-meta">
+                {formattedTime && (
+                  <span className="place-meta-pill time">
+                    <Clock size={11} /> {formattedTime}
+                  </span>
+                )}
+                {categoryText && (
+                  <span className="place-meta-pill category">
+                    {categoryText}
+                  </span>
+                )}
+                {locationText && (
+                  <span className="place-meta-pill location" title={locationText}>
+                    <MapPin size={11} />
+                    <span className="place-location-text">{locationText}</span>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-          <button
-            type="button"
-            className="btn sm ghost"
-            title="Show on map"
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePlaceClick(p);
-            }}
-          >
-            <MapIcon size={14} />
-          </button>
-          {p.sourceText && (
-            <button
-              type="button"
-              className="btn sm ghost"
-              title="View source text"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSourcePlace(p);
-              }}
-            >
-              <FileText size={14} /> Source
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn sm ghost"
-            title={p.includeInCalendar !== false ? 'Included in trip calendar' : 'Hidden from trip calendar'}
-            aria-label={p.includeInCalendar !== false ? `Hide ${p.name} from trip calendar` : `Include ${p.name} in trip calendar`}
-            onClick={(event) => {
-              event.stopPropagation();
-              void setCalendarVisibility(p, p.includeInCalendar === false);
-            }}
-          >
-            {p.includeInCalendar !== false ? <CalendarCheck size={14} /> : <CalendarX size={14} />}
-          </button>
-          <button
-            type="button"
-            className="btn sm ghost"
-            title="Edit / notes"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEdit(p);
-            }}
-          >
-            <Pencil size={14} />
-          </button>
-          <button
-            type="button"
-            className="btn sm ghost danger"
-            title="Delete place"
-            onClick={(e) => {
-              e.stopPropagation();
-              void removePlace(p);
-            }}
-          >
-            <Trash2 size={14} />
-          </button>
         </div>
 
+        {/* Expanded Description / Notes */}
         {isExpanded && (
           <div className="place-expanded-card">
-            {p.description ? (
+            {p.description?.trim() ? (
               <div className="place-expanded-section">
                 <div className="place-expanded-label">Full Description</div>
                 <div className="place-expanded-text">{p.description}</div>
               </div>
             ) : null}
-            {p.notes ? (
+            {p.notes?.trim() ? (
               <div className="place-expanded-section">
                 <div className="place-expanded-label">Notes</div>
                 <div className="place-expanded-text">✏️ {p.notes}</div>
               </div>
             ) : null}
-            {!p.description && !p.notes && (
+            {!p.description?.trim() && !p.notes?.trim() && (
               <div className="small muted">
                 No description or notes yet.{' '}
                 <button

@@ -174,27 +174,53 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   // React Router updates the hash without performing the browser's normal
   // anchor scroll. Explicitly scroll the independently scrolling center pane ONLY when hash changes.
   useEffect(() => {
-    if (!location.hash.startsWith('#day-')) {
+    const hash = location.hash;
+    if (!hash.startsWith('#day-') && !hash.startsWith('#place-')) {
       lastHashRef.current = null;
       return;
     }
-    if (lastHashRef.current === location.hash) return;
-    lastHashRef.current = location.hash;
+    if (lastHashRef.current === hash) return;
+    lastHashRef.current = hash;
 
-    const elementId = decodeURIComponent(location.hash.slice(1));
-    const dayId = decodeURIComponent(location.hash.slice(5));
-    if (dayId && days.some((d) => d.id === dayId)) {
-      setSelectedDayId(dayId);
-      setActivePlaceId(null);
-    }
-    const frame = requestAnimationFrame(() => {
-      document.getElementById(elementId)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
+    if (hash.startsWith('#day-')) {
+      const elementId = decodeURIComponent(hash.slice(1));
+      const dayId = decodeURIComponent(hash.slice(5));
+      if (dayId && days.some((d) => d.id === dayId)) {
+        setSelectedDayId(dayId);
+        setActivePlaceId(null);
+      }
+      const frame = requestAnimationFrame(() => {
+        document.getElementById(elementId)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
       });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [location.hash, days]);
+      return () => cancelAnimationFrame(frame);
+    }
+
+    if (hash.startsWith('#place-')) {
+      const placeId = decodeURIComponent(hash.slice(7));
+      const place = (trip.places ?? []).find((p) => p.id === placeId);
+      if (place) {
+        if (place.dayId && days.some((d) => d.id === place.dayId)) {
+          setSelectedDayId(place.dayId);
+        }
+        setActivePlaceId(place.id);
+      }
+      const frame = requestAnimationFrame(() => {
+        const el = document.getElementById(`place-${placeId}`);
+        if (el) {
+          el.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+          el.classList.add('place-item-highlight');
+          setTimeout(() => el.classList.remove('place-item-highlight'), 2200);
+        }
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [location.hash, days, trip.places]);
 
   // Approximate trip coordinates to bias place searches
   const tripCenter = useMemo(() => {

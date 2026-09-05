@@ -564,11 +564,17 @@ tbody tr.total-row td {
   padding: 3px 6px;
   font-size: 0.7rem;
   font-weight: 700;
-  cursor: grab;
+  cursor: pointer;
   border: 1px solid transparent;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+}
+.cal-event:hover {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
 }
 .cal-event.place {
   background: rgba(34, 211, 238, 0.14);
@@ -586,6 +592,23 @@ tbody tr.total-row td {
   padding: 1px 4px;
   border-radius: 4px;
   background: var(--card-2);
+}
+
+.place-item-highlight {
+  animation: placeFlash 2.2s ease-out;
+}
+@keyframes placeFlash {
+  0% {
+    box-shadow: 0 0 0 3px var(--accent);
+    border-color: var(--accent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.5);
+    border-color: var(--accent);
+  }
+  100% {
+    box-shadow: none;
+  }
 }
 
 /* ---------- misc ---------- */

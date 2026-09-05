@@ -39,7 +39,9 @@ export async function buildEvents(opts: { userId?: string; tripId?: string } = {
       );
     }
     for (const b of trip.bookings) {
-      events.push(bookingEvent(trip.id, b));
+      const bDate = b.startAt ? isoDate(b.startAt) : undefined;
+      const matchingDay = bDate ? trip.days.find((d) => isoDate(d.date) === bDate) : undefined;
+      events.push(bookingEvent(trip.id, b, matchingDay));
     }
   }
   events.sort((a, b) => (a.date === b.date ? a.sortOrder - b.sortOrder : a.date.localeCompare(b.date)));
@@ -61,7 +63,7 @@ function placeEvent(tripId: string, place: Place, day: Day | undefined): Calenda
   };
 }
 
-function bookingEvent(tripId: string, b: Booking): CalendarEvent {
+function bookingEvent(tripId: string, b: Booking, day?: Day): CalendarEvent {
   return {
     id: `b-${b.id}`,
     type: 'booking',
@@ -72,6 +74,7 @@ function bookingEvent(tripId: string, b: Booking): CalendarEvent {
     endAt: b.endAt?.toISOString(),
     sortOrder: 0,
     bookingType: b.type,
+    dayId: day?.id,
   };
 }
 

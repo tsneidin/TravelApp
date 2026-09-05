@@ -2289,3 +2289,146 @@ a.link:hover {
   margin-bottom: 6px;
 }
 
+/* Saved Map Views Floating Toolbar */
+.map-views-bar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  max-width: calc(100% - 20px);
+  pointer-events: auto;
+}
+
+.map-view-chip-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.15s ease;
+}
+
+.map-view-chip-group:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+.map-view-chip {
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.map-view-chip:hover {
+  color: var(--accent, #22d3ee);
+}
+
+.map-view-chip-standalone {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.map-view-chip-standalone:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+.map-view-chip-del {
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.85rem;
+  padding: 4px 6px;
+  cursor: pointer;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-view-chip-del:hover {
+  color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.map-view-save-btn {
+  background: rgba(34, 211, 238, 0.16);
+  border: 1px dashed rgba(34, 211, 238, 0.45);
+  border-radius: 6px;
+  color: var(--accent, #22d3ee);
+}
+
+.map-view-save-btn:hover {
+  background: rgba(34, 211, 238, 0.28);
+  border-color: var(--accent, #22d3ee);
+}
+
+.map-view-save-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.map-view-input {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 5px;
+  color: #fff;
+  font-size: 0.78rem;
+  padding: 3px 7px;
+  outline: none;
+  width: 120px;
+}
+
+.map-view-input:focus {
+  border-color: var(--accent, #22d3ee);
+  box-shadow: 0 0 0 1px var(--accent, #22d3ee);
+}
+
+.map-view-save-confirm {
+  background: var(--accent, #0891b2);
+  color: #fff;
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+
+.map-view-save-confirm:hover:not(:disabled) {
+  opacity: 0.9;
+  color: #fff;
+}
+
+.map-view-save-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.map-view-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 0.72rem;
+}
+

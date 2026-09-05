@@ -972,6 +972,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   destination={trip.destination}
                   fallbackLocation={fallbackLocation}
                   activePlaceId={activePlaceId ?? undefined}
+                  tripId={trip.id}
+                  mapViews={trip.mapViews}
+                  onMapViewsChange={reload}
                   onMapClick={(pl) => {
                     setEditingId(null);
                     setEditing({

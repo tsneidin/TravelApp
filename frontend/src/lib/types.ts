@@ -26,7 +26,19 @@ export interface Trip {
   packing?: PackingItem[];
   journal?: JournalEntry[];
   photos?: Photo[];
+  mapViews?: MapView[];
   _count?: { places: number; expenses: number };
+}
+
+export interface MapView {
+  id: string;
+  tripId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  zoom: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TripMember {

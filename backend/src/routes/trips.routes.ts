@@ -26,6 +26,7 @@ async function loadTrip(tripId: string) {
       journal: { orderBy: { date: 'asc' } },
       photos: true,
       imports: { orderBy: { createdAt: 'desc' } },
+      mapViews: { orderBy: { createdAt: 'asc' } },
     },
   });
   if (!trip) throw notFound('Trip not found');
@@ -377,5 +378,70 @@ tripsRouter.post(
       ),
     );
     res.json({ ok: true });
+  }),
+);
+
+// ---------- map views ----------
+tripsRouter.get(
+  '/:tripId/map-views',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'viewer');
+    const mapViews = await prisma.mapView.findMany({
+      where: { tripId },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ mapViews });
+  }),
+);
+
+tripsRouter.post(
+  '/:tripId/map-views',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    requireFields(req, ['name', 'lat', 'lng', 'zoom']);
+    const name = String(req.body.name).trim();
+    if (!name) throw badRequest('View name is required');
+
+    const mapView = await prisma.mapView.create({
+      data: {
+        tripId,
+        name,
+        lat: Number(req.body.lat),
+        lng: Number(req.body.lng),
+        zoom: Number(req.body.zoom),
+      },
+    });
+    res.status(201).json({ mapView });
+  }),
+);
+
+tripsRouter.patch(
+  '/:tripId/map-views/:viewId',
+  asyncHandler(async (req, res) => {
+    const { tripId, viewId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    const data: Record<string, unknown> = {};
+    if (typeof req.body.name === 'string') data.name = req.body.name.trim();
+    if (typeof req.body.lat === 'number') data.lat = req.body.lat;
+    if (typeof req.body.lng === 'number') data.lng = req.body.lng;
+    if (typeof req.body.zoom === 'number') data.zoom = req.body.zoom;
+
+    const mapView = await prisma.mapView.update({
+      where: { id: viewId },
+      data,
+    });
+    res.json({ mapView });
+  }),
+);
+
+tripsRouter.delete(
+  '/:tripId/map-views/:viewId',
+  asyncHandler(async (req, res) => {
+    const { tripId, viewId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    await prisma.mapView.delete({ where: { id: viewId } });
+    res.status(204).send();
   }),
 );

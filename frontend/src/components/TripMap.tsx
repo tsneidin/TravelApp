@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { GeocodedPlace, Place } from '../lib/types';
+import { Bookmark, Compass, Plus, X } from 'lucide-react';
+import type { GeocodedPlace, MapView, Place } from '../lib/types';
+import { apiDelete, apiPost } from '../lib/api';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
 type Coord = { lat: number; lng: number };
@@ -83,6 +85,9 @@ export function TripMap({
   fallbackLocation,
   focusPlaceId,
   activePlaceId,
+  tripId,
+  mapViews,
+  onMapViewsChange,
   onPlaceClick,
   onMapClick,
   height = 480,
@@ -92,6 +97,9 @@ export function TripMap({
   fallbackLocation?: { coord?: Coord; address?: string; name?: string } | null;
   focusPlaceId?: string;
   activePlaceId?: string;
+  tripId?: string;
+  mapViews?: MapView[];
+  onMapViewsChange?: () => void | Promise<void>;
   onPlaceClick?: (placeId: string) => void;
   onMapClick?: (place: GeocodedPlace) => void;
   height?: number | string;
@@ -100,11 +108,20 @@ export function TripMap({
   const mapRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
   const markersMapRef = useRef<Map<string, { marker: any; coord: Coord; place: PlaceWithStop; infoContent: string }>>(new Map());
+  const resolvedCoordsRef = useRef<Coord[]>([]);
   const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
   const mapClickRef = useRef(onMapClick);
   const [error, setError] = useState('');
+  const [localViews, setLocalViews] = useState<MapView[]>(mapViews || []);
+  const [isSavingView, setIsSavingView] = useState(false);
+  const [newViewName, setNewViewName] = useState('');
+  const [savingPending, setSavingPending] = useState(false);
   const targetId = activePlaceId || focusPlaceId;
+
+  useEffect(() => {
+    if (mapViews) setLocalViews(mapViews);
+  }, [mapViews]);
 
   useEffect(() => { mapClickRef.current = onMapClick; }, [onMapClick]);
 
@@ -269,6 +286,7 @@ export function TripMap({
         if (coord) resolved.push({ place, coord });
       }
       if (cancelled) return;
+      resolvedCoordsRef.current = resolved.map((r) => r.coord);
 
       const bounds = new maps.LatLngBounds();
       for (const { place, coord } of resolved) {
@@ -372,8 +390,153 @@ export function TripMap({
     return () => { cancelled = true; };
   }, [signature, fallbackSig, destination, targetId, onPlaceClick]);
 
+  const fitAllStops = () => {
+    if (!mapRef.current || !window.google?.maps) return;
+    infoWindowRef.current?.close();
+    if (resolvedCoordsRef.current.length > 1) {
+      const bounds = new window.google.maps.LatLngBounds();
+      resolvedCoordsRef.current.forEach((coord) => bounds.extend(coord));
+      mapRef.current.fitBounds(bounds, 48);
+    } else if (resolvedCoordsRef.current.length === 1) {
+      mapRef.current.panTo(resolvedCoordsRef.current[0]);
+      mapRef.current.setZoom(13);
+    } else if (destination) {
+      const destCoord = geocodeCache.get(destination);
+      if (destCoord) {
+        mapRef.current.panTo(destCoord);
+        mapRef.current.setZoom(8);
+      }
+    }
+  };
+
+  const jumpToView = (view: MapView) => {
+    if (!mapRef.current) return;
+    infoWindowRef.current?.close();
+    mapRef.current.panTo({ lat: view.lat, lng: view.lng });
+    mapRef.current.setZoom(view.zoom);
+  };
+
+  const handleSaveCurrentView = async () => {
+    if (!mapRef.current || !tripId || !newViewName.trim()) return;
+    const center = mapRef.current.getCenter();
+    const zoom = mapRef.current.getZoom();
+    if (!center || zoom == null) return;
+    setSavingPending(true);
+    try {
+      const res = await apiPost<{ mapView: MapView }>(`/trips/${tripId}/map-views`, {
+        name: newViewName.trim(),
+        lat: center.lat(),
+        lng: center.lng(),
+        zoom,
+      });
+      setLocalViews((prev) => [...prev, res.mapView]);
+      setIsSavingView(false);
+      setNewViewName('');
+      void onMapViewsChange?.();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save map view');
+    } finally {
+      setSavingPending(false);
+    }
+  };
+
+  const handleDeleteView = async (viewId: string) => {
+    if (!tripId) return;
+    setLocalViews((prev) => prev.filter((v) => v.id !== viewId));
+    try {
+      await apiDelete(`/trips/${tripId}/map-views/${viewId}`);
+      void onMapViewsChange?.();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete map view');
+    }
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: typeof height === 'number' ? `${height}px` : height }}>
+      <div className="map-views-bar">
+        <button
+          type="button"
+          className="map-view-chip map-view-chip-standalone"
+          onClick={fitAllStops}
+          title="Fit all itinerary stops on screen"
+        >
+          <Compass size={13} /> Fit All
+        </button>
+
+        {localViews.map((view) => (
+          <div key={view.id} className="map-view-chip-group">
+            <button
+              type="button"
+              className="map-view-chip"
+              onClick={() => jumpToView(view)}
+              title={`Jump to ${view.name} (zoom ${view.zoom})`}
+            >
+              <Bookmark size={12} style={{ opacity: 0.85 }} /> {view.name}
+            </button>
+            {tripId && (
+              <button
+                type="button"
+                className="map-view-chip-del"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDeleteView(view.id);
+                }}
+                title="Delete saved view"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        ))}
+
+        {tripId && (
+          isSavingView ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleSaveCurrentView();
+              }}
+              className="map-view-save-form"
+            >
+              <input
+                autoFocus
+                type="text"
+                className="map-view-input"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                placeholder="View name..."
+              />
+              <button
+                type="submit"
+                className="map-view-chip map-view-save-confirm"
+                disabled={savingPending || !newViewName.trim()}
+              >
+                {savingPending ? '…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                className="map-view-chip map-view-cancel"
+                onClick={() => setIsSavingView(false)}
+              >
+                <X size={11} />
+              </button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="map-view-chip map-view-save-btn"
+              onClick={() => {
+                setIsSavingView(true);
+                setNewViewName(`View ${localViews.length + 1}`);
+              }}
+              title="Save current camera position & zoom"
+            >
+              <Plus size={12} /> Save View
+            </button>
+          )
+        )}
+      </div>
+
       <div ref={elementRef} style={{ width: '100%', height: '100%', borderRadius: 10 }} />
       {error && <div className="empty-state" style={{ position: 'absolute', inset: 12 }}><b>Google Map unavailable</b><div className="small muted">{error}</div></div>}
     </div>

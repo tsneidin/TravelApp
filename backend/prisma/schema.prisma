@@ -81,6 +81,7 @@ model Trip {
   bookings Booking[]
   imports  EmailImport[]
   chat     ChatMessage[]
+  mapViews MapView[]
 
   @@index([ownerId])
 }
@@ -276,4 +277,18 @@ model SystemSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model MapView {
+  id        String   @id @default(cuid())
+  name      String
+  lat       Float
+  lng       Float
+  zoom      Float
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
 }

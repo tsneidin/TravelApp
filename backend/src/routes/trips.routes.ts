@@ -4,6 +4,7 @@ import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
 import { syncBookingToItinerary } from '../services/bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from '../services/dayReconciliation.js';
+import { inferCategoryFromText } from '../services/ai.js';
 import type { MemberRole } from '@prisma/client';
 
 const ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
@@ -309,11 +310,14 @@ tripsRouter.post(
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['name']);
     const count = await prisma.place.count({ where: { tripId } });
+    const rawCategory = typeof req.body.category === 'string' ? req.body.category.trim() : '';
+    const category = rawCategory || inferCategoryFromText([req.body.name, req.body.address, req.body.description, req.body.notes].filter(Boolean).join(' '));
+
     const place = await prisma.place.create({
       data: {
         tripId,
         name: req.body.name,
-        category: req.body.category,
+        category,
         address: req.body.address,
         lat: req.body.lat,
         lng: req.body.lng,

@@ -347,27 +347,34 @@ export async function processTripChat(
   return { reply, actions };
 }
 
+import { inferCategoryFromText } from './categoryClassifier.js';
+export { inferCategoryFromText };
+
 export async function suggestTitleAndDescription(
   text: string,
   category?: string,
-): Promise<{ title: string; description: string }> {
+): Promise<{ title: string; description: string; category?: string }> {
   const trimmed = String(text ?? '').trim();
   if (!trimmed) {
-    return { title: '', description: '' };
+    return { title: '', description: '', category: category || 'Sightseeing' };
   }
+
+  const inferredCategory = category || inferCategoryFromText(trimmed);
 
   const activeConfig = await getAiConfig();
   if (!activeConfig.enabled) {
-    return cleanFallbackTitleAndDescription(trimmed);
+    const fb = cleanFallbackTitleAndDescription(trimmed);
+    return { ...fb, category: inferredCategory };
   }
 
   const prompt = [
-    `You are an expert travel assistant. Given the following travel place, tour, or activity details, return a concise, meaningful title and clean description.`,
+    `You are an expert travel assistant. Given the following travel place, tour, or activity details, return a concise title, clean description, and appropriate category.`,
     `STRICT RULES:`,
     `- The "title" MUST be brief, clear, and punchy (2 to 5 words, maximum 35 characters). Example: "Louvre Museum Tour", "Dinner at Osteria Da Fortunata", "Fushimi Inari Sunset Hike". It must never be a long sentence.`,
     `- The "description" should contain the full details, context, schedule, highlights, or tips.`,
-    `- Output MUST be valid JSON with keys "title" and "description".`,
-    category ? `Category: ${category}` : '',
+    `- The "category" MUST be one of: "Transport", "Accommodation", "Restaurant", "Sightseeing", "Activity", "Shopping", "Nature".`,
+    `- Output MUST be valid JSON with keys "title", "description", and "category".`,
+    category ? `User specified Category: ${category}` : '',
     `User input:\n"""\n${trimmed.slice(0, 4000)}\n"""`,
   ]
     .filter(Boolean)
@@ -378,7 +385,7 @@ export async function suggestTitleAndDescription(
       [
         {
           role: 'system',
-          content: 'You are a travel itinerary assistant. Always respond with valid JSON containing "title" and "description".',
+          content: 'You are a travel itinerary assistant. Always respond with valid JSON containing "title", "description", and "category".',
         },
         { role: 'user', content: prompt },
       ],
@@ -388,18 +395,21 @@ export async function suggestTitleAndDescription(
 
     const rawReply = res.choices?.[0]?.message?.content?.trim() || '';
     const jsonMatch = rawReply.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, rawReply];
-    const parsed = JSON.parse(jsonMatch[1] || rawReply) as { title?: unknown; description?: unknown };
+    const parsed = JSON.parse(jsonMatch[1] || rawReply) as { title?: unknown; description?: unknown; category?: unknown };
     const title = typeof parsed.title === 'string' ? parsed.title.trim() : '';
     const description = typeof parsed.description === 'string' ? parsed.description.trim() : '';
+    const cat = typeof parsed.category === 'string' && parsed.category.trim() ? parsed.category.trim() : inferredCategory;
     if (title) {
       return {
         title: title.slice(0, 40),
         description: description || trimmed,
+        category: cat,
       };
     }
   } catch {
     // Fall back to heuristic on error or parse failure
   }
 
-  return cleanFallbackTitleAndDescription(trimmed);
+  const fb = cleanFallbackTitleAndDescription(trimmed);
+  return { ...fb, category: inferredCategory };
 }

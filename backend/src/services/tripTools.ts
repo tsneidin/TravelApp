@@ -2,6 +2,7 @@ import { prisma } from '../db.js';
 import { syncBookingToItinerary } from './bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from './dayReconciliation.js';
 import { fetchSuggestions, type Suggestion } from './suggestions.js';
+import { inferCategoryFromText } from './categoryClassifier.js';
 import type { BookingType, ExpenseCategory } from '@prisma/client';
 
 export const BOOKING_TYPES = ['flight', 'hotel', 'car', 'activity'] as const;
@@ -834,6 +835,9 @@ export async function executeTripTool(
 
       const count = await prisma.place.count({ where: { tripId } });
       const notes = [a.notes ? String(a.notes) : undefined].filter(Boolean).join('\n');
+      const category = a.category
+        ? String(a.category)
+        : inferCategoryFromText([nameStr, a.address, descStr, notes].filter(Boolean).join(' '));
 
       const place = await prisma.place.create({
         data: {
@@ -841,7 +845,7 @@ export async function executeTripTool(
           name: nameStr,
           dayId,
           sortOrder: count,
-          category: a.category ? String(a.category) : undefined,
+          category,
           address: a.address ? String(a.address) : undefined,
           lat: typeof a.lat === 'number' ? a.lat : undefined,
           lng: typeof a.lng === 'number' ? a.lng : undefined,

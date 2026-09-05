@@ -157,6 +157,7 @@ export interface CalendarEvent {
   sortOrder: number;
   placeId?: string;
   bookingType?: string;
+  category?: string | null;
   dayId?: string;
 }
 

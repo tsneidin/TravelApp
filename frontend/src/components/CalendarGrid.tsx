@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import type { CalendarEvent } from '../lib/types';
+import { getCategoryIcon } from '../lib/icons';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -136,7 +137,7 @@ export function CalendarGrid({
           >
             <div className="day-num">{Number(date.slice(8))}</div>
             {(byDate[date] ?? []).slice(0, 5).map((e) => {
-              const dot = e.type === 'place' ? 'P' : e.bookingType === 'flight' ? '✈' : e.bookingType === 'hotel' ? '🛏' : e.bookingType === 'car' ? '🚗' : '🗓';
+              const dot = getCategoryIcon(e.category, e.title, e.type, e.bookingType);
               const displayTitle = formatCalendarTitle(e.title, e.type, e.bookingType);
               const tripName = tripNames.get(e.tripId);
               const tooltip = tripName ? `${tripName} • ${e.title}` : e.title;

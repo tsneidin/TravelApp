@@ -1145,6 +1145,23 @@ tbody tr.total-row td {
   opacity: 0.4;
 }
 
+.place-type-inline-icon {
+  font-size: 0.92rem;
+  line-height: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+}
+
+.place-type-icon-badge {
+  font-size: 0.85rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .place-card-meta {
   display: flex;
   align-items: center;

@@ -12,6 +12,7 @@ export interface CalendarEvent {
   sortOrder: number;
   placeId?: string;
   bookingType?: string;
+  category?: string;
   dayId?: string;
 }
 
@@ -59,6 +60,7 @@ function placeEvent(tripId: string, place: Place, day: Day | undefined): Calenda
     endAt: place.endTime?.toISOString(),
     sortOrder: place.sortOrder,
     placeId: place.id,
+    category: place.category || undefined,
     dayId: day?.id,
   };
 }

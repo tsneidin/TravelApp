@@ -11,6 +11,7 @@ import { Modal } from '../../components/Modal';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
+import { getCategoryIcon } from '../../lib/icons';
 
 interface PlaceForm {
   dayId?: string;
@@ -62,7 +63,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     if (!sourceText) return;
     setSuggestingTitle(true);
     try {
-      const res = await apiPost<{ title: string; description: string }>(`/trips/${trip.id}/ai/suggest-title`, {
+      const res = await apiPost<{ title: string; description: string; category?: string }>(`/trips/${trip.id}/ai/suggest-title`, {
         text: sourceText,
         category: editing.category || undefined,
       });
@@ -71,6 +72,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           ...prev,
           name: res.title,
           description: res.description || prev.description || prev.name,
+          category: res.category || prev.category,
         }));
       }
     } catch (err) {
@@ -461,9 +463,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           {/* Left: Drag grip & Stop number */}
           <div className="place-card-gutter">
             <GripVertical size={13} className="muted grip-handle" style={{ cursor: 'grab' }} />
-            {stopNumber != null && (
-              <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
+            {stopNumber != null ? (
+              <span className="stop-number-badge" title={`Stop #${stopNumber} • ${p.category || 'Place'}`}>
                 {stopNumber}
+              </span>
+            ) : (
+              <span className="place-type-icon-badge" title={p.category || 'Place'}>
+                {getCategoryIcon(p.category, p.name)}
               </span>
             )}
           </div>
@@ -495,6 +501,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 }}
                 title={hasDetails ? 'Click to toggle full description' : undefined}
               >
+                <span className="place-type-inline-icon" title={p.category || 'Place'}>
+                  {getCategoryIcon(p.category, p.name)}
+                </span>
                 <span className="place-title">{p.name}</span>
                 {p.website && (
                   <a
@@ -556,7 +565,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <button
                   type="button"
                   className="place-action-btn danger"
-                  title="Delete place"
+                  title="Remove place"
                   onClick={() => void removePlace(p)}
                 >
                   <Trash2 size={13} />
@@ -564,7 +573,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </div>
             </div>
 
-            {/* Bottom: Only render if there's actual metadata */}
+            {/* Meta tags: Time, Category, Location */}
             {hasMeta && (
               <div className="place-card-meta">
                 {formattedTime && (
@@ -574,6 +583,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 )}
                 {categoryText && (
                   <span className="place-meta-pill category">
+                    <span style={{ marginRight: 3 }}>{getCategoryIcon(categoryText, p.name)}</span>
                     {categoryText}
                   </span>
                 )}
@@ -1117,13 +1127,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           <div className="field small">
             <label>Category</label>
             <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
-              <option value="">—</option>
-              <option>Sightseeing</option>
-              <option>Restaurant</option>
-              <option>Activity</option>
-              <option>Transport</option>
-              <option>Accommodation</option>
-              <option>Shopping</option>
+              <option value="">Auto-infer with AI / keywords</option>
+              <option value="Sightseeing">🏛 Sightseeing</option>
+              <option value="Restaurant">🍽 Restaurant / Dining</option>
+              <option value="Activity">🎟 Activity / Tour</option>
+              <option value="Flight">✈ Flight</option>
+              <option value="Train">🚆 Train / Rail</option>
+              <option value="Transport">🚗 Transport / Rental</option>
+              <option value="Accommodation">🛏 Accommodation / Hotel</option>
+              <option value="Shopping">🛍 Shopping</option>
+              <option value="Nature">🌲 Nature / Beach / Park</option>
             </select>
           </div>
           <div className="field">

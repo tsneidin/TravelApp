@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bot, Send, X, Sparkles, ExternalLink, Plus, Check, MapPin, Settings,
-  Paperclip, FileText, Mail, File, UploadCloud
+  Paperclip, FileText, Mail, File, UploadCloud, Trash2
 } from 'lucide-react';
-import { apiGet, apiPost, uploadAiDocument } from '../lib/api';
+import { apiGet, apiPost, apiDelete, uploadAiDocument } from '../lib/api';
 import type { ChatMessage, AiStatus, AiAction, Suggestion, ParsedDocument } from '../lib/types';
 import { Spinner } from './Spinner';
 import { AISettingsModal } from './AISettingsModal';
@@ -383,6 +383,19 @@ export function AIChat({ tripId }: { tripId: string | null }) {
     }
   };
 
+  const clearChatHistory = async () => {
+    if (!tripId || (messages.length === 0 && actions.length === 0)) return;
+    if (!window.confirm('Clear AI conversation history for this trip?')) return;
+    try {
+      await apiDelete(`/trips/${tripId}/ai/messages`);
+      setMessages([]);
+      setActions([]);
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   return (
     <>
       <button ref={fabRef} className="ai-fab" title="AI assistant" onClick={() => setOpen((o) => !o)}>
@@ -413,14 +426,25 @@ export function AIChat({ tripId }: { tripId: string | null }) {
             </span>
             <div className="row" style={{ gap: 4 }}>
               {tripId && (
-                <button
-                  type="button"
-                  className="btn sm ghost icon-only"
-                  onClick={() => setSettingsOpen(true)}
-                  title="Configure AI assistant (model, API key, endpoint)"
-                >
-                  <Settings size={15} />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="btn sm ghost icon-only"
+                    onClick={clearChatHistory}
+                    disabled={messages.length === 0 && actions.length === 0}
+                    title="Clear chat history & start fresh"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm ghost icon-only"
+                    onClick={() => setSettingsOpen(true)}
+                    title="Configure AI assistant (model, API key, endpoint)"
+                  >
+                    <Settings size={15} />
+                  </button>
+                </>
               )}
               <button
                 type="button"

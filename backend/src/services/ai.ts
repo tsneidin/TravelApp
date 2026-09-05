@@ -173,6 +173,8 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     `  2. Call add_place if additional custom stops or activities are requested.`,
     `- For packing items, use add_packing_item, update_packing_item, or delete_packing_item.`,
     `- When asked for recommendations (things to do, see, eat, explore), call get_suggestions to return interactive discovery cards. Do NOT automatically add recommendations to the itinerary via add_place unless the user explicitly tells you to add them.`,
+    `- Focus directly on answering the user's latest message or instruction. Do NOT carry over, resume, or re-answer previous conversation topics unless the user explicitly references them.`,
+    `- If the user asks a general question, greeting, or meta-question (e.g. "who are you", "what model is this", "hello"), answer it directly and succinctly without unprompted travel recommendations or executing tools.`,
     `- Keep responses clear, friendly, and concise.`,
   ].join('\n');
 }

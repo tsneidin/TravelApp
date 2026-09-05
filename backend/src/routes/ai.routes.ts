@@ -119,6 +119,18 @@ aiRouter.get(
   }),
 );
 
+aiRouter.delete(
+  '/:tripId/ai/messages',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    await prisma.chatMessage.deleteMany({
+      where: { tripId },
+    });
+    res.json({ ok: true });
+  }),
+);
+
 aiRouter.post(
   '/:tripId/ai/upload-file',
   docUpload.single('file'),

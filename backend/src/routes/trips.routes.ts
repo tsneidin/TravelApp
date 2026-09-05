@@ -356,6 +356,7 @@ tripsRouter.post(
         address: req.body.address,
         lat: req.body.lat,
         lng: req.body.lng,
+        description: req.body.description,
         website: req.body.website,
         sourceText: req.body.sourceText,
         notes: req.body.notes,
@@ -374,7 +375,7 @@ tripsRouter.patch(
   asyncHandler(async (req, res) => {
     const { tripId, placeId } = req.params;
     await requireTripAccess(req, tripId, 'editor');
-    const allowed = ['name', 'category', 'address', 'lat', 'lng', 'website', 'notes', 'dayId', 'sortOrder', 'includeInCalendar'];
+    const allowed = ['name', 'category', 'address', 'lat', 'lng', 'website', 'description', 'notes', 'dayId', 'sortOrder', 'includeInCalendar'];
     const data: Record<string, unknown> = {};
     for (const k of allowed) if (req.body[k] !== undefined) data[k] = req.body[k];
     if (req.body.startTime !== undefined) data.startTime = req.body.startTime ? new Date(req.body.startTime) : null;

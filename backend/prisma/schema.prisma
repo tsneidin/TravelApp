@@ -121,6 +121,7 @@ model Place {
   address   String?
   lat       Float?
   lng       Float?
+  description String?
   notes     String?
   website   String?
   sourceText String?

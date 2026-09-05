@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
-  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX
+  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
@@ -19,10 +20,11 @@ interface PlaceForm {
   lat?: string;
   lng?: string;
   website: string;
+  description: string;
   notes: string;
 }
 
-const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', website: '', notes: '' };
+const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', website: '', description: '', notes: '' };
 
 export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const navigate = useNavigate();
@@ -31,11 +33,45 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlaceForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
+  const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
   const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string } | null>(null);
   const [journalDay, setJournalDay] = useState<{ date: string; label: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ title: '', body: '' });
+
+  const toggleExpand = (placeId: string) => {
+    setExpandedPlaceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(placeId)) next.delete(placeId);
+      else next.add(placeId);
+      return next;
+    });
+  };
+
+  const handleSuggestTitle = async () => {
+    const sourceText = editing.description.trim() || editing.name.trim();
+    if (!sourceText) return;
+    setSuggestingTitle(true);
+    try {
+      const res = await apiPost<{ title: string; description: string }>(`/trips/${trip.id}/ai/suggest-title`, {
+        text: sourceText,
+        category: editing.category || undefined,
+      });
+      if (res.title) {
+        setEditing((prev) => ({
+          ...prev,
+          name: res.title,
+          description: res.description || prev.description || prev.name,
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to suggest title', err);
+    } finally {
+      setSuggestingTitle(false);
+    }
+  };
 
   // Wanderlog Split View State
   const [viewMode, setViewMode] = useState<'split' | 'full'>(() => {
@@ -89,6 +125,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       lat: p.lat != null ? String(p.lat) : '',
       lng: p.lng != null ? String(p.lng) : '',
       website: p.website ?? '',
+      description: p.description ?? '',
       notes: p.notes ?? '',
     });
     setOpen(true);
@@ -106,18 +143,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     setBusy(true);
     try {
       const payload = {
-        name: editing.name,
+        name: editing.name.trim(),
         category: editing.category || undefined,
         address: editing.address || undefined,
         lat: editing.lat ? Number(editing.lat) : null,
         lng: editing.lng ? Number(editing.lng) : null,
         website: editing.website || undefined,
+        description: editing.description || undefined,
         notes: editing.notes || undefined,
         dayId: editing.dayId || undefined,
       };
       if (editingId) {
         await apiPatch(`/trips/${trip.id}/places/${editingId}`, payload);
-      } else if (editing.name) {
+      } else if (editing.name.trim()) {
         await apiPost(`/trips/${trip.id}/places`, payload);
       }
       setOpen(false);
@@ -161,7 +199,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
   const saveDayNotes = async () => {
     if (!dayEditor) return;
-    await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, { notes: dayEditor.notes });
+    await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
+      label: dayEditor.label.trim() || undefined,
+      notes: dayEditor.notes,
+    });
     setDayEditor(null);
     await reload();
   };
@@ -209,100 +250,166 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       : result;
   }, [days, selectedDayId, orphanPlaces]);
 
-  const renderPlaceRow = (p: Place, stopNumber?: number) => (
-    <div
-      key={p.id}
-      id={`place-${p.id}`}
-      className={`list-row place-card ${dragId === p.id ? 'dragging' : ''} ${activePlaceId === p.id ? 'active-highlight' : ''}`}
-      draggable
-      onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
-      onDragEnd={() => setDragId(null)}
-      onClick={() => setActivePlaceId(p.id)}
-      onMouseEnter={() => setActivePlaceId(p.id)}
-    >
-      <GripVertical size={14} className="muted grip-handle" style={{ cursor: 'grab' }} />
-      {stopNumber != null && (
-        <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
-          {stopNumber}
-        </span>
-      )}
-      <div className="grow">
-        <div className="title">
-          {p.website ? (
-            <a href={p.website} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-              {p.name} ↗
-            </a>
-          ) : (
-            p.name
-          )}
-        </div>
-        <div className="sub">
-          <MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || (p.lat != null ? `${p.lat.toFixed(3)}, ${p.lng?.toFixed(3)}` : 'No location')}
-          {p.category ? ` · ${p.category}` : ''}
-          {p.startTime ? ` · ${new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-          {p.notes ? ` · ✏️ ${p.notes}` : ''}
-        </div>
-      </div>
-      <button
-        type="button"
-        className="btn sm ghost"
-        title="Show on map"
-        onClick={(e) => {
-          e.stopPropagation();
-          handlePlaceClick(p);
-        }}
-      >
-        <MapIcon size={14} />
-      </button>
-      {p.sourceText && (
-        <button
-          type="button"
-          className="btn sm ghost"
-          title="View source text"
-          onClick={(e) => {
-            e.stopPropagation();
-            setSourcePlace(p);
-          }}
+  const renderPlaceRow = (p: Place, stopNumber?: number) => {
+    const hasDetails = Boolean(p.description?.trim() || p.notes?.trim());
+    const isExpanded = expandedPlaceIds.has(p.id);
+
+    return (
+      <div key={p.id} className="place-item-wrap">
+        <div
+          id={`place-${p.id}`}
+          className={`list-row place-card ${dragId === p.id ? 'dragging' : ''} ${activePlaceId === p.id ? 'active-highlight' : ''} ${isExpanded ? 'active-row' : ''}`}
+          draggable
+          onDragStart={(e) => { e.dataTransfer.setData('text/plain', p.id); setDragId(p.id); }}
+          onDragEnd={() => setDragId(null)}
+          onClick={() => setActivePlaceId(p.id)}
+          onMouseEnter={() => setActivePlaceId(p.id)}
         >
-          <FileText size={14} /> Source
-        </button>
-      )}
-      <button
-        type="button"
-        className="btn sm ghost"
-        title={p.includeInCalendar !== false ? 'Included in trip calendar' : 'Hidden from trip calendar'}
-        aria-label={p.includeInCalendar !== false ? `Hide ${p.name} from trip calendar` : `Include ${p.name} in trip calendar`}
-        onClick={(event) => {
-          event.stopPropagation();
-          void setCalendarVisibility(p, p.includeInCalendar === false);
-        }}
-      >
-        {p.includeInCalendar !== false ? <CalendarCheck size={14} /> : <CalendarX size={14} />}
-      </button>
-      <button
-        type="button"
-        className="btn sm ghost"
-        title="Edit / notes"
-        onClick={(e) => {
-          e.stopPropagation();
-          openEdit(p);
-        }}
-      >
-        <Pencil size={14} />
-      </button>
-      <button
-        type="button"
-        className="btn sm ghost danger"
-        title="Delete place"
-        onClick={(e) => {
-          e.stopPropagation();
-          void removePlace(p);
-        }}
-      >
-        <Trash2 size={14} />
-      </button>
-    </div>
-  );
+          <GripVertical size={14} className="muted grip-handle" style={{ cursor: 'grab' }} />
+          {stopNumber != null && (
+            <span className="stop-number-badge" title={`Stop #${stopNumber}`}>
+              {stopNumber}
+            </span>
+          )}
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div
+              className="title-row"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpand(p.id);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                  toggleExpand(p.id);
+                }
+              }}
+              title={hasDetails ? 'Click to view full description' : 'Click to expand'}
+            >
+              <span className="title title-clickable">
+                {p.name}
+              </span>
+              {p.website && (
+                <a
+                  href={p.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="website-ext-link"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Open official website"
+                >
+                  ↗
+                </a>
+              )}
+              {hasDetails && (
+                <span className="title-detail-badge">
+                  {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  <span>{isExpanded ? 'Hide' : 'Details'}</span>
+                </span>
+              )}
+            </div>
+            <div className="sub">
+              <MapPin size={12} style={{ verticalAlign: -2 }} /> {p.address || (p.lat != null ? `${p.lat.toFixed(3)}, ${p.lng?.toFixed(3)}` : 'No location')}
+              {p.category ? ` · ${p.category}` : ''}
+              {p.startTime ? ` · ${new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn sm ghost"
+            title="Show on map"
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePlaceClick(p);
+            }}
+          >
+            <MapIcon size={14} />
+          </button>
+          {p.sourceText && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              title="View source text"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSourcePlace(p);
+              }}
+            >
+              <FileText size={14} /> Source
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn sm ghost"
+            title={p.includeInCalendar !== false ? 'Included in trip calendar' : 'Hidden from trip calendar'}
+            aria-label={p.includeInCalendar !== false ? `Hide ${p.name} from trip calendar` : `Include ${p.name} in trip calendar`}
+            onClick={(event) => {
+              event.stopPropagation();
+              void setCalendarVisibility(p, p.includeInCalendar === false);
+            }}
+          >
+            {p.includeInCalendar !== false ? <CalendarCheck size={14} /> : <CalendarX size={14} />}
+          </button>
+          <button
+            type="button"
+            className="btn sm ghost"
+            title="Edit / notes"
+            onClick={(e) => {
+              e.stopPropagation();
+              openEdit(p);
+            }}
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            type="button"
+            className="btn sm ghost danger"
+            title="Delete place"
+            onClick={(e) => {
+              e.stopPropagation();
+              void removePlace(p);
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className="place-expanded-card">
+            {p.description ? (
+              <div className="place-expanded-section">
+                <div className="place-expanded-label">Full Description</div>
+                <div className="place-expanded-text">{p.description}</div>
+              </div>
+            ) : null}
+            {p.notes ? (
+              <div className="place-expanded-section">
+                <div className="place-expanded-label">Notes</div>
+                <div className="place-expanded-text">✏️ {p.notes}</div>
+              </div>
+            ) : null}
+            {!p.description && !p.notes && (
+              <div className="small muted">
+                No description or notes yet.{' '}
+                <button
+                  type="button"
+                  className="btn xs link"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEdit(p);
+                  }}
+                >
+                  Add details
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="itinerary-page-root">
@@ -365,6 +472,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                   </span>
                   <b>{day.label || `Day ${dayIndex + 1}`}</b>
+                  <button
+                    type="button"
+                    className="btn xs ghost muted-hover"
+                    title="Rename day or edit notes"
+                    onClick={() => setDayEditor({ id: day.id, label: day.label || `Day ${dayIndex + 1}`, notes: day.notes || '' })}
+                    style={{ padding: '2px 4px' }}
+                  >
+                    <Pencil size={12} />
+                  </button>
                   <span className="day-stop-count small muted">({day.places.length} stops)</span>
                 </div>
                 <div className="row">
@@ -527,14 +643,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
 
       {dayEditor && (
-        <Modal title={`Notes — ${dayEditor.label}`} onClose={() => setDayEditor(null)}>
+        <Modal title={`Day details — ${dayEditor.label}`} onClose={() => setDayEditor(null)}>
+          <div className="field">
+            <label>Day title / label</label>
+            <input
+              value={dayEditor.label}
+              onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
+              placeholder="e.g. Arrival in Tokyo"
+              autoFocus
+            />
+          </div>
           <div className="field">
             <label>Day notes</label>
-            <textarea rows={7} value={dayEditor.notes} onChange={(event) => setDayEditor({ ...dayEditor, notes: event.target.value })} placeholder="General plans, reminders, weather backup, meeting details…" autoFocus />
+            <textarea rows={7} value={dayEditor.notes} onChange={(event) => setDayEditor({ ...dayEditor, notes: event.target.value })} placeholder="General plans, reminders, weather backup, meeting details…" />
           </div>
           <div className="modal-actions">
             <button className="btn" onClick={() => setDayEditor(null)}>Cancel</button>
-            <button className="btn primary" onClick={() => void saveDayNotes()}>Save notes</button>
+            <button className="btn primary" onClick={() => void saveDayNotes()}>Save</button>
           </div>
         </Modal>
       )}
@@ -595,11 +720,49 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           </div>
 
           <div className="field">
-            <label>Name</label>
+            <div className="row between" style={{ marginBottom: 4, alignItems: 'center' }}>
+              <label style={{ margin: 0 }}>Title / Place Name</label>
+              <button
+                type="button"
+                className="btn xs ghost ai-suggest-btn"
+                onClick={handleSuggestTitle}
+                disabled={suggestingTitle || (!editing.name.trim() && !editing.description.trim())}
+                title="Use AI to generate a concise, meaningful title and separate description"
+              >
+                <Sparkles size={13} className={suggestingTitle ? 'spin' : ''} />
+                {suggestingTitle ? 'Generating…' : 'AI Suggest Brief Title'}
+              </button>
+            </div>
             <input
               value={editing.name}
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               placeholder="e.g. Meiji Shrine"
+            />
+            {editing.name.trim().length > 35 && (
+              <div className="field-hint-ai row between" style={{ marginTop: 4 }}>
+                <span className="small muted">💡 Title is lengthy ({editing.name.trim().length} chars).</span>
+                <button
+                  type="button"
+                  className="btn xs link"
+                  onClick={handleSuggestTitle}
+                  disabled={suggestingTitle}
+                >
+                  ✨ Shorten with AI
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="field">
+            <label>
+              Full Description{' '}
+              <span className="muted small font-normal">(revealed when title is clicked in itinerary)</span>
+            </label>
+            <textarea
+              rows={3}
+              value={editing.description}
+              onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+              placeholder="Full details, highlights, tour information, schedule, or tips…"
             />
           </div>
           <div className="field small">

@@ -33,7 +33,7 @@ function SuggestionCard({
         lat: s.lat ?? undefined,
         lng: s.lng ?? undefined,
         dayId: s.dayId || undefined,
-        notes: s.summary || undefined,
+        description: s.summary || undefined,
         website: s.url || undefined,
         sourceText: [s.title, s.context, s.summary, s.url, s.mapUrl].filter(Boolean).join('\n\n'),
       });

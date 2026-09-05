@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler, badRequest } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess } from '../middleware/auth.js';
-import { processTripChat } from '../services/ai.js';
+import { processTripChat, suggestTitleAndDescription } from '../services/ai.js';
 import { getAiConfig, saveAiConfig, testAiConnection } from '../services/settings.service.js';
 
 export const aiRouter = Router();
@@ -141,5 +141,20 @@ aiRouter.post(
     });
 
     res.json({ reply, actions });
+  }),
+);
+
+aiRouter.post(
+  '/:tripId/ai/suggest-title',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+    const category = typeof req.body.category === 'string' ? req.body.category.trim() : undefined;
+    if (!text) {
+      return res.json({ title: '', description: '' });
+    }
+    const result = await suggestTitleAndDescription(text, category);
+    res.json(result);
   }),
 );

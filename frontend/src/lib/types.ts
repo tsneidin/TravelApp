@@ -54,6 +54,7 @@ export interface Place {
   address?: string | null;
   lat?: number | null;
   lng?: number | null;
+  description?: string | null;
   notes?: string | null;
   website?: string | null;
   sourceText?: string | null;

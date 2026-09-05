@@ -101,14 +101,22 @@ const TOOLS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Name of the place' },
+          name: {
+            type: 'string',
+            description:
+              'Short, punchy title for the itinerary list (strictly 2-5 words, max 35 chars, e.g. "Louvre Museum", "Trastevere Food Tour"). Never put lengthy sentences or paragraphs in name.',
+          },
+          description: {
+            type: 'string',
+            description: 'Full description, context, schedule, highlights, or tour details.',
+          },
           date: { type: 'string', description: 'Itinerary date in YYYY-MM-DD format' },
           category: { type: 'string', description: 'e.g. Restaurant, Sightseeing, Activity, Transport, Accommodation' },
           address: { type: 'string', description: 'Full useful address; include whenever known so map focus works' },
           lat: { type: 'number', description: 'Latitude; include whenever known' },
           lng: { type: 'number', description: 'Longitude; include whenever known' },
           website: { type: 'string', description: 'Official or useful source URL for the place; include whenever known' },
-          notes: { type: 'string' },
+          notes: { type: 'string', description: 'Any extra practical tips or notes' },
         },
         required: ['name'],
       },
@@ -253,7 +261,17 @@ async function executeTool(
       };
     }
     if (name === 'add_place') {
-      const nameStr = String(a.name ?? '').trim();
+      let nameStr = String(a.name ?? '').trim();
+      let descStr = typeof a.description === 'string' ? a.description.trim() : '';
+      if (!nameStr && descStr) {
+        const suggested = cleanFallbackTitleAndDescription(descStr);
+        nameStr = suggested.title;
+        descStr = suggested.description;
+      } else if (nameStr.length > 35 || nameStr.includes('\n')) {
+        const suggested = cleanFallbackTitleAndDescription(nameStr);
+        if (!descStr) descStr = suggested.description;
+        nameStr = suggested.title;
+      }
       if (!nameStr) return { action: name, summary: 'add_place: missing name', ok: false };
       let dayId: string | undefined;
       const date = toDate(a.date);
@@ -285,6 +303,7 @@ async function executeTool(
           lng: typeof a.lng === 'number' ? a.lng : undefined,
           website: a.website ? String(a.website) : undefined,
           sourceText: ctx.sourceText,
+          description: descStr || undefined,
           notes: notes || undefined,
         },
       });
@@ -750,4 +769,116 @@ export async function processTripChat(
     actions.push(autoSuggest);
   }
   return { reply, actions };
+}
+
+/**
+ * Heuristic fallback when LLM is unavailable or disabled.
+ * Produces a concise, meaningful title (max ~35 chars, 2-5 words)
+ * and preserves the remaining / full text as the description.
+ */
+export function cleanFallbackTitleAndDescription(rawText: string): { title: string; description: string } {
+  const clean = rawText.trim().replace(/\r\n/g, '\n');
+  if (!clean) return { title: 'New Activity', description: '' };
+
+  const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
+  const firstLine = lines[0] || clean;
+
+  // If first line has a delimiter like " - ", ": ", " — ", " · "
+  const sepMatch = firstLine.match(/^(.*?)\s*(?:—|–|-|:|\/|\||·)\s*(.+)$/);
+  if (sepMatch && sepMatch[1].trim().length >= 3 && sepMatch[1].trim().length <= 35) {
+    const title = sepMatch[1].trim();
+    const remainingFirst = sepMatch[2].trim();
+    const restLines = lines.slice(1);
+    const description = [remainingFirst, ...restLines].filter(Boolean).join('\n');
+    return { title, description: description || clean };
+  }
+
+  // If first line is already punchy (<= 35 chars)
+  if (firstLine.length <= 35) {
+    const rest = lines.slice(1).join('\n').trim();
+    return { title: firstLine, description: rest };
+  }
+
+  // Remove common verbose filler prefixes
+  const stripped = firstLine.replace(/^(?:visit (?:the )?|go to (?:the )?|guided tour of (?:the )?|take a (?:tour of )?|explore (?:the )?)/i, '');
+
+  // Look for sentence boundary
+  const sentenceMatch = stripped.match(/^([^.!?]+)[.!?]/);
+  const candidate = (sentenceMatch ? sentenceMatch[1] : stripped).trim();
+  if (candidate.length <= 35 && candidate.length >= 4) {
+    const remaining = clean.slice(clean.indexOf(candidate) + candidate.length).replace(/^[.!?\s]+/, '').trim();
+    return { title: candidate, description: remaining || clean };
+  }
+
+  // Break at word boundary near 32 chars
+  const words = candidate.split(/\s+/);
+  let title = '';
+  for (const w of words) {
+    if (!title) {
+      title = w;
+    } else if ((title + ' ' + w).length <= 32) {
+      title += ' ' + w;
+    } else {
+      break;
+    }
+  }
+  if (!title) title = candidate.slice(0, 30).trim();
+  title = title.replace(/\s+(?:making|with|in|of|and|for|at|to|the|a|an|from|by)$/i, '');
+  title = title.replace(/[,;:\s]+$/, '');
+  return { title, description: clean };
+}
+
+export async function suggestTitleAndDescription(
+  text: string,
+  category?: string,
+): Promise<{ title: string; description: string }> {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed) {
+    return { title: '', description: '' };
+  }
+
+  if (!config.ai.enabled) {
+    return cleanFallbackTitleAndDescription(trimmed);
+  }
+
+  const prompt = [
+    `You are an expert travel assistant. Given the following travel place, tour, or activity details, return a concise, meaningful title and clean description.`,
+    `STRICT RULES:`,
+    `- The "title" MUST be brief, clear, and punchy (2 to 5 words, maximum 35 characters). Example: "Louvre Museum Tour", "Dinner at Osteria Da Fortunata", "Fushimi Inari Sunset Hike". It must never be a long sentence.`,
+    `- The "description" should contain the full details, context, schedule, highlights, or tips.`,
+    `- Output MUST be valid JSON with keys "title" and "description".`,
+    category ? `Category: ${category}` : '',
+    `User input:\n"""\n${trimmed.slice(0, 4000)}\n"""`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  try {
+    const res = await callLlm(
+      [
+        {
+          role: 'system',
+          content: 'You are a travel itinerary assistant. Always respond with valid JSON containing "title" and "description".',
+        },
+        { role: 'user', content: prompt },
+      ],
+      [],
+    );
+
+    const rawReply = res.choices?.[0]?.message?.content?.trim() || '';
+    const jsonMatch = rawReply.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, rawReply];
+    const parsed = JSON.parse(jsonMatch[1] || rawReply) as { title?: unknown; description?: unknown };
+    const title = typeof parsed.title === 'string' ? parsed.title.trim() : '';
+    const description = typeof parsed.description === 'string' ? parsed.description.trim() : '';
+    if (title) {
+      return {
+        title: title.slice(0, 40),
+        description: description || trimmed,
+      };
+    }
+  } catch {
+    // Fall back to heuristic on error or parse failure
+  }
+
+  return cleanFallbackTitleAndDescription(trimmed);
 }

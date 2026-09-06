@@ -3,6 +3,8 @@ import {
   AlertCircle,
   Calendar,
   CheckSquare,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Compass,
   FileText,
@@ -190,6 +192,7 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
   const [showNotesField, setShowNotesField] = useState(false);
   const [editing, setEditing] = useState<TodoEdit | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Available categories list
   const categories = useMemo(() => {
@@ -362,59 +365,87 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
         )}
       </div>
 
-      {/* 1-Click Starter Suggestions */}
+      {/* 1-Click Starter Suggestions Dropdown Banner */}
       {availableTemplates.length > 0 && (
         <div
           className="panel mb"
           style={{
-            padding: '12px 14px',
-            background: 'rgba(34, 211, 238, 0.04)',
-            borderColor: 'rgba(34, 211, 238, 0.2)',
+            padding: '8px 14px',
+            background: 'rgba(34, 211, 238, 0.03)',
+            borderColor: 'rgba(34, 211, 238, 0.18)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
+          onClick={() => setShowSuggestions(!showSuggestions)}
         >
-          <div className="row between mb" style={{ marginBottom: 8 }}>
-            <div className="row" style={{ gap: 6 }}>
+          <div className="row between" style={{ alignItems: 'center' }}>
+            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
               <Sparkles size={14} style={{ color: 'var(--accent)' }} />
               <span className="small font-semibold" style={{ color: 'var(--text)' }}>
-                Suggested Travel Tasks (Pre-Trip, During Trip & Post-Trip):
+                Suggested Tasks ({availableTemplates.length})
+              </span>
+              <span className="small muted" style={{ fontSize: '0.75rem' }}>
+                Pre-Trip, During Trip & Post-Trip
               </span>
             </div>
-            <span className="small muted">Click to add to your checklist</span>
+            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span className="small font-medium" style={{ color: 'var(--accent)', fontSize: '0.78rem' }}>
+                {showSuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
+              </span>
+              {showSuggestions ? (
+                <ChevronUp size={14} style={{ color: 'var(--accent)' }} />
+              ) : (
+                <ChevronDown size={14} style={{ color: 'var(--accent)' }} />
+              )}
+            </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {availableTemplates.map((tpl) => (
-              <button
-                key={tpl.title}
-                type="button"
-                className="btn sm ghost"
-                style={{
-                  background: 'var(--panel)',
-                  border: '1px solid var(--line)',
-                  borderRadius: 20,
-                  padding: '4px 10px',
-                  fontSize: '0.78rem',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                }}
-                onClick={() => void add(tpl.title, tpl.category)}
-              >
-                {getPhaseIcon(tpl.category)}
-                <span>+ {tpl.title}</span>
-                <span
+
+          {showSuggestions && (
+            <div
+              style={{
+                marginTop: 10,
+                paddingTop: 10,
+                borderTop: '1px solid rgba(34, 211, 238, 0.15)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {availableTemplates.map((tpl) => (
+                <button
+                  key={tpl.title}
+                  type="button"
+                  className="btn sm ghost"
                   style={{
-                    fontSize: '0.68rem',
-                    padding: '1px 5px',
-                    borderRadius: 4,
-                    background: 'var(--panel-2)',
-                    color: 'var(--muted)',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--line)',
+                    borderRadius: 20,
+                    padding: '4px 10px',
+                    fontSize: '0.78rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
                   }}
+                  onClick={() => void add(tpl.title, tpl.category)}
                 >
-                  {tpl.category}
-                </span>
-              </button>
-            ))}
-          </div>
+                  {getPhaseIcon(tpl.category)}
+                  <span>+ {tpl.title}</span>
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      padding: '1px 5px',
+                      borderRadius: 4,
+                      background: 'var(--panel-2)',
+                      color: 'var(--muted)',
+                    }}
+                  >
+                    {tpl.category}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -553,6 +584,50 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
             >
               <FileText size={14} /> Notes
             </button>
+            {availableTemplates.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  const tpl = availableTemplates.find((t) => t.title === val);
+                  if (tpl) {
+                    void add(tpl.title, tpl.category);
+                  }
+                }}
+                style={{ width: 'auto', maxWidth: 190, fontSize: '0.82rem', color: 'var(--accent)' }}
+                title="Select a suggestion to add immediately"
+              >
+                <option value="">✨ Add suggested task…</option>
+                <optgroup label="🛫 Pre-Trip">
+                  {availableTemplates
+                    .filter((t) => t.category === 'Pre-Trip')
+                    .map((t) => (
+                      <option key={t.title} value={t.title}>
+                        + {t.title}
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="🧭 During Trip">
+                  {availableTemplates
+                    .filter((t) => t.category === 'During Trip')
+                    .map((t) => (
+                      <option key={t.title} value={t.title}>
+                        + {t.title}
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="🛬 Post-Trip">
+                  {availableTemplates
+                    .filter((t) => t.category === 'Post-Trip')
+                    .map((t) => (
+                      <option key={t.title} value={t.title}>
+                        + {t.title}
+                      </option>
+                    ))}
+                </optgroup>
+              </select>
+            )}
             <button className="btn primary" onClick={() => void add()} disabled={!newTitle.trim()}>
               <Plus size={14} /> Add Task
             </button>

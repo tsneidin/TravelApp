@@ -245,25 +245,106 @@ export function TripMap({
             }
 
             const card = document.createElement('div');
-            card.style.cssText = 'min-width:240px;max-width:320px;color:#111827;padding:4px 2px;font-family:system-ui,-apple-system,sans-serif';
+            card.style.cssText = 'min-width:260px;max-width:320px;color:#111827;padding:2px;font-family:system-ui,-apple-system,sans-serif';
+
+            // If photo available, show photo banner
+            if (place.photoUrl) {
+              const imgContainer = document.createElement('div');
+              imgContainer.style.cssText = 'width:100%;height:130px;border-radius:6px;overflow:hidden;margin-bottom:8px;background:#e2e8f0;';
+              const img = document.createElement('img');
+              img.src = place.photoUrl;
+              img.alt = place.name;
+              img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+              imgContainer.appendChild(img);
+              card.appendChild(imgContainer);
+            }
 
             const title = document.createElement('strong');
             title.textContent = place.name;
-            title.style.cssText = 'display:block;font-size:14px;font-weight:600;margin-bottom:3px;color:#0f172a';
+            title.style.cssText = 'display:block;font-size:15px;font-weight:700;margin-bottom:4px;color:#0f172a;line-height:1.25';
             card.appendChild(title);
 
-            const address = document.createElement('div');
-            address.textContent = place.address;
-            address.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.35';
-            card.appendChild(address);
+            // Rating & Status badge row
+            const metaRow = document.createElement('div');
+            metaRow.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:6px;color:#475569;';
 
+            if (place.rating) {
+              const ratingSpan = document.createElement('span');
+              ratingSpan.style.cssText = 'display:inline-flex;align-items:center;gap:3px;font-weight:600;color:#d97706;';
+              ratingSpan.innerHTML = `★ <span>${place.rating.toFixed(1)}</span>${place.userRatingsTotal ? `<span style="font-weight:400;color:#64748b;">(${place.userRatingsTotal.toLocaleString()})</span>` : ''}`;
+              metaRow.appendChild(ratingSpan);
+            }
+
+            if (place.openNow !== undefined) {
+              const openSpan = document.createElement('span');
+              openSpan.style.cssText = `font-size:11px;font-weight:600;padding:1px 6px;border-radius:9999px;background:${place.openNow ? '#dcfce7' : '#fee2e2'};color:${place.openNow ? '#166534' : '#991b1b'};`;
+              openSpan.textContent = place.openNow ? 'Open now' : 'Closed';
+              metaRow.appendChild(openSpan);
+            }
+
+            if (place.category) {
+              const catSpan = document.createElement('span');
+              catSpan.style.cssText = 'font-size:11px;padding:1px 6px;border-radius:9999px;background:#f1f5f9;color:#475569;font-weight:500;';
+              catSpan.textContent = place.category;
+              metaRow.appendChild(catSpan);
+            }
+
+            if (metaRow.childNodes.length > 0) {
+              card.appendChild(metaRow);
+            }
+
+            // Address
+            if (place.address) {
+              const address = document.createElement('div');
+              address.textContent = place.address;
+              address.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:6px;line-height:1.35';
+              card.appendChild(address);
+            }
+
+            // Phone
+            if (place.phone) {
+              const phone = document.createElement('div');
+              phone.innerHTML = `<span style="font-size:11px;color:#64748b;">📞 ${place.phone}</span>`;
+              phone.style.cssText = 'margin-bottom:6px;';
+              card.appendChild(phone);
+            }
+
+            // Links (View on Google Maps + Website)
+            const linksRow = document.createElement('div');
+            linksRow.style.cssText = 'display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:10px;margin-top:2px;';
+
+            if (place.mapUrl) {
+              const gmapsLink = document.createElement('a');
+              gmapsLink.href = place.mapUrl;
+              gmapsLink.target = '_blank';
+              gmapsLink.rel = 'noopener noreferrer';
+              gmapsLink.textContent = '🌐 View on Google Maps ↗';
+              gmapsLink.style.cssText = 'color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;';
+              linksRow.appendChild(gmapsLink);
+            }
+
+            if (place.website) {
+              const webLink = document.createElement('a');
+              webLink.href = place.website;
+              webLink.target = '_blank';
+              webLink.rel = 'noopener noreferrer';
+              webLink.textContent = '🔗 Website ↗';
+              webLink.style.cssText = 'color:#0284c7;text-decoration:none;font-weight:500;';
+              linksRow.appendChild(webLink);
+            }
+
+            if (linksRow.childNodes.length > 0) {
+              card.appendChild(linksRow);
+            }
+
+            // Action buttons
             const actions = document.createElement('div');
-            actions.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:4px';
+            actions.style.cssText = 'display:flex;gap:6px;align-items:center;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:4px';
 
             const dirButton = document.createElement('button');
             dirButton.type = 'button';
             dirButton.textContent = '🧭 Directions';
-            dirButton.style.cssText = 'border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#0f172a;padding:5px 9px;font-size:12px;font-weight:500;cursor:pointer';
+            dirButton.style.cssText = 'border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#0f172a;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer';
             dirButton.addEventListener('click', () => {
               previewRef.current?.close();
               setShowRouter(true);
@@ -274,7 +355,7 @@ export function TripMap({
             const addButton = document.createElement('button');
             addButton.type = 'button';
             addButton.textContent = '+ Add to Itinerary';
-            addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer';
+            addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer';
             addButton.addEventListener('click', () => {
               previewRef.current?.close();
               const callback = mapClickRef.current;
@@ -290,19 +371,42 @@ export function TripMap({
             previewRef.current.open({ map: mapRef.current, anchor: clickedMarkerRef.current });
           };
 
-          try {
-            if (event.placeId && maps.places?.PlacesService) {
-              const service = new maps.places.PlacesService(mapRef.current);
-              const details = await new Promise<any | null>((resolve) => {
-                service.getDetails({
-                  placeId: event.placeId,
-                  fields: ['name', 'formatted_address', 'geometry', 'website', 'url', 'types'],
-                }, (place: any, status: any) => {
-                  resolve(status === maps.places.PlacesServiceStatus.OK ? place : null);
-                });
+          const fetchPlaceDetails = async (placeId: string): Promise<any | null> => {
+            if (!maps.places?.PlacesService) return null;
+            const service = new maps.places.PlacesService(mapRef.current);
+            return new Promise<any | null>((resolve) => {
+              service.getDetails({
+                placeId,
+                fields: [
+                  'name',
+                  'formatted_address',
+                  'geometry',
+                  'website',
+                  'url',
+                  'types',
+                  'rating',
+                  'user_ratings_total',
+                  'photos',
+                  'opening_hours',
+                  'formatted_phone_number',
+                ],
+              }, (place: any, status: any) => {
+                resolve(status === maps.places.PlacesServiceStatus.OK ? place : null);
               });
+            });
+          };
+
+          try {
+            if (event.placeId) {
+              const details = await fetchPlaceDetails(event.placeId);
               if (details) {
                 const point = details.geometry?.location ?? event.latLng;
+                const photoUrl = details.photos?.[0]?.getUrl?.({ maxWidth: 400, maxHeight: 240 });
+                let openNow: boolean | undefined;
+                try {
+                  openNow = details.opening_hours?.isOpen?.();
+                } catch { /* ignore */ }
+
                 showPreview({
                   name: details.name || 'Pinned location',
                   address: details.formatted_address || details.name || 'Google Maps place',
@@ -312,6 +416,11 @@ export function TripMap({
                   placeId: event.placeId,
                   website: details.website || undefined,
                   mapUrl: details.url || `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(event.placeId)}`,
+                  rating: details.rating,
+                  userRatingsTotal: details.user_ratings_total,
+                  photoUrl,
+                  openNow,
+                  phone: details.formatted_phone_number,
                 }, point);
                 return;
               }
@@ -320,6 +429,36 @@ export function TripMap({
             const response = await geocoder.geocode({ location: event.latLng });
             const result = response.results?.[0];
             const point = result?.geometry?.location ?? event.latLng;
+
+            if (result?.place_id) {
+              const details = await fetchPlaceDetails(result.place_id);
+              if (details) {
+                const detPoint = details.geometry?.location ?? point;
+                const photoUrl = details.photos?.[0]?.getUrl?.({ maxWidth: 400, maxHeight: 240 });
+                let openNow: boolean | undefined;
+                try {
+                  openNow = details.opening_hours?.isOpen?.();
+                } catch { /* ignore */ }
+
+                showPreview({
+                  name: details.name || result.formatted_address?.split(',')[0] || 'Pinned location',
+                  address: details.formatted_address || result.formatted_address || 'Google Maps place',
+                  lat: detPoint.lat(),
+                  lng: detPoint.lng(),
+                  category: categoryFromGoogleTypes(details.types || result.types),
+                  placeId: result.place_id,
+                  website: details.website || undefined,
+                  mapUrl: details.url || `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(result.place_id)}`,
+                  rating: details.rating,
+                  userRatingsTotal: details.user_ratings_total,
+                  photoUrl,
+                  openNow,
+                  phone: details.formatted_phone_number,
+                }, detPoint);
+                return;
+              }
+            }
+
             const fallbackName = result?.formatted_address?.split(',')[0] || 'Pinned location';
             showPreview({
               name: fallbackName,

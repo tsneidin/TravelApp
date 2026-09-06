@@ -254,6 +254,11 @@ export interface GeocodedPlace {
   placeId?: string;
   website?: string;
   mapUrl?: string;
+  rating?: number;
+  userRatingsTotal?: number;
+  photoUrl?: string;
+  openNow?: boolean;
+  phone?: string;
 }
 
 export interface ParsedDocument {

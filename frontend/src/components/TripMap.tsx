@@ -1566,7 +1566,7 @@ export function TripMap({
                 placeholder="e.g. Downtown Walking Loop"
                 style={{ width: '100%' }}
               />
-              <div className="row end" style={{ gap: 6, marginTop: 10 }}>
+              <div className="modal-actions" style={{ marginTop: 14 }}>
                 <button
                   type="button"
                   className="btn ghost sm"

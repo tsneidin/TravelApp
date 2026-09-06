@@ -127,7 +127,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [updateAllInSeries, setUpdateAllInSeries] = useState(false);
   const [editing, setEditing] = useState<PlaceForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
-  const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
@@ -144,30 +143,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       else next.add(placeId);
       return next;
     });
-  };
-
-  const handleSuggestTitle = async () => {
-    const sourceText = editing.description.trim() || editing.name.trim();
-    if (!sourceText) return;
-    setSuggestingTitle(true);
-    try {
-      const res = await apiPost<{ title: string; description: string; category?: string }>(`/trips/${trip.id}/ai/suggest-title`, {
-        text: sourceText,
-        category: editing.category || undefined,
-      });
-      if (res.title) {
-        setEditing((prev) => ({
-          ...prev,
-          name: res.title,
-          description: res.description || prev.description || prev.name,
-          category: res.category || prev.category,
-        }));
-      }
-    } catch (err) {
-      console.error('Failed to suggest title', err);
-    } finally {
-      setSuggestingTitle(false);
-    }
   };
 
   // Wanderlog Split View State
@@ -1679,8 +1654,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       {/* Add / Edit Place Modal with Search Autocomplete & Multi-day Span */}
       {open && (
         <Modal title={editingId ? 'Edit place' : 'Add place'} onClose={() => setOpen(false)}>
-          <div className="field mb-3">
-            <label className="field-label-sparkle">
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label className="field-label-sparkle" style={{ marginBottom: 4 }}>
               <Sparkles size={13} className="text-accent" />
               <span>Search landmark, restaurant or address (auto-fill)</span>
             </label>
@@ -1703,46 +1678,21 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             />
           </div>
 
-          <div className="field">
-            <div className="row between" style={{ marginBottom: 4, alignItems: 'center' }}>
-              <label style={{ margin: 0 }}>Title / Place Name</label>
-              <button
-                type="button"
-                className="btn xs ghost ai-suggest-btn"
-                onClick={handleSuggestTitle}
-                disabled={suggestingTitle || (!editing.name.trim() && !editing.description.trim())}
-                title="Use AI to generate a concise, meaningful title and separate description"
-              >
-                <Sparkles size={13} className={suggestingTitle ? 'spin' : ''} />
-                {suggestingTitle ? 'Generating…' : 'AI Suggest Brief Title'}
-              </button>
-            </div>
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Title / Place Name</label>
             <input
               value={editing.name}
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               placeholder="e.g. Meiji Shrine"
             />
-            {editing.name.trim().length > 35 && (
-              <div className="field-hint-ai row between" style={{ marginTop: 4 }}>
-                <span className="small muted">💡 Title is lengthy ({editing.name.trim().length} chars).</span>
-                <button
-                  type="button"
-                  className="btn xs link"
-                  onClick={handleSuggestTitle}
-                  disabled={suggestingTitle}
-                >
-                  ✨ Shorten with AI
-                </button>
-              </div>
-            )}
           </div>
 
           {editingId && editingPlaceItem && (() => {
             const siblingPlaces = findSpannedPlaces(editingPlaceItem, allPlaces, days);
             if (siblingPlaces.length > 1) {
               return (
-                <div className="field-hint-ai" style={{ marginTop: '-0.25rem', marginBottom: '1rem', padding: '10px 12px', background: 'var(--surface-hover)', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                  <label className="row items-center gap-2" style={{ margin: 0, cursor: 'pointer', fontWeight: 500 }}>
+                <div className="field-hint-ai" style={{ marginTop: '-0.2rem', marginBottom: '0.6rem', padding: '8px 10px', background: 'var(--surface-hover)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  <label className="row items-center gap-2" style={{ margin: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px' }}>
                     <input
                       type="checkbox"
                       checked={updateAllInSeries}
@@ -1750,7 +1700,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     />
                     <span>Apply updates to all {siblingPlaces.length} occurrences in this series</span>
                   </label>
-                  <div className="small muted" style={{ marginTop: 4, paddingLeft: '24px' }}>
+                  <div className="small muted" style={{ marginTop: 2, paddingLeft: '22px' }}>
                     This item appears on {siblingPlaces.length} days. Uncheck to update only this single instance.
                   </div>
                 </div>
@@ -1759,59 +1709,21 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             return null;
           })()}
 
-          <div className="field">
-            <label>
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>
               Full Description{' '}
               <span className="muted small font-normal">(revealed when title is clicked in itinerary)</span>
             </label>
             <textarea
-              rows={3}
+              rows={2}
               value={editing.description}
               onChange={(e) => setEditing({ ...editing, description: e.target.value })}
               placeholder="Full details, highlights, tour information, schedule, or tips…"
             />
           </div>
-          <div className="field small">
-            <label>Category</label>
-            <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
-              <option value="">Auto-infer with AI / keywords</option>
-              <option value="Sightseeing">🏛 Sightseeing</option>
-              <option value="Restaurant">🍽 Restaurant / Dining</option>
-              <option value="Activity">🎟 Activity / Tour</option>
-              <option value="Flight">✈ Flight</option>
-              <option value="Train">🚆 Train / Rail</option>
-              <option value="Transport">🚗 Transport / Rental</option>
-              <option value="Accommodation">🛏 Accommodation / Hotel</option>
-              <option value="Shopping">🛍 Shopping</option>
-              <option value="Nature">🌲 Nature / Beach / Park</option>
-            </select>
-          </div>
-          <div className="grid grid-2">
-            <div className="field small">
-              <label>
-                <Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                Start / Departure Time
-              </label>
-              <input
-                type="time"
-                value={editing.startTime}
-                onChange={(e) => setEditing({ ...editing, startTime: e.target.value })}
-              />
-            </div>
-            <div className="field small">
-              <label>
-                <Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                End / Arrival Time
-              </label>
-              <input
-                type="time"
-                value={editing.endTime}
-                onChange={(e) => setEditing({ ...editing, endTime: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="field">
-            <label>Address or Coordinates</label>
+
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Address or Coordinates</label>
             <input
               value={editing.address}
               onChange={(e) => {
@@ -1827,10 +1739,55 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             />
           </div>
 
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Website</label>
+            <input
+              type="url"
+              value={editing.website}
+              onChange={(e) => setEditing({ ...editing, website: e.target.value })}
+              placeholder="https://…"
+            />
+          </div>
+
+          <div className="field small" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Category</label>
+            <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
+              <option value="">Auto-infer with AI / keywords</option>
+              <option value="Sightseeing">🏛 Sightseeing</option>
+              <option value="Restaurant">🍽 Restaurant / Dining</option>
+              <option value="Activity">🎟 Activity / Tour</option>
+              <option value="Flight">✈ Flight</option>
+              <option value="Train">🚆 Train / Rail</option>
+              <option value="Transport">🚗 Transport / Rental</option>
+              <option value="Accommodation">🛏 Accommodation / Hotel</option>
+              <option value="Shopping">🛍 Shopping</option>
+              <option value="Nature">🌲 Nature / Beach / Park</option>
+            </select>
+          </div>
+
+          <div className="grid grid-2" style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
+            <div className="field small" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: 4 }}>Start / Departure Time</label>
+              <input
+                type="time"
+                value={editing.startTime}
+                onChange={(e) => setEditing({ ...editing, startTime: e.target.value })}
+              />
+            </div>
+            <div className="field small" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: 4 }}>End / Arrival Time</label>
+              <input
+                type="time"
+                value={editing.endTime}
+                onChange={(e) => setEditing({ ...editing, endTime: e.target.value })}
+              />
+            </div>
+          </div>
+
           {days.length > 0 && (
-            <div className={!editingId ? 'grid grid-2' : ''} style={{ gap: '1rem' }}>
-              <div className="field small">
-                <label>Day</label>
+            <div className={!editingId ? 'grid grid-2' : ''} style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
+              <div className="field small" style={{ marginBottom: 0 }}>
+                <label style={{ marginBottom: 4 }}>Day</label>
                 <select value={editing.dayId ?? ''} onChange={(e) => setEditing({ ...editing, dayId: e.target.value })}>
                   <option value="">No day (unassigned)</option>
                   {days.map((d, i) => (
@@ -1842,11 +1799,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </div>
 
               {!editingId && (
-                <div className="field small">
-                  <label>
-                    <Calendar size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                    Span across days
-                  </label>
+                <div className="field small" style={{ marginBottom: 0 }}>
+                  <label style={{ marginBottom: 4 }}>Span across days</label>
                   <div className="row items-center gap-2">
                     <input
                       type="number"
@@ -1873,7 +1827,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             const targetDays = getConsecutiveDays(editing.dayId, editing.spanDays ?? 1, days);
             const startDayIdx = days.findIndex((d) => d.id === editing.dayId);
             return (
-              <div className="small muted" style={{ marginTop: '-0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div className="small muted" style={{ marginTop: '-0.25rem', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Calendar size={13} className="text-accent" />
                 <span>
                   Will create this item across <strong>{targetDays.length} days</strong> (Day {startDayIdx + 1} – Day {startDayIdx + targetDays.length})
@@ -1882,18 +1836,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             );
           })()}
 
-          <div className="field">
-            <label>Website</label>
-            <input
-              type="url"
-              value={editing.website}
-              onChange={(e) => setEditing({ ...editing, website: e.target.value })}
-              placeholder="https://…"
-            />
-          </div>
-          <div className="field">
-            <label>Notes</label>
-            <textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Notes</label>
+            <textarea rows={2} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
           </div>
           <div className="modal-actions">
             <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>

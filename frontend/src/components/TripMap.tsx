@@ -126,7 +126,7 @@ export function TripMap({
   const markersMapRef = useRef<Map<string, { marker: any; coord: Coord; place: PlaceWithStop; infoContent: string }>>(new Map());
   const resolvedCoordsRef = useRef<Coord[]>([]);
   const transitLayerRef = useRef<any>(null);
-  const directionsRendererRef = useRef<any>(null);
+  const directionsRenderersRef = useRef<any[]>([]);
   const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
   const mapClickRef = useRef(onMapClick);
@@ -141,6 +141,9 @@ export function TripMap({
   const [showRouter, setShowRouter] = useState(false);
   const [originInput, setOriginInput] = useState('');
   const [destInput, setDestInput] = useState('');
+  const [intermediateStops, setIntermediateStops] = useState<string[]>([]);
+  const [pickingTarget, setPickingTarget] = useState<'origin' | 'dest' | number | null>(null);
+  const pickingTargetRef = useRef<'origin' | 'dest' | number | null>(null);
   const [travelMode, setTravelMode] = useState<'TRANSIT' | 'DRIVING' | 'WALKING' | 'BICYCLING'>('TRANSIT');
   const [calculating, setCalculating] = useState(false);
   const [routeResult, setRouteResult] = useState<any>(null);
@@ -157,6 +160,10 @@ export function TripMap({
   const targetId = activePlaceId || focusPlaceId;
 
   useEffect(() => {
+    pickingTargetRef.current = pickingTarget;
+  }, [pickingTarget]);
+
+  useEffect(() => {
     if (mapViews) setLocalViews(mapViews);
   }, [mapViews]);
 
@@ -164,7 +171,10 @@ export function TripMap({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setContextMenu(null);
+      if (e.key === 'Escape') {
+        setContextMenu(null);
+        setPickingTarget(null);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -225,7 +235,23 @@ export function TripMap({
           setContextMenu(null);
           if (!event.latLng) return;
           event.stop?.();
+
+          const lat = event.latLng.lat();
+          const lng = event.latLng.lng();
+          const coordStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
           const geocoder = new maps.Geocoder();
+
+          // If picking location from map for origin, destination, or intermediate stop
+          if (pickingTargetRef.current !== null) {
+            try {
+              const response = await geocoder.geocode({ location: { lat, lng } });
+              const formatted = response.results?.[0]?.formatted_address;
+              applyLocationToTarget(formatted || coordStr);
+            } catch {
+              applyLocationToTarget(coordStr);
+            }
+            return;
+          }
 
           const showPreview = (place: GeocodedPlace, position: any) => {
             previewRef.current?.close();
@@ -534,6 +560,10 @@ export function TripMap({
         const infoContent = `<div style="max-width:260px;color:#111827"><strong>${place.name}</strong><div style="font-size:12px;margin-top:4px;color:#4b5563">${detail}</div></div>`;
 
         marker.addListener('click', () => {
+          if (pickingTargetRef.current !== null) {
+            applyLocationToTarget(place.address || place.name);
+            return;
+          }
           infoWindowRef.current?.setContent(infoContent);
           infoWindowRef.current?.open({ map: mapRef.current, anchor: marker });
           onPlaceClick?.(place.id);
@@ -621,6 +651,44 @@ export function TripMap({
     return () => { cancelled = true; };
   }, [signature, fallbackSig, destination, targetId, onPlaceClick]);
 
+  const applyLocationToTarget = (loc: string) => {
+    const target = pickingTargetRef.current;
+    if (target === 'origin') {
+      setOriginInput(loc);
+    } else if (target === 'dest') {
+      setDestInput(loc);
+    } else if (typeof target === 'number') {
+      setIntermediateStops((prev) => {
+        const copy = [...prev];
+        copy[target] = loc;
+        return copy;
+      });
+    }
+    setPickingTarget(null);
+    setShowRouter(true);
+  };
+
+  const addIntermediateStop = () => {
+    setIntermediateStops((prev) => {
+      const next = [...prev, ''];
+      setPickingTarget(next.length - 1);
+      return next;
+    });
+  };
+
+  const removeIntermediateStop = (idx: number) => {
+    setIntermediateStops((prev) => prev.filter((_, i) => i !== idx));
+    if (pickingTarget === idx) setPickingTarget(null);
+  };
+
+  const updateIntermediateStop = (idx: number, val: string) => {
+    setIntermediateStops((prev) => {
+      const copy = [...prev];
+      copy[idx] = val;
+      return copy;
+    });
+  };
+
   const toggleTransitLayer = () => {
     if (!mapRef.current || !window.google?.maps) return;
     if (!transitLayerRef.current) {
@@ -667,10 +735,11 @@ export function TripMap({
     if (view.origin && view.destination) {
       setOriginInput(view.origin);
       setDestInput(view.destination);
+      setIntermediateStops([]);
       const mode = (view.travelMode as any) || 'TRANSIT';
       setTravelMode(mode);
       setShowRouter(true);
-      void calculateRoute(view.origin, view.destination, mode);
+      void calculateRoute(view.origin, view.destination, mode, []);
     } else {
       clearRoute();
     }
@@ -713,9 +782,11 @@ export function TripMap({
     customOrigin?: string,
     customDest?: string,
     customMode?: 'TRANSIT' | 'DRIVING' | 'WALKING' | 'BICYCLING',
+    customStops?: string[],
   ) => {
     const origin = (customOrigin ?? originInput).trim();
     const dest = (customDest ?? destInput).trim();
+    const stops = (customStops ?? intermediateStops).map((s) => s.trim()).filter(Boolean);
     const modeKey = customMode ?? travelMode;
 
     if (!mapRef.current || !window.google?.maps || !origin || !dest) return;
@@ -723,10 +794,124 @@ export function TripMap({
     setRouteError('');
     setRouteResult(null);
 
+    // Clear previous directions renderers from map
+    directionsRenderersRef.current.forEach((r) => r.setMap(null));
+    directionsRenderersRef.current = [];
+
     try {
       const directionsService = new window.google.maps.DirectionsService();
-      if (!directionsRendererRef.current) {
-        directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
+      const mode = (window.google.maps.TravelMode as any)[modeKey] || window.google.maps.TravelMode.TRANSIT;
+
+      if (modeKey === 'TRANSIT' && stops.length > 0) {
+        // Multi-leg Transit calculation: request each segment sequentially/concurrently
+        const allPoints = [origin, ...stops, dest];
+        const legPromises = [];
+
+        for (let i = 0; i < allPoints.length - 1; i++) {
+          const req = {
+            origin: allPoints[i],
+            destination: allPoints[i + 1],
+            travelMode: window.google.maps.TravelMode.TRANSIT,
+          };
+          legPromises.push(
+            new Promise<any>((resolve, reject) => {
+              directionsService.route(req, (res: any, status: any) => {
+                if (status === window.google.maps.DirectionsStatus.OK) resolve(res);
+                else reject(new Error(`Leg ${i + 1} (${allPoints[i]} → ${allPoints[i + 1]}): ${status}`));
+              });
+            }),
+          );
+        }
+
+        const legResults = await Promise.all(legPromises);
+
+        let totalDurationSec = 0;
+        let totalDistanceM = 0;
+        const allTransitLines: string[] = [];
+        const allSteps: { instruction: string; distance?: string; duration?: string; lineName?: string; legTitle?: string }[] = [];
+
+        legResults.forEach((res, legIdx) => {
+          const renderer = new window.google.maps.DirectionsRenderer({
+            map: mapRef.current,
+            suppressMarkers: false,
+            polylineOptions: {
+              strokeColor: ['#0891b2', '#06b6d4', '#3b82f6', '#8b5cf6', '#10b981'][legIdx % 5],
+              strokeWeight: 5,
+              strokeOpacity: 0.85,
+            },
+          });
+          renderer.setDirections(res);
+          directionsRenderersRef.current.push(renderer);
+
+          const leg = res.routes?.[0]?.legs?.[0];
+          if (leg) {
+            totalDurationSec += leg.duration?.value || 0;
+            totalDistanceM += leg.distance?.value || 0;
+
+            const legFrom = allPoints[legIdx].split(',')[0];
+            const legTo = allPoints[legIdx + 1].split(',')[0];
+            allSteps.push({
+              instruction: `Leg ${legIdx + 1}: ${legFrom} → ${legTo} (${leg.duration?.text || ''})`,
+              legTitle: `Leg ${legIdx + 1}`,
+            });
+
+            leg.steps?.forEach((step: any) => {
+              const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+              if (step.transit) {
+                const line = step.transit.line;
+                const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
+                allTransitLines.push(lineName);
+                allSteps.push({
+                  instruction: `${line.vehicle?.name || 'Transit'} ${lineName}: ${step.transit.departure_stop?.name || ''} → ${step.transit.arrival_stop?.name || ''} (${step.transit.num_stops || 1} stops)`,
+                  distance: step.distance?.text,
+                  duration: step.duration?.text,
+                  lineName,
+                });
+              } else {
+                allSteps.push({
+                  instruction: cleanInstruction,
+                  distance: step.distance?.text,
+                  duration: step.duration?.text,
+                });
+              }
+            });
+          }
+        });
+
+        const hours = Math.floor(totalDurationSec / 3600);
+        const mins = Math.round((totalDurationSec % 3600) / 60);
+        const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
+        const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
+
+        setRouteResult({
+          durationText: durText,
+          distanceText: distText,
+          startAddress: origin,
+          endAddress: dest,
+          transitLines: Array.from(new Set(allTransitLines)),
+          steps: allSteps,
+          legsCount: allPoints.length - 1,
+        });
+      } else {
+        // Single transit query or Driving / Walking / Bicycling with waypoints
+        const request: any = {
+          origin,
+          destination: dest,
+          travelMode: mode,
+          waypoints: stops.map((s) => ({ location: s, stopover: true })),
+        };
+
+        const result = await new Promise<any>((resolve, reject) => {
+          directionsService.route(request, (res: any, status: any) => {
+            if (status === window.google.maps.DirectionsStatus.OK) {
+              resolve(res);
+            } else {
+              reject(new Error(`Routing calculation: ${status}`));
+            }
+          });
+        });
+
+        const renderer = new window.google.maps.DirectionsRenderer({
           map: mapRef.current,
           suppressMarkers: false,
           polylineOptions: {
@@ -735,68 +920,64 @@ export function TripMap({
             strokeOpacity: 0.85,
           },
         });
-      } else {
-        directionsRendererRef.current.setMap(mapRef.current);
-      }
+        renderer.setDirections(result);
+        directionsRenderersRef.current.push(renderer);
 
-      const mode = (window.google.maps.TravelMode as any)[modeKey] || window.google.maps.TravelMode.TRANSIT;
-      const request: any = {
-        origin,
-        destination: dest,
-        travelMode: mode,
-      };
+        const route = result.routes?.[0];
+        if (route) {
+          let totalDurationSec = 0;
+          let totalDistanceM = 0;
+          const transitLines: string[] = [];
+          const steps: { instruction: string; distance?: string; duration?: string; lineName?: string; legTitle?: string }[] = [];
 
-      const result = await new Promise<any>((resolve, reject) => {
-        directionsService.route(request, (res: any, status: any) => {
-          if (status === window.google.maps.DirectionsStatus.OK) {
-            resolve(res);
-          } else {
-            reject(new Error(`Routing calculation: ${status}`));
-          }
-        });
-      });
+          route.legs?.forEach((leg: any, lIdx: number) => {
+            totalDurationSec += leg.duration?.value || 0;
+            totalDistanceM += leg.distance?.value || 0;
 
-      directionsRendererRef.current.setDirections(result);
+            if (route.legs.length > 1) {
+              steps.push({
+                instruction: `Leg ${lIdx + 1}: ${leg.start_address?.split(',')[0]} → ${leg.end_address?.split(',')[0]} (${leg.duration?.text || ''})`,
+                legTitle: `Leg ${lIdx + 1}`,
+              });
+            }
 
-      const leg = result.routes?.[0]?.legs?.[0];
-      if (leg) {
-        const transitLines: string[] = [];
-        const steps: { instruction: string; distance?: string; duration?: string; lineName?: string }[] = [];
-
-        leg.steps?.forEach((step: any) => {
-          const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-          if (step.transit) {
-            const line = step.transit.line;
-            const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
-            transitLines.push(lineName);
-            steps.push({
-              instruction: `${line.vehicle?.name || 'Transit'} ${lineName}: ${step.transit.departure_stop?.name || ''} → ${step.transit.arrival_stop?.name || ''} (${step.transit.num_stops || 1} stops)`,
-              distance: step.distance?.text,
-              duration: step.duration?.text,
-              lineName,
+            leg.steps?.forEach((step: any) => {
+              const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+              if (step.transit) {
+                const line = step.transit.line;
+                const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
+                transitLines.push(lineName);
+                steps.push({
+                  instruction: `${line.vehicle?.name || 'Transit'} ${lineName}: ${step.transit.departure_stop?.name || ''} → ${step.transit.arrival_stop?.name || ''} (${step.transit.num_stops || 1} stops)`,
+                  distance: step.distance?.text,
+                  duration: step.duration?.text,
+                  lineName,
+                });
+              } else {
+                steps.push({
+                  instruction: cleanInstruction,
+                  distance: step.distance?.text,
+                  duration: step.duration?.text,
+                });
+              }
             });
-          } else {
-            steps.push({
-              instruction: cleanInstruction,
-              distance: step.distance?.text,
-              duration: step.duration?.text,
-            });
-          }
-        });
+          });
 
-        const startAddr = leg.start_address || origin;
-        const endAddr = leg.end_address || dest;
+          const hours = Math.floor(totalDurationSec / 3600);
+          const mins = Math.round((totalDurationSec % 3600) / 60);
+          const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
+          const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
 
-        setRouteResult({
-          durationText: leg.duration?.text || '',
-          distanceText: leg.distance?.text || '',
-          startAddress: startAddr,
-          endAddress: endAddr,
-          startLocation: leg.start_location,
-          endLocation: leg.end_location,
-          transitLines: Array.from(new Set(transitLines)),
-          steps,
-        });
+          setRouteResult({
+            durationText: durText,
+            distanceText: distText,
+            startAddress: origin,
+            endAddress: dest,
+            transitLines: Array.from(new Set(transitLines)),
+            steps,
+            legsCount: route.legs?.length || 1,
+          });
+        }
       }
     } catch (err: any) {
       setRouteError(err.message || 'No route found between selected points.');
@@ -819,25 +1000,23 @@ export function TripMap({
 
       const originName = originInput.split(',')[0].trim();
       const destName = destInput.split(',')[0].trim();
-      const title = `${modeLabel}: ${originName} → ${destName}`;
+      const validStops = intermediateStops.map((s) => s.split(',')[0].trim()).filter(Boolean);
+      const stopChain = [originName, ...validStops, destName].join(' → ');
+      const title = `${modeLabel}: ${stopChain}`;
 
       const notesParts = [
         `${routeResult.durationText} (${routeResult.distanceText})`,
         routeResult.transitLines.length ? `Lines: ${routeResult.transitLines.join(', ')}` : null,
+        validStops.length ? `Via: ${validStops.join(', ')}` : null,
       ].filter(Boolean);
 
       const notes = notesParts.join(' · ');
-
-      const endLat = routeResult.endLocation ? routeResult.endLocation.lat() : undefined;
-      const endLng = routeResult.endLocation ? routeResult.endLocation.lng() : undefined;
 
       await apiPost(`/trips/${tripId}/places`, {
         name: title,
         category: 'Transport',
         address: `${routeResult.startAddress} to ${routeResult.endAddress}`,
         notes,
-        lat: endLat,
-        lng: endLng,
         dayId: targetDayId || undefined,
       });
 
@@ -852,7 +1031,8 @@ export function TripMap({
   };
 
   const clearRoute = () => {
-    directionsRendererRef.current?.setMap(null);
+    directionsRenderersRef.current.forEach((r) => r.setMap(null));
+    directionsRenderersRef.current = [];
     setRouteResult(null);
     setRouteError('');
     setShowSteps(false);
@@ -1013,6 +1193,33 @@ export function TripMap({
         </div>
       )}
 
+      {/* Interactive Map Location Picking Banner */}
+      {pickingTarget !== null && (
+        <div className="map-picking-banner">
+          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <Crosshair size={16} style={{ color: 'var(--accent)' }} />
+            <span>
+              Click anywhere on the map or click a place pin to select{' '}
+              <strong style={{ color: 'var(--accent)' }}>
+                {pickingTarget === 'origin'
+                  ? 'Origin (A)'
+                  : pickingTarget === 'dest'
+                  ? 'Destination'
+                  : `Stop ${Number(pickingTarget) + 1}`}
+              </strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn xs ghost"
+            style={{ color: '#fff', marginLeft: 8, padding: '2px 8px' }}
+            onClick={() => setPickingTarget(null)}
+          >
+            Cancel (Esc)
+          </button>
+        </div>
+      )}
+
       {/* Interactive Transit & Directions Route Planner Drawer */}
       {showRouter && (
         <div className="map-transit-drawer">
@@ -1025,7 +1232,10 @@ export function TripMap({
               type="button"
               className="btn sm ghost"
               style={{ padding: '2px 6px', color: '#94a3b8' }}
-              onClick={() => setShowRouter(false)}
+              onClick={() => {
+                setShowRouter(false);
+                setPickingTarget(null);
+              }}
             >
               <X size={14} />
             </button>
@@ -1059,13 +1269,14 @@ export function TripMap({
             </button>
           </div>
 
-          {/* Origin & Destination */}
+          {/* Origin & Intermediate Stops & Destination */}
           <div className="mb" style={{ display: 'grid', gap: 6 }}>
+            {/* Origin Input (A) */}
             <div className="row" style={{ gap: 6 }}>
               <span className="dot-label" style={{ background: '#22c55e' }}>A</span>
               <input
                 list="map-stops-origin"
-                className="map-route-input grow"
+                className={`map-route-input grow ${pickingTarget === 'origin' ? 'input-picking-active' : ''}`}
                 placeholder="Origin stop or address..."
                 value={originInput}
                 onChange={(e) => setOriginInput(e.target.value)}
@@ -1077,13 +1288,68 @@ export function TripMap({
                   </option>
                 ))}
               </datalist>
+              <button
+                type="button"
+                className={`map-route-pick-btn ${pickingTarget === 'origin' ? 'picking-active' : ''}`}
+                onClick={() => setPickingTarget(pickingTarget === 'origin' ? null : 'origin')}
+                title="Pick origin location from map"
+              >
+                <Crosshair size={13} />
+              </button>
             </div>
 
-            <div className="row" style={{ justifyContent: 'center', margin: '-2px 0' }}>
+            {/* Intermediate Waypoint Stops */}
+            {intermediateStops.map((stop, sIdx) => (
+              <div key={sIdx} className="row" style={{ gap: 6 }}>
+                <span className="dot-label" style={{ background: '#06b6d4' }}>{sIdx + 1}</span>
+                <input
+                  list={`map-stops-${sIdx}`}
+                  className={`map-route-input grow ${pickingTarget === sIdx ? 'input-picking-active' : ''}`}
+                  placeholder={`Intermediate stop ${sIdx + 1}...`}
+                  value={stop}
+                  onChange={(e) => updateIntermediateStop(sIdx, e.target.value)}
+                />
+                <datalist id={`map-stops-${sIdx}`}>
+                  {places.map((p) => (
+                    <option key={p.id} value={p.address || p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </datalist>
+                <button
+                  type="button"
+                  className={`map-route-pick-btn ${pickingTarget === sIdx ? 'picking-active' : ''}`}
+                  onClick={() => setPickingTarget(pickingTarget === sIdx ? null : sIdx)}
+                  title={`Pick stop ${sIdx + 1} from map`}
+                >
+                  <Crosshair size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="btn sm ghost icon-only"
+                  style={{ padding: '4px', color: '#94a3b8' }}
+                  onClick={() => removeIntermediateStop(sIdx)}
+                  title="Remove stop"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+
+            {/* Actions: Add Stop in Between & Swap Origin/Destination */}
+            <div className="row between" style={{ margin: '-2px 0', gap: 6 }}>
+              <button
+                type="button"
+                className="btn sm ghost map-add-stop-btn"
+                onClick={addIntermediateStop}
+                title="Add intermediate stop in between"
+              >
+                <Plus size={12} /> Add Stop in Between
+              </button>
               <button
                 type="button"
                 className="btn sm ghost"
-                style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#94a3b8' }}
+                style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
                 onClick={swapOriginDest}
                 title="Swap origin and destination"
               >
@@ -1091,11 +1357,14 @@ export function TripMap({
               </button>
             </div>
 
+            {/* Destination Input (B / End) */}
             <div className="row" style={{ gap: 6 }}>
-              <span className="dot-label" style={{ background: '#ef4444' }}>B</span>
+              <span className="dot-label" style={{ background: '#ef4444' }}>
+                {intermediateStops.length > 0 ? String.fromCharCode(66 + intermediateStops.length) : 'B'}
+              </span>
               <input
                 list="map-stops-dest"
-                className="map-route-input grow"
+                className={`map-route-input grow ${pickingTarget === 'dest' ? 'input-picking-active' : ''}`}
                 placeholder="Destination stop or address..."
                 value={destInput}
                 onChange={(e) => setDestInput(e.target.value)}
@@ -1107,6 +1376,14 @@ export function TripMap({
                   </option>
                 ))}
               </datalist>
+              <button
+                type="button"
+                className={`map-route-pick-btn ${pickingTarget === 'dest' ? 'picking-active' : ''}`}
+                onClick={() => setPickingTarget(pickingTarget === 'dest' ? null : 'dest')}
+                title="Pick destination location from map"
+              >
+                <Crosshair size={13} />
+              </button>
             </div>
           </div>
 
@@ -1165,7 +1442,9 @@ export function TripMap({
                       style={{ fontSize: '0.72rem', padding: '2px 6px', color: '#38bdf8' }}
                       onClick={() => {
                         const modeLabel = travelMode === 'TRANSIT' ? 'Transit' : travelMode === 'DRIVING' ? 'Drive' : 'Route';
-                        const defaultName = `${modeLabel}: ${originInput.split(',')[0].trim()} → ${destInput.split(',')[0].trim()}`;
+                        const validStops = intermediateStops.map((s) => s.split(',')[0].trim()).filter(Boolean);
+                        const stopChain = [originInput.split(',')[0].trim(), ...validStops, destInput.split(',')[0].trim()].join(' → ');
+                        const defaultName = `${modeLabel}: ${stopChain}`;
                         void handleSaveCurrentView(defaultName);
                       }}
                       disabled={savingPending}
@@ -1224,7 +1503,9 @@ export function TripMap({
                     <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4, marginTop: 6 }}>
                       {routeResult.steps.map((st: any, sIdx: number) => (
                         <div key={sIdx} className="transit-step-row">
-                          <div style={{ color: '#e2e8f0', fontSize: '0.78rem' }}>{st.instruction}</div>
+                          <div style={{ color: '#e2e8f0', fontSize: '0.78rem', fontWeight: st.legTitle ? 600 : 400 }}>
+                            {st.instruction}
+                          </div>
                           {(st.duration || st.distance) && (
                             <div className="small muted" style={{ fontSize: '0.7rem' }}>
                               {[st.duration, st.distance].filter(Boolean).join(' · ')}
@@ -1283,7 +1564,22 @@ export function TripMap({
             }}
           >
             <Navigation size={13} style={{ color: '#22c55e' }} />
-            <span>Directions from here</span>
+            <span>Directions from here (Origin)</span>
+          </button>
+
+          {/* Add as stop in directions */}
+          <button
+            type="button"
+            className="map-context-item"
+            onClick={() => {
+              setShowRouter(true);
+              const loc = contextMenu.address || `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`;
+              setIntermediateStops((prev) => [...prev, loc]);
+              setContextMenu(null);
+            }}
+          >
+            <Plus size={13} style={{ color: '#06b6d4' }} />
+            <span>Add as stop in directions</span>
           </button>
 
           {/* Directions to here */}
@@ -1297,7 +1593,7 @@ export function TripMap({
             }}
           >
             <Navigation size={13} style={{ color: '#ef4444' }} />
-            <span>Directions to here</span>
+            <span>Directions to here (Destination)</span>
           </button>
 
           <div className="map-context-divider" />

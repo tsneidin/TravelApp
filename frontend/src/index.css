@@ -2763,11 +2763,86 @@ a.link:hover {
   font-size: 0.8rem;
   padding: 5px 8px;
   outline: none;
+  transition: all 0.15s ease;
 }
 
 .map-route-input:focus {
   border-color: var(--accent, #22d3ee);
   box-shadow: 0 0 0 1px var(--accent, #22d3ee);
+}
+
+.map-route-input.input-picking-active {
+  border-color: var(--accent, #22d3ee);
+  background: rgba(34, 211, 238, 0.12);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+}
+
+.map-route-pick-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.map-route-pick-btn:hover {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: var(--accent, #22d3ee);
+  color: var(--accent, #22d3ee);
+}
+
+.map-route-pick-btn.picking-active {
+  background: var(--accent, #22d3ee);
+  color: #0f172a;
+  border-color: var(--accent, #22d3ee);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.7);
+  animation: pulseGlow 1.5s infinite alternate;
+}
+
+.map-add-stop-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  color: var(--accent, #22d3ee) !important;
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px dashed rgba(34, 211, 238, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.map-add-stop-btn:hover {
+  background: rgba(34, 211, 238, 0.15);
+  border-color: var(--accent, #22d3ee);
+}
+
+.map-picking-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--accent, #22d3ee);
+  border-radius: 20px;
+  padding: 6px 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(34, 211, 238, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f8fafc;
+  font-size: 0.8rem;
+  animation: slideDown 0.15s ease-out;
+  pointer-events: auto;
 }
 
 .map-route-summary {

@@ -12,6 +12,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
+import { computePlaceStopNumberMap } from '../../lib/placeUtils';
 
 interface PlaceForm {
   dayId?: string;
@@ -537,21 +538,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
-  // Pre-calculate sequential trip-wide numbers so every itinerary item and its corresponding map pin match.
+  // Pre-calculate sequential trip-wide numbers so multi-day items at the same location share the same number and map pin.
   const placeStopNumberMap = useMemo(() => {
-    const map = new Map<string, number>();
-    let num = 1;
-    for (const day of days) {
-      for (const place of day.places) {
-        map.set(place.id, num);
-        num += 1;
-      }
-    }
-    for (const place of orphanPlaces) {
-      map.set(place.id, num);
-      num += 1;
-    }
-    return map;
+    return computePlaceStopNumberMap(days, orphanPlaces);
   }, [days, orphanPlaces]);
 
   // Use one trip-wide sequence so every map marker has a unique number.

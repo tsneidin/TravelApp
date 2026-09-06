@@ -5,6 +5,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { Modal } from '../../components/Modal';
 import { apiPost } from '../../lib/api';
 import type { GeocodedPlace, Trip } from '../../lib/types';
+import { computePlaceStopNumberMap } from '../../lib/placeUtils';
 import { formatPlaceTime } from './ItineraryTab';
 
 export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
@@ -17,15 +18,23 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
     () => [...(trip.days ?? [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder),
     [trip.days],
   );
-  const places = useMemo<PlaceWithStop[]>(() => {
-    const scheduled = sortedDays.flatMap((day) => day.places);
+
+  const placeStopNumberMap = useMemo(() => {
+    const scheduled = sortedDays.flatMap((day) => day.places || []);
     const scheduledIds = new Set(scheduled.map((place) => place.id));
     const unassigned = (trip.places ?? []).filter((place) => !scheduledIds.has(place.id));
-    return [...scheduled, ...unassigned].map((place, index) => ({
-      ...place,
-      stopNumber: index + 1,
-    }));
+    return computePlaceStopNumberMap(sortedDays, unassigned);
   }, [sortedDays, trip.places]);
+
+  const places = useMemo<PlaceWithStop[]>(() => {
+    const scheduled = sortedDays.flatMap((day) => day.places || []);
+    const scheduledIds = new Set(scheduled.map((place) => place.id));
+    const unassigned = (trip.places ?? []).filter((place) => !scheduledIds.has(place.id));
+    return [...scheduled, ...unassigned].map((place) => ({
+      ...place,
+      stopNumber: placeStopNumberMap.get(place.id),
+    }));
+  }, [sortedDays, trip.places, placeStopNumberMap]);
 
   const saveDraft = async () => {
     if (!draft?.name.trim()) return;

@@ -625,30 +625,44 @@ export function TripMap({
       resolvedCoordsRef.current = resolved.map((r) => r.coord);
 
       const bounds = new maps.LatLngBounds();
+      const markerByStopKey = new Map<string, { marker: any; coord: Coord; place: PlaceWithStop; infoContent: string }>();
+
       for (const { place, coord } of resolved) {
         bounds.extend(coord);
-        const marker = new maps.Marker({
-          map: mapRef.current,
-          position: coord,
-          label: place.stopNumber != null ? { text: String(place.stopNumber), color: '#fff' } : undefined,
-          title: place.name,
-        });
 
-        const detail = [place.category, place.address, place.notes].filter(Boolean).join(' · ');
-        const infoContent = `<div style="max-width:260px;color:#111827"><strong>${place.name}</strong><div style="font-size:12px;margin-top:4px;color:#4b5563">${detail}</div></div>`;
+        const stopKey = place.stopNumber != null
+          ? `${coord.lat.toFixed(4)},${coord.lng.toFixed(4)}_${place.stopNumber}`
+          : place.id;
 
-        marker.addListener('click', () => {
-          if (pickingTargetRef.current !== null) {
-            applyLocationToTarget(place.address || place.name);
-            return;
-          }
-          infoWindowRef.current?.setContent(infoContent);
-          infoWindowRef.current?.open({ map: mapRef.current, anchor: marker });
-          onPlaceClick?.(place.id);
-        });
+        let entry = markerByStopKey.get(stopKey);
 
-        overlaysRef.current.push(marker);
-        markersMapRef.current.set(place.id, { marker, coord, place, infoContent });
+        if (!entry) {
+          const marker = new maps.Marker({
+            map: mapRef.current,
+            position: coord,
+            label: place.stopNumber != null ? { text: String(place.stopNumber), color: '#fff' } : undefined,
+            title: place.name,
+          });
+
+          const detail = [place.category, place.address, place.notes].filter(Boolean).join(' · ');
+          const infoContent = `<div style="max-width:260px;color:#111827"><strong>${place.name}</strong><div style="font-size:12px;margin-top:4px;color:#4b5563">${detail}</div></div>`;
+
+          marker.addListener('click', () => {
+            if (pickingTargetRef.current !== null) {
+              applyLocationToTarget(place.address || place.name);
+              return;
+            }
+            infoWindowRef.current?.setContent(infoContent);
+            infoWindowRef.current?.open({ map: mapRef.current, anchor: marker });
+            onPlaceClick?.(place.id);
+          });
+
+          overlaysRef.current.push(marker);
+          entry = { marker, coord, place, infoContent };
+          markerByStopKey.set(stopKey, entry);
+        }
+
+        markersMapRef.current.set(place.id, entry);
       }
 
       // Only connect itinerary items when there is an explicit transit itinerary entry connecting them

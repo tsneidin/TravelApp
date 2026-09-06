@@ -1172,6 +1172,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               if (!j.date) return false;
               return j.date.slice(0, 10) === day.date.slice(0, 10);
             });
+            const dayNotesCount = day.notes?.trim()
+              ? Math.max(1, day.notes.trim().split('\n').filter((l: string) => l.trim().length > 0).length)
+              : 0;
 
             return (
               <div
@@ -1205,7 +1208,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                             alignItems: 'center',
                             gap: 4,
                           }}
-                          title={`${dayJournalEntries.length} journal ${dayJournalEntries.length === 1 ? 'entry' : 'entries'} recorded for this day`}
+                          title={`${dayJournalEntries.length} journal ${dayJournalEntries.length === 1 ? 'entry' : 'entries'} recorded for this day. Click to view/edit.`}
                           onClick={() => {
                             const first = dayJournalEntries[0];
                             setJournalModalState({
@@ -1221,6 +1224,29 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         >
                           <BookOpen size={11} />
                           <span>{dayJournalEntries.length} {dayJournalEntries.length === 1 ? 'Journal' : 'Journals'}</span>
+                        </span>
+                      )}
+                      {dayNotesCount > 0 && (
+                        <span
+                          className="badge"
+                          style={{
+                            background: 'rgba(234, 179, 8, 0.12)',
+                            color: 'var(--text)',
+                            border: '1px solid rgba(234, 179, 8, 0.35)',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                          title={`${dayNotesCount} ${dayNotesCount === 1 ? 'note' : 'notes'} recorded for this day. Click to view/edit.`}
+                          onClick={() => {
+                            const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
+                            setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
+                          }}
+                        >
+                          <NotebookPen size={11} style={{ color: '#eab308' }} />
+                          <span>{dayNotesCount} {dayNotesCount === 1 ? 'Note' : 'Notes'}</span>
                         </span>
                       )}
                       <button
@@ -1251,47 +1277,14 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       <button
                         type="button"
                         className="btn sm ghost"
+                        style={dayNotesCount > 0 ? { color: 'var(--accent)' } : undefined}
                         title="Edit day notes"
                         onClick={() => {
                           const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
                           setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
                         }}
                       >
-                        <NotebookPen size={13} /> Notes
-                      </button>
-                      <button
-                        type="button"
-                        className="btn sm ghost"
-                        style={dayJournalEntries.length > 0 ? { color: 'var(--accent)' } : undefined}
-                        title={dayJournalEntries.length > 0 ? 'Add or view journal entries for this day' : 'Add journal entry for this day'}
-                        onClick={() => {
-                          const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
-                          if (dayJournalEntries.length > 0) {
-                            const first = dayJournalEntries[0];
-                            setJournalModalState({
-                              open: true,
-                              entry: {
-                                id: first.id,
-                                title: first.title,
-                                body: first.body,
-                                date: first.date ? first.date.slice(0, 10) : day.date.slice(0, 10),
-                              },
-                              dayLabel: `Day ${dayIndex + 1}${customTitle}`,
-                            });
-                          } else {
-                            setJournalModalState({
-                              open: true,
-                              entry: {
-                                title: '',
-                                body: '',
-                                date: day.date.slice(0, 10),
-                              },
-                              dayLabel: `Day ${dayIndex + 1}${customTitle}`,
-                            });
-                          }
-                        }}
-                      >
-                        <BookOpen size={13} /> Journal{dayJournalEntries.length > 0 ? ` (${dayJournalEntries.length})` : ''}
+                        <NotebookPen size={13} /> Notes{dayNotesCount > 0 ? ` (${dayNotesCount})` : ''}
                       </button>
                       <button
                         type="button"

@@ -3,9 +3,12 @@ import {
   ArrowDownUp,
   Bookmark,
   Car,
+  Check,
   ChevronDown,
   ChevronRight,
   Compass,
+  Copy,
+  Crosshair,
   Footprints,
   Layers,
   Navigation,
@@ -150,6 +153,10 @@ export function TripMap({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
 
+  // Right click context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lat: number; lng: number; address?: string } | null>(null);
+  const [copiedCoords, setCopiedCoords] = useState(false);
+
   const targetId = activePlaceId || focusPlaceId;
 
   useEffect(() => {
@@ -157,6 +164,14 @@ export function TripMap({
   }, [mapViews]);
 
   useEffect(() => { mapClickRef.current = onMapClick; }, [onMapClick]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const signature = useMemo(
     () => places.map((p) => [p.id, p.name, p.address, p.lat, p.lng, p.stopNumber].join(':')).join('|'),
@@ -179,6 +194,37 @@ export function TripMap({
           mapTypeControl: true,
           streetViewControl: false,
         });
+
+        mapRef.current.addListener('contextmenu', async (event: any) => {
+          if (!event.latLng) return;
+          const lat = event.latLng.lat();
+          const lng = event.latLng.lng();
+
+          const rect = elementRef.current?.getBoundingClientRect();
+          let x = 120;
+          let y = 120;
+          if (rect && event.domEvent) {
+            event.domEvent.preventDefault?.();
+            x = Math.max(10, Math.min(event.domEvent.clientX - rect.left, rect.width - 240));
+            y = Math.max(10, Math.min(event.domEvent.clientY - rect.top, rect.height - 260));
+          }
+
+          setContextMenu({ x, y, lat, lng });
+          setCopiedCoords(false);
+
+          try {
+            const geocoder = new maps.Geocoder();
+            const response = await geocoder.geocode({ location: { lat, lng } });
+            const formatted = response.results?.[0]?.formatted_address;
+            if (formatted) {
+              setContextMenu((prev) => (prev && prev.lat === lat && prev.lng === lng ? { ...prev, address: formatted } : prev));
+            }
+          } catch { /* ignore */ }
+        });
+
+        mapRef.current.addListener('click', () => setContextMenu(null));
+        mapRef.current.addListener('dragstart', () => setContextMenu(null));
+        mapRef.current.addListener('zoom_changed', () => setContextMenu(null));
 
         mapRef.current.addListener('click', async (event: any) => {
           const callback = mapClickRef.current;
@@ -960,6 +1006,103 @@ export function TripMap({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Google Maps Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="map-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Coordinates Header / Copy Item */}
+          <button
+            type="button"
+            className="map-context-item map-context-coords"
+            onClick={() => {
+              const text = `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`;
+              navigator.clipboard.writeText(text);
+              setCopiedCoords(true);
+              setTimeout(() => {
+                setCopiedCoords(false);
+                setContextMenu(null);
+              }, 1200);
+            }}
+            title="Click to copy coordinates"
+          >
+            {copiedCoords ? <Check size={13} style={{ color: 'var(--success, #10b981)' }} /> : <Copy size={13} />}
+            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+              {contextMenu.lat.toFixed(6)}, {contextMenu.lng.toFixed(6)}
+            </span>
+            {copiedCoords && <span className="badge" style={{ marginLeft: 'auto', fontSize: '0.68rem', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981' }}>Copied!</span>}
+          </button>
+
+          <div className="map-context-divider" />
+
+          {/* Directions from here */}
+          <button
+            type="button"
+            className="map-context-item"
+            onClick={() => {
+              setShowRouter(true);
+              setOriginInput(contextMenu.address || `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`);
+              setContextMenu(null);
+            }}
+          >
+            <Navigation size={13} style={{ color: '#22c55e' }} />
+            <span>Directions from here</span>
+          </button>
+
+          {/* Directions to here */}
+          <button
+            type="button"
+            className="map-context-item"
+            onClick={() => {
+              setShowRouter(true);
+              setDestInput(contextMenu.address || `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`);
+              setContextMenu(null);
+            }}
+          >
+            <Navigation size={13} style={{ color: '#ef4444' }} />
+            <span>Directions to here</span>
+          </button>
+
+          <div className="map-context-divider" />
+
+          {/* Add place to itinerary */}
+          <button
+            type="button"
+            className="map-context-item"
+            onClick={() => {
+              const fallbackName = contextMenu.address?.split(',')[0] || 'Pinned location';
+              onMapClick?.({
+                name: fallbackName,
+                address: contextMenu.address || `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`,
+                lat: contextMenu.lat,
+                lng: contextMenu.lng,
+                category: 'Sightseeing',
+                mapUrl: `https://www.google.com/maps/search/?api=1&query=${contextMenu.lat},${contextMenu.lng}`,
+              });
+              setContextMenu(null);
+            }}
+          >
+            <Plus size={13} style={{ color: 'var(--accent)' }} />
+            <span>Add place to itinerary</span>
+          </button>
+
+          {/* Center map here */}
+          <button
+            type="button"
+            className="map-context-item"
+            onClick={() => {
+              mapRef.current?.panTo({ lat: contextMenu.lat, lng: contextMenu.lng });
+              setContextMenu(null);
+            }}
+          >
+            <Crosshair size={13} />
+            <span>Center map here</span>
+          </button>
         </div>
       )}
 

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
-  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight
+  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
@@ -14,6 +14,14 @@ import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
 import { computePlaceStopNumberMap } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
+import {
+  generateSpanId,
+  extractSpanId,
+  embedSpanId,
+  stripSpanId,
+  findSpannedPlaces,
+  getConsecutiveDays,
+} from '../../lib/spanUtils';
 
 interface PlaceForm {
   dayId?: string;
@@ -27,6 +35,7 @@ interface PlaceForm {
   notes: string;
   startTime: string;
   endTime: string;
+  spanDays?: number;
 }
 
 const EMPTY_FORM: PlaceForm = {
@@ -41,6 +50,7 @@ const EMPTY_FORM: PlaceForm = {
   notes: '',
   startTime: '',
   endTime: '',
+  spanDays: 1,
 };
 
 export function extractTimeHHMM(isoOrTime?: string | null): string {
@@ -113,13 +123,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingPlaceItem, setEditingPlaceItem] = useState<Place | null>(null);
+  const [updateAllInSeries, setUpdateAllInSeries] = useState(false);
   const [editing, setEditing] = useState<PlaceForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
-  const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string; dayNumber?: number } | null>(null);
+  const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string; dayNumber?: number; spanDays?: number } | null>(null);
   const [journalDay, setJournalDay] = useState<{ date: string; label: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ title: '', body: '' });
   const [deletingPlace, setDeletingPlace] = useState<Place | null>(null);
@@ -167,9 +179,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
 
   const days = useMemo(() => trip.days ?? [], [trip.days]);
+  const allPlaces = useMemo(() => trip.places ?? [], [trip.places]);
   const orphanPlaces = useMemo(
-    () => (trip.places ?? []).filter((p) => !days.some((d) => d.places.some((x) => x.id === p.id))),
-    [trip.places, days],
+    () => allPlaces.filter((p) => !days.some((d) => d.places.some((x) => x.id === p.id))),
+    [allPlaces, days],
   );
 
   const totalPlacesCount = useMemo(
@@ -370,12 +383,17 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
   const openNew = (dayId: string) => {
     setEditingId(null);
-    setEditing({ ...EMPTY_FORM, dayId });
+    setEditingPlaceItem(null);
+    setUpdateAllInSeries(false);
+    setEditing({ ...EMPTY_FORM, dayId, spanDays: 1 });
     setOpen(true);
   };
 
   const openEdit = (p: Place) => {
     setEditingId(p.id);
+    setEditingPlaceItem(p);
+    const siblingPlaces = findSpannedPlaces(p, allPlaces, days);
+    setUpdateAllInSeries(siblingPlaces.length > 1);
     setEditing({
       dayId: p.dayId ?? '',
       name: p.name,
@@ -385,9 +403,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       lng: p.lng != null ? String(p.lng) : '',
       website: p.website ?? '',
       description: p.description ?? '',
-      notes: p.notes ?? '',
+      notes: stripSpanId(p.notes),
       startTime: extractTimeHHMM(p.startTime),
       endTime: extractTimeHHMM(p.endTime),
+      spanDays: 1,
     });
     setOpen(true);
   };
@@ -434,23 +453,113 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         }
       }
 
-      const payload = {
-        name: editing.name.trim(),
-        category: editing.category || undefined,
-        address: editing.address || undefined,
-        lat: latVal,
-        lng: lngVal,
-        website: editing.website || undefined,
-        description: editing.description || undefined,
-        notes: editing.notes || undefined,
-        dayId: editing.dayId ? editing.dayId : null,
-        startTime: finalStartTime,
-        endTime: finalEndTime,
-      };
       if (editingId) {
-        await apiPatch(`/trips/${trip.id}/places/${editingId}`, payload);
+        // If part of multi-day series and user chose to apply changes to all occurrences
+        if (updateAllInSeries && editingPlaceItem) {
+          const siblingPlaces = findSpannedPlaces(editingPlaceItem, allPlaces, days);
+          if (siblingPlaces.length > 1) {
+            const existingSpanId = extractSpanId(editingPlaceItem) || generateSpanId();
+            const taggedNotes = embedSpanId(editing.notes, existingSpanId);
+            await Promise.all(
+              siblingPlaces.map((sibling) => {
+                const siblingDay = days.find((d) => d.id === sibling.dayId);
+                const sBaseDate = siblingDay?.date ? siblingDay.date.slice(0, 10) : baseDate;
+                const sStartTime = editing.startTime ? `${sBaseDate}T${editing.startTime}:00.000Z` : null;
+                const sEndTime = editing.endTime ? `${sBaseDate}T${editing.endTime}:00.000Z` : null;
+                return apiPatch(`/trips/${trip.id}/places/${sibling.id}`, {
+                  name: editing.name.trim(),
+                  category: editing.category || undefined,
+                  address: editing.address || undefined,
+                  lat: latVal,
+                  lng: lngVal,
+                  website: editing.website || undefined,
+                  description: editing.description || undefined,
+                  notes: taggedNotes,
+                  startTime: sStartTime,
+                  endTime: sEndTime,
+                });
+              }),
+            );
+          } else {
+            const payload = {
+              name: editing.name.trim(),
+              category: editing.category || undefined,
+              address: editing.address || undefined,
+              lat: latVal,
+              lng: lngVal,
+              website: editing.website || undefined,
+              description: editing.description || undefined,
+              notes: editing.notes || undefined,
+              dayId: editing.dayId ? editing.dayId : null,
+              startTime: finalStartTime,
+              endTime: finalEndTime,
+            };
+            await apiPatch(`/trips/${trip.id}/places/${editingId}`, payload);
+          }
+        } else {
+          const payload = {
+            name: editing.name.trim(),
+            category: editing.category || undefined,
+            address: editing.address || undefined,
+            lat: latVal,
+            lng: lngVal,
+            website: editing.website || undefined,
+            description: editing.description || undefined,
+            notes: editing.notes || undefined,
+            dayId: editing.dayId ? editing.dayId : null,
+            startTime: finalStartTime,
+            endTime: finalEndTime,
+          };
+          await apiPatch(`/trips/${trip.id}/places/${editingId}`, payload);
+        }
       } else if (editing.name.trim()) {
-        await apiPost(`/trips/${trip.id}/places`, payload);
+        const spanDays = editing.spanDays ?? 1;
+        if (spanDays > 1 && editing.dayId && editing.dayId !== 'unassigned') {
+          const targetDays = getConsecutiveDays(editing.dayId, spanDays, days);
+          const spanId = generateSpanId();
+          const taggedNotes = embedSpanId(editing.notes, spanId);
+          const placesPayload = targetDays.map((targetDay, idx) => {
+            let dayStartTime: string | null = null;
+            let dayEndTime: string | null = null;
+            const targetBaseDate = targetDay.date ? targetDay.date.slice(0, 10) : baseDate;
+            if (editing.startTime) {
+              dayStartTime = `${targetBaseDate}T${editing.startTime}:00.000Z`;
+            }
+            if (editing.endTime) {
+              dayEndTime = `${targetBaseDate}T${editing.endTime}:00.000Z`;
+            }
+            return {
+              name: editing.name.trim(),
+              category: editing.category || undefined,
+              address: editing.address || undefined,
+              lat: latVal,
+              lng: lngVal,
+              website: editing.website || undefined,
+              description: editing.description || undefined,
+              notes: taggedNotes || undefined,
+              dayId: targetDay.id,
+              sortOrder: (targetDay.places?.length ?? 0) + idx,
+              startTime: dayStartTime,
+              endTime: dayEndTime,
+            };
+          });
+          await apiPost(`/trips/${trip.id}/places/bulk`, { places: placesPayload });
+        } else {
+          const payload = {
+            name: editing.name.trim(),
+            category: editing.category || undefined,
+            address: editing.address || undefined,
+            lat: latVal,
+            lng: lngVal,
+            website: editing.website || undefined,
+            description: editing.description || undefined,
+            notes: editing.notes || undefined,
+            dayId: editing.dayId ? editing.dayId : null,
+            startTime: finalStartTime,
+            endTime: finalEndTime,
+          };
+          await apiPost(`/trips/${trip.id}/places`, payload);
+        }
       }
       setOpen(false);
       await reload();
@@ -521,10 +630,25 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const saveDayNotes = async () => {
     if (!dayEditor) return;
     const trimmed = dayEditor.label.trim();
-    await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
-      label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
-      notes: dayEditor.notes,
-    });
+    const currentSpan = dayEditor.spanDays ?? 1;
+
+    if (currentSpan > 1) {
+      const targetDays = getConsecutiveDays(dayEditor.id, currentSpan, days);
+      await Promise.all(
+        targetDays.map((d) => {
+          const isStart = d.id === dayEditor.id;
+          return apiPatch(`/trips/${trip.id}/days/${d.id}`, {
+            ...(isStart ? { label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null } : {}),
+            notes: dayEditor.notes,
+          });
+        }),
+      );
+    } else {
+      await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
+        label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
+        notes: dayEditor.notes,
+      });
+    }
     setDayEditor(null);
     await reload();
   };
@@ -596,7 +720,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const formattedTime = formatPlaceTime(p.startTime, p.endTime);
 
     const categoryText = p.category?.trim() || null;
-    const hasMeta = Boolean(locationText || categoryText || formattedTime);
+    const siblingPlaces = findSpannedPlaces(p, allPlaces, days);
+    const isSpanned = siblingPlaces.length > 1;
+    const hasMeta = Boolean(locationText || categoryText || formattedTime || isSpanned);
 
     return (
       <div
@@ -763,6 +889,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <span className="place-meta-pill location" title={locationText}>
                     <MapPin size={11} />
                     <span className="place-location-text">{locationText}</span>
+                  </span>
+                )}
+                {isSpanned && (
+                  <span className="place-meta-pill span-badge" title={`Spans across ${siblingPlaces.length} days in this itinerary`}>
+                    <Calendar size={11} style={{ marginRight: 3 }} />
+                    {siblingPlaces.length} days
                   </span>
                 )}
               </div>
@@ -1380,27 +1512,65 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       </div>
 
 
-      {dayEditor && (
-        <Modal title={`Day ${dayEditor.dayNumber ?? ''} details${dayEditor.label ? ` — ${dayEditor.label}` : ''}`} onClose={() => setDayEditor(null)}>
-          <div className="field">
-            <label>Day title / label</label>
-            <input
-              value={dayEditor.label}
-              onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
-              placeholder="e.g. Arrival in Tokyo"
-              autoFocus
-            />
-          </div>
-          <div className="field">
-            <label>Day notes</label>
-            <textarea rows={7} value={dayEditor.notes} onChange={(event) => setDayEditor({ ...dayEditor, notes: event.target.value })} placeholder="General plans, reminders, weather backup, meeting details…" />
-          </div>
-          <div className="modal-actions">
-            <button className="btn" onClick={() => setDayEditor(null)}>Cancel</button>
-            <button className="btn primary" onClick={() => void saveDayNotes()}>Save</button>
-          </div>
-        </Modal>
-      )}
+      {dayEditor && (() => {
+        const maxSpan = days.length > 0 ? days.length - (dayEditor.dayNumber ? dayEditor.dayNumber - 1 : 0) : 1;
+        const currentSpan = dayEditor.spanDays ?? 1;
+        const targetDays = currentSpan > 1 ? getConsecutiveDays(dayEditor.id, currentSpan, days) : [];
+
+        return (
+          <Modal title={`Day ${dayEditor.dayNumber ?? ''} details${dayEditor.label ? ` — ${dayEditor.label}` : ''}`} onClose={() => setDayEditor(null)}>
+            <div className="field">
+              <label>Day title / label</label>
+              <input
+                value={dayEditor.label}
+                onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
+                placeholder="e.g. Arrival in Tokyo"
+                autoFocus
+              />
+            </div>
+            <div className="field">
+              <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ margin: 0 }}>Day notes</label>
+                {days.length > 1 && (
+                  <div className="row items-center gap-1">
+                    <span className="small muted">Span to next:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={Math.max(1, maxSpan)}
+                      value={dayEditor.spanDays ?? 1}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(maxSpan, parseInt(e.target.value || '1', 10)));
+                        setDayEditor({ ...dayEditor, spanDays: val });
+                      }}
+                      style={{ width: '60px', padding: '2px 6px', fontSize: '13px' }}
+                    />
+                    <span className="small muted">days</span>
+                  </div>
+                )}
+              </div>
+              <textarea
+                rows={7}
+                value={dayEditor.notes}
+                onChange={(event) => setDayEditor({ ...dayEditor, notes: event.target.value })}
+                placeholder="General plans, reminders, weather backup, meeting details…"
+              />
+              {currentSpan > 1 && targetDays.length > 1 && (
+                <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={13} className="text-accent" />
+                  <span>
+                    Will apply these notes across <strong>{targetDays.length} days</strong> (Day {dayEditor.dayNumber} – Day {(dayEditor.dayNumber ?? 1) + targetDays.length - 1})
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="btn primary" onClick={() => void saveDayNotes()}>Save</button>
+              <button className="btn" onClick={() => setDayEditor(null)}>Cancel</button>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {journalDay && (
         <Modal title={`Journal entry — ${journalDay.label}`} onClose={() => setJournalDay(null)}>
@@ -1413,8 +1583,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <textarea rows={7} value={journalForm.body} onChange={(event) => setJournalForm({ ...journalForm, body: event.target.value })} />
           </div>
           <div className="modal-actions">
-            <button className="btn" onClick={() => setJournalDay(null)}>Cancel</button>
             <button className="btn primary" disabled={!journalForm.title.trim()} onClick={() => void saveDayJournal()}>Save journal entry</button>
+            <button className="btn" onClick={() => setJournalDay(null)}>Cancel</button>
           </div>
         </Modal>
       )}
@@ -1430,20 +1600,66 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         </Modal>
       )}
 
-      {deletingPlace && (
-        <ConfirmModal
-          title="Remove place"
-          message={`Are you sure you want to remove "${deletingPlace.name}" from the trip?`}
-          confirmLabel="Delete"
-          danger
-          onConfirm={async () => {
-            await apiDelete(`/trips/${trip.id}/places/${deletingPlace.id}`);
-            setDeletingPlace(null);
-            await reload();
-          }}
-          onCancel={() => setDeletingPlace(null)}
-        />
-      )}
+      {deletingPlace && (() => {
+        const siblingPlaces = findSpannedPlaces(deletingPlace, allPlaces, days);
+        if (siblingPlaces.length > 1) {
+          return (
+            <Modal title="Delete multi-day place" onClose={() => setDeletingPlace(null)}>
+              <p style={{ margin: '0 0 1rem' }}>
+                <strong>&ldquo;{deletingPlace.name}&rdquo;</strong> appears on <strong>{siblingPlaces.length} days</strong> in your itinerary.
+              </p>
+              <p className="muted small" style={{ margin: '0 0 1.5rem' }}>
+                Would you like to delete all {siblingPlaces.length} occurrences in this multi-day series or only remove this specific day's instance?
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={async () => {
+                    await apiPost(`/trips/${trip.id}/places/bulk-delete`, {
+                      placeIds: siblingPlaces.map((p) => p.id),
+                    });
+                    setDeletingPlace(null);
+                    await reload();
+                  }}
+                >
+                  Delete All {siblingPlaces.length} Occurrences
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                  onClick={async () => {
+                    await apiDelete(`/trips/${trip.id}/places/${deletingPlace.id}`);
+                    setDeletingPlace(null);
+                    await reload();
+                  }}
+                >
+                  Delete Only This Day
+                </button>
+                <button type="button" className="btn" onClick={() => setDeletingPlace(null)}>
+                  Cancel
+                </button>
+              </div>
+            </Modal>
+          );
+        }
+
+        return (
+          <ConfirmModal
+            title="Remove place"
+            message={`Are you sure you want to remove "${deletingPlace.name}" from the trip?`}
+            confirmLabel="Delete"
+            danger
+            onConfirm={async () => {
+              await apiDelete(`/trips/${trip.id}/places/${deletingPlace.id}`);
+              setDeletingPlace(null);
+              await reload();
+            }}
+            onCancel={() => setDeletingPlace(null)}
+          />
+        );
+      })()}
 
       {deletingDayId && (
         <ConfirmModal
@@ -1460,7 +1676,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         />
       )}
 
-      {/* Add / Edit Place Modal with Search Autocomplete */}
+      {/* Add / Edit Place Modal with Search Autocomplete & Multi-day Span */}
       {open && (
         <Modal title={editingId ? 'Edit place' : 'Add place'} onClose={() => setOpen(false)}>
           <div className="field mb-3">
@@ -1520,6 +1736,28 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </div>
             )}
           </div>
+
+          {editingId && editingPlaceItem && (() => {
+            const siblingPlaces = findSpannedPlaces(editingPlaceItem, allPlaces, days);
+            if (siblingPlaces.length > 1) {
+              return (
+                <div className="field-hint-ai" style={{ marginTop: '-0.25rem', marginBottom: '1rem', padding: '10px 12px', background: 'var(--surface-hover)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  <label className="row items-center gap-2" style={{ margin: 0, cursor: 'pointer', fontWeight: 500 }}>
+                    <input
+                      type="checkbox"
+                      checked={updateAllInSeries}
+                      onChange={(e) => setUpdateAllInSeries(e.target.checked)}
+                    />
+                    <span>Apply updates to all {siblingPlaces.length} occurrences in this series</span>
+                  </label>
+                  <div className="small muted" style={{ marginTop: 4, paddingLeft: '24px' }}>
+                    This item appears on {siblingPlaces.length} days. Uncheck to update only this single instance.
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           <div className="field">
             <label>
@@ -1588,19 +1826,62 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               placeholder="Street, city or 40.7128, -74.0060"
             />
           </div>
+
           {days.length > 0 && (
-            <div className="field small">
-              <label>Day</label>
-              <select value={editing.dayId ?? ''} onChange={(e) => setEditing({ ...editing, dayId: e.target.value })}>
-                <option value="">No day (unassigned)</option>
-                {days.map((d, i) => (
-                  <option key={d.id} value={d.id}>
-                    {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
-                  </option>
-                ))}
-              </select>
+            <div className={!editingId ? 'grid grid-2' : ''} style={{ gap: '1rem' }}>
+              <div className="field small">
+                <label>Day</label>
+                <select value={editing.dayId ?? ''} onChange={(e) => setEditing({ ...editing, dayId: e.target.value })}>
+                  <option value="">No day (unassigned)</option>
+                  {days.map((d, i) => (
+                    <option key={d.id} value={d.id}>
+                      {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!editingId && (
+                <div className="field small">
+                  <label>
+                    <Calendar size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                    Span across days
+                  </label>
+                  <div className="row items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={days.length}
+                      value={editing.spanDays ?? 1}
+                      disabled={!editing.dayId || editing.dayId === 'unassigned'}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(days.length, parseInt(e.target.value || '1', 10)));
+                        setEditing({ ...editing, spanDays: val });
+                      }}
+                      style={{ width: '80px' }}
+                    />
+                    <span className="small muted">
+                      {(editing.spanDays ?? 1) > 1 ? 'consecutive days' : 'day (single)'}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
+
+          {!editingId && (editing.spanDays ?? 1) > 1 && editing.dayId && editing.dayId !== 'unassigned' && (() => {
+            const targetDays = getConsecutiveDays(editing.dayId, editing.spanDays ?? 1, days);
+            const startDayIdx = days.findIndex((d) => d.id === editing.dayId);
+            return (
+              <div className="small muted" style={{ marginTop: '-0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Calendar size={13} className="text-accent" />
+                <span>
+                  Will create this item across <strong>{targetDays.length} days</strong> (Day {startDayIdx + 1} – Day {startDayIdx + targetDays.length})
+                </span>
+              </div>
+            );
+          })()}
+
           <div className="field">
             <label>Website</label>
             <input

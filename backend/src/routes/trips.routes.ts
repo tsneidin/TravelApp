@@ -475,6 +475,111 @@ tripsRouter.post(
   }),
 );
 
+tripsRouter.post(
+  '/:tripId/places/bulk',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    const user = getUser(req);
+    await requireTripAccess(req, tripId, 'editor');
+
+    if (Array.isArray(req.body.dayIds) && req.body.dayIds.length > 0) {
+      requireFields(req, ['name']);
+      const dayIds: string[] = req.body.dayIds;
+      const rawCategory = typeof req.body.category === 'string' ? req.body.category.trim() : '';
+      const category = rawCategory || inferCategoryFromText([req.body.name, req.body.address, req.body.description, req.body.notes].filter(Boolean).join(' '));
+
+      const createdPlaces = await prisma.$transaction(async (tx) => {
+        const results = [];
+        for (const dId of dayIds) {
+          const effectiveDayId = dId === 'unassigned' ? null : dId;
+          const count = await tx.place.count({ where: { tripId, dayId: effectiveDayId } });
+          const created = await tx.place.create({
+            data: {
+              tripId,
+              createdById: user.id,
+              name: req.body.name,
+              category,
+              address: req.body.address,
+              lat: req.body.lat,
+              lng: req.body.lng,
+              description: req.body.description,
+              website: req.body.website,
+              sourceText: req.body.sourceText,
+              notes: req.body.notes,
+              dayId: effectiveDayId,
+              sortOrder: count,
+              startTime: req.body.startTime ? new Date(req.body.startTime) : undefined,
+              endTime: req.body.endTime ? new Date(req.body.endTime) : undefined,
+            },
+          });
+          results.push(created);
+        }
+        return results;
+      });
+
+      res.status(201).json({ places: createdPlaces });
+      return;
+    }
+
+    if (Array.isArray(req.body.places) && req.body.places.length > 0) {
+      const placesInput = req.body.places;
+      const createdPlaces = await prisma.$transaction(async (tx) => {
+        const results = [];
+        for (const p of placesInput) {
+          const rawCategory = typeof p.category === 'string' ? p.category.trim() : '';
+          const category = rawCategory || inferCategoryFromText([p.name, p.address, p.description, p.notes].filter(Boolean).join(' '));
+          const effectiveDayId = p.dayId === 'unassigned' ? null : p.dayId;
+          const count = await tx.place.count({ where: { tripId, dayId: effectiveDayId } });
+          const created = await tx.place.create({
+            data: {
+              tripId,
+              createdById: user.id,
+              name: p.name,
+              category,
+              address: p.address,
+              lat: p.lat,
+              lng: p.lng,
+              description: p.description,
+              website: p.website,
+              sourceText: p.sourceText,
+              notes: p.notes,
+              dayId: effectiveDayId,
+              sortOrder: p.sortOrder ?? count,
+              startTime: p.startTime ? new Date(p.startTime) : undefined,
+              endTime: p.endTime ? new Date(p.endTime) : undefined,
+            },
+          });
+          results.push(created);
+        }
+        return results;
+      });
+      res.status(201).json({ places: createdPlaces });
+      return;
+    }
+
+    throw badRequest('Either dayIds array or places array must be provided');
+  }),
+);
+
+tripsRouter.post(
+  '/:tripId/places/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    const placeIds = req.body.placeIds;
+    if (!Array.isArray(placeIds) || placeIds.length === 0) {
+      throw badRequest('placeIds array is required');
+    }
+    await prisma.place.deleteMany({
+      where: {
+        id: { in: placeIds },
+        tripId,
+      },
+    });
+    res.status(204).send();
+  }),
+);
+
 tripsRouter.patch(
   '/:tripId/places/:placeId',
   asyncHandler(async (req, res) => {

@@ -10,6 +10,7 @@ import {
   cleanFallbackTitleAndDescription,
   toDayKey,
 } from './tripTools.js';
+import { isGenericDayLabel } from './dayReconciliation.js';
 
 export { cleanFallbackTitleAndDescription, type ToolResult };
 

@@ -12,7 +12,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
-import { computePlaceStopNumberMap } from '../../lib/placeUtils';
+import { computePlaceStopNumberMap, cleanPlaceOrStayTitle } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
 import {
@@ -385,7 +385,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     setUpdateAllInSeries(siblingPlaces.length > 1);
     setEditing({
       dayId: p.dayId ?? '',
-      name: p.name,
+      name: cleanPlaceOrStayTitle(p.name),
       category: p.category ?? '',
       address: p.address ?? '',
       lat: p.lat != null ? String(p.lat) : '',
@@ -869,7 +869,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <span className="place-type-inline-icon" title={p.category || 'Place'}>
                   {getCategoryIcon(p.category, p.name)}
                 </span>
-                <span className="place-title">{p.name}</span>
+                <span className="place-title">{cleanPlaceOrStayTitle(p.name)}</span>
                 {p.website && (
                   <a
                     href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}

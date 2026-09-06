@@ -1,6 +1,17 @@
 import type { Day, Place } from './types';
 
 /**
+ * Cleans emojis and prefixes (like Stay:, Check-in:, Check-out:) from place or stay titles.
+ */
+export function cleanPlaceOrStayTitle(title?: string | null): string {
+  if (!title) return '';
+  return title
+    .replace(/^(?:🏨|🛏️|🛏|✈️|✈|🚆|🚗|🎟️|🎟|🏛️|🏛|🍽️|🍽|📝|📍|🏠)\s*/, '')
+    .replace(/^(?:Check-in|Check-out|Stay|Departure|Arrival)[:\s-]*/i, '')
+    .trim();
+}
+
+/**
  * Checks whether an item or place represents an accommodation / stay.
  */
 export function isAccommodationItem(item?: {

@@ -595,26 +595,21 @@ export async function syncBookingToItinerary(
         const isFirstDay = idx === 0;
         const isLastDay = idx === stayDates.length - 1 && stayDates.length > 1;
 
-        let name: string;
+        const name = cleanTitle;
         let startTime: Date | undefined;
         let endTime: Date | undefined;
         const dayNotesParts = [...baseNotesParts];
 
         if (stayDates.length === 1) {
-          name = `🏨 ${cleanTitle}`;
           startTime = startDate;
           endTime = endDate;
         } else if (isFirstDay) {
-          name = `🏨 Check-in: ${cleanTitle}`;
           startTime = startDate;
           if (info.checkInTimeStr) dayNotesParts.push(`Check-in: ${info.checkInTimeStr}`);
         } else if (isLastDay) {
-          name = `🏨 Check-out: ${cleanTitle}`;
           startTime = endDate;
           endTime = endDate;
           if (info.checkOutTimeStr) dayNotesParts.push(`Check-out: ${info.checkOutTimeStr}`);
-        } else {
-          name = `🏨 Stay: ${cleanTitle}`;
         }
 
         const existingPlace = await prisma.place.findFirst({

@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import {
   Calendar, Clock, MapPin, Plane, Hotel, Compass, AlertCircle,
-  ZoomIn, ZoomOut, Filter, ExternalLink, Car, Train, Bus, Pencil, Plus
+  ZoomIn, ZoomOut, Filter, ExternalLink, Car, Train, Bus, Pencil, Plus, Sparkles
 } from 'lucide-react';
 import type { Trip, Booking, BookingType, Place, Day } from '../../lib/types';
 import { Modal } from '../../components/Modal';
+import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { AuditBadge } from '../../components/AuditBadge';
 import { getCategoryIcon } from '../../lib/icons';
 import { apiPost, apiPatch } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
-import { isAccommodationItem, isTransitItem, normalizePlaceLocationKey } from '../../lib/placeUtils';
-import { extractSpanId } from '../../lib/spanUtils';
+import { isAccommodationItem, isTransitItem, normalizePlaceLocationKey, cleanPlaceOrStayTitle } from '../../lib/placeUtils';
+import { extractSpanId, generateSpanId, embedSpanId, getConsecutiveDays } from '../../lib/spanUtils';
 
 interface TimelineTabProps {
   trip: Trip;
@@ -167,7 +168,31 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
   } | null>(null);
 
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
-  const [gapAddModal, setGapAddModal] = useState<{ startDayIndex: number; endDayIndex: number } | null>(null);
+  const [placeModalOpen, setPlaceModalOpen] = useState(false);
+  const [placeDraft, setPlaceDraft] = useState<{
+    name: string;
+    description: string;
+    address: string;
+    category: string;
+    startTime: string;
+    endTime: string;
+    notes: string;
+    website: string;
+    dayId?: string;
+    spanDays?: number;
+    lat?: string;
+    lng?: string;
+  }>({
+    name: '',
+    description: '',
+    address: '',
+    category: 'Accommodation',
+    startTime: '15:00',
+    endTime: '11:00',
+    notes: '',
+    website: '',
+    spanDays: 1,
+  });
   const [bookingForm, setBookingForm] = useState<{
     type: BookingType;
     title: string;
@@ -189,28 +214,11 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
     setEditingBooking(b);
     setBookingForm({
       type: b.type,
-      title: b.title,
+      title: cleanPlaceOrStayTitle(b.title),
       provider: b.provider || '',
       reference: b.reference || '',
       startAt: toDatetimeLocal(b.startAt),
       endAt: toDatetimeLocal(b.endAt),
-    });
-  };
-
-  const openAddStayForGap = (gapDayIdx: number) => {
-    const curDay = timelineDays[gapDayIdx];
-    const nextDay = timelineDays[Math.min(gapDayIdx + 1, timelineDays.length - 1)];
-    const startAtStr = curDay ? `${curDay.dateStr}T15:00` : '';
-    const endAtStr = nextDay ? `${nextDay.dateStr}T11:00` : '';
-
-    setGapAddModal({ startDayIndex: gapDayIdx, endDayIndex: Math.min(gapDayIdx + 1, timelineDays.length - 1) });
-    setBookingForm({
-      type: 'hotel',
-      title: '',
-      provider: '',
-      reference: '',
-      startAt: startAtStr,
-      endAt: endAtStr,
     });
   };
 
@@ -225,13 +233,6 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
           endAt: bookingForm.endAt ? new Date(bookingForm.endAt).toISOString() : null,
         });
         setEditingBooking(null);
-      } else {
-        await apiPost(`/trips/${trip.id}/bookings`, {
-          ...bookingForm,
-          startAt: bookingForm.startAt ? new Date(bookingForm.startAt).toISOString() : undefined,
-          endAt: bookingForm.endAt ? new Date(bookingForm.endAt).toISOString() : undefined,
-        });
-        setGapAddModal(null);
       }
       await reload();
     } finally {
@@ -597,6 +598,120 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
   const coveredNightsCount = totalNights - lodgingGaps.length;
   const isFullyBooked = totalNights > 0 && lodgingGaps.length === 0;
 
+  const allTripDays = useMemo(() => {
+    return [...(trip.days ?? [])].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder
+    );
+  }, [trip.days]);
+
+  const openAddStayForGap = (gapDayIdx: number) => {
+    const curDay = timelineDays[gapDayIdx];
+    const targetDayId = curDay?.dayRecord?.id || (trip.days && trip.days[gapDayIdx]?.id) || '';
+
+    // Calculate how many consecutive lodging gaps exist starting from gapDayIdx
+    let span = 1;
+    for (let i = gapDayIdx + 1; i < timelineDays.length - 1; i++) {
+      if (lodgingGaps.includes(i)) {
+        span++;
+      } else {
+        break;
+      }
+    }
+
+    setPlaceDraft({
+      name: '',
+      description: '',
+      address: '',
+      category: 'Accommodation',
+      startTime: '15:00',
+      endTime: '11:00',
+      notes: '',
+      website: '',
+      dayId: targetDayId,
+      spanDays: span,
+    });
+    setPlaceModalOpen(true);
+  };
+
+  const savePlaceDraft = async () => {
+    if (!placeDraft.name.trim()) return;
+    setBusy(true);
+    try {
+      const days = [...(trip.days ?? [])].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder
+      );
+
+      let latVal: number | undefined;
+      let lngVal: number | undefined;
+      if (placeDraft.lat && placeDraft.lng) {
+        const parsedLat = parseFloat(placeDraft.lat);
+        const parsedLng = parseFloat(placeDraft.lng);
+        if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+          latVal = parsedLat;
+          lngVal = parsedLng;
+        }
+      }
+
+      const selectedDay = days.find((d) => d.id === placeDraft.dayId);
+      const baseDate = selectedDay?.date ? selectedDay.date.slice(0, 10) : trip.startDate ? trip.startDate.slice(0, 10) : null;
+      const finalStartTime = placeDraft.startTime && baseDate ? `${baseDate}T${placeDraft.startTime}:00.000Z` : null;
+      const finalEndTime = placeDraft.endTime && baseDate ? `${baseDate}T${placeDraft.endTime}:00.000Z` : null;
+
+      const spanDays = placeDraft.spanDays ?? 1;
+      if (spanDays > 1 && placeDraft.dayId && placeDraft.dayId !== 'unassigned') {
+        const targetDays = getConsecutiveDays(placeDraft.dayId, spanDays, days);
+        const spanId = generateSpanId();
+        const taggedNotes = embedSpanId(placeDraft.notes, spanId);
+        const placesPayload = targetDays.map((targetDay, idx) => {
+          let dayStartTime: string | null = null;
+          let dayEndTime: string | null = null;
+          const targetBaseDate = targetDay.date ? targetDay.date.slice(0, 10) : baseDate;
+          if (placeDraft.startTime && targetBaseDate) {
+            dayStartTime = `${targetBaseDate}T${placeDraft.startTime}:00.000Z`;
+          }
+          if (placeDraft.endTime && targetBaseDate) {
+            dayEndTime = `${targetBaseDate}T${placeDraft.endTime}:00.000Z`;
+          }
+          return {
+            name: placeDraft.name.trim(),
+            category: placeDraft.category || undefined,
+            address: placeDraft.address || undefined,
+            lat: latVal,
+            lng: lngVal,
+            website: placeDraft.website || undefined,
+            description: placeDraft.description || undefined,
+            notes: taggedNotes || undefined,
+            dayId: targetDay.id,
+            sortOrder: (targetDay.places?.length ?? 0) + idx,
+            startTime: dayStartTime,
+            endTime: dayEndTime,
+          };
+        });
+        await apiPost(`/trips/${trip.id}/places/bulk`, { places: placesPayload });
+      } else {
+        const payload = {
+          name: placeDraft.name.trim(),
+          category: placeDraft.category || undefined,
+          address: placeDraft.address || undefined,
+          lat: latVal,
+          lng: lngVal,
+          website: placeDraft.website || undefined,
+          description: placeDraft.description || undefined,
+          notes: placeDraft.notes || undefined,
+          dayId: placeDraft.dayId ? placeDraft.dayId : null,
+          startTime: finalStartTime,
+          endTime: finalEndTime,
+        };
+        await apiPost(`/trips/${trip.id}/places`, payload);
+      }
+
+      setPlaceModalOpen(false);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const colWidth = zoomLevel === 'compact' ? 140 : 220;
   const totalGridWidth = Math.max(800, timelineDays.length * colWidth);
 
@@ -831,7 +946,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                     return (
                       <div
                         key={stay.id}
-                        onClick={() => setSelectedItem({ type: 'stay', title: stay.title, stay })}
+                        onClick={() => setSelectedItem({ type: 'stay', title: cleanPlaceOrStayTitle(stay.title), stay })}
                         style={{
                           position: 'absolute',
                           left: leftPos,
@@ -851,12 +966,12 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                           zIndex: 2,
                           boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
                         }}
-                        title={`${stay.title} (${stay.nights} nights)`}
+                        title={`${cleanPlaceOrStayTitle(stay.title)} (${stay.nights} nights)`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                           <Hotel size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
                           <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {stay.title}
+                            {cleanPlaceOrStayTitle(stay.title)}
                           </span>
                         </div>
                         <span className="badge accent" style={{ fontSize: '0.66rem', padding: '1px 6px', flexShrink: 0 }}>
@@ -938,7 +1053,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                     return (
                       <div
                         key={transit.id}
-                        onClick={() => setSelectedItem({ type: 'transit', title: transit.title, transit })}
+                        onClick={() => setSelectedItem({ type: 'transit', title: cleanPlaceOrStayTitle(transit.title), transit })}
                         style={{
                           position: 'absolute',
                           left: leftPos,
@@ -958,12 +1073,12 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                           zIndex: 2,
                           boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
                         }}
-                        title={transit.title}
+                        title={cleanPlaceOrStayTitle(transit.title)}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                           {getTransitIcon(transit.type)}
                           <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {transit.title}
+                            {cleanPlaceOrStayTitle(transit.title)}
                           </span>
                         </div>
 
@@ -1024,52 +1139,52 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                           activityPlaces.map((place, pIdx) => (
                             <div
                               key={place.id}
-                              onClick={() => setSelectedItem({ type: 'place', title: place.name, place })}
-                            style={{
-                              background: 'var(--panel-2)',
-                              border: '1px solid var(--line)',
-                              borderRadius: 6,
-                              padding: '6px 8px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 3,
-                              transition: 'all 0.15s ease',
-                            }}
-                            title={place.name}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>
-                                #{pIdx + 1}
-                              </span>
-                              <span style={{ fontSize: '0.8rem', marginRight: 2 }}>
-                                {getCategoryIcon(place.category, place.name)}
-                              </span>
-                              <span
-                                style={{
-                                  fontWeight: 600,
-                                  fontSize: '0.8rem',
-                                  color: 'var(--text)',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {place.name}
-                              </span>
-                            </div>
-
-                            {place.startTime && (
-                              <div className="small muted" style={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                <Clock size={10} /> {place.startTime} {place.endTime ? `– ${place.endTime}` : ''}
+                              onClick={() => setSelectedItem({ type: 'place', title: cleanPlaceOrStayTitle(place.name), place })}
+                              style={{
+                                background: 'var(--panel-2)',
+                                border: '1px solid var(--line)',
+                                borderRadius: 6,
+                                padding: '6px 8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 3,
+                                transition: 'all 0.15s ease',
+                              }}
+                              title={cleanPlaceOrStayTitle(place.name)}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>
+                                  #{pIdx + 1}
+                                </span>
+                                <span style={{ fontSize: '0.8rem', marginRight: 2 }}>
+                                  {getCategoryIcon(place.category, place.name)}
+                                </span>
+                                <span
+                                  style={{
+                                    fontWeight: 600,
+                                    fontSize: '0.8rem',
+                                    color: 'var(--text)',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {cleanPlaceOrStayTitle(place.name)}
+                                </span>
                               </div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  );
-                })}
+
+                              {place.startTime && (
+                                <div className="small muted" style={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                  <Clock size={10} /> {place.startTime} {place.endTime ? `– ${place.endTime}` : ''}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1077,63 +1192,205 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
         </div>
       )}
 
-      {/* LODGING GAP QUICK ADD MODAL */}
-      {gapAddModal && (
-        <Modal title="Add Accommodation for Gap" onClose={() => setGapAddModal(null)}>
-          <div className="field">
-            <label>Hotel / Property Name</label>
-            <input
-              value={bookingForm.title}
-              onChange={(e) => setBookingForm({ ...bookingForm, title: e.target.value })}
-              placeholder="e.g. Grand Hotel Flora, Airbnb Villa"
+      {/* ADD PLACE / STAY MODAL (Identical to Itinerary Tab) */}
+      {placeModalOpen && (
+        <Modal title="Add place" onClose={() => setPlaceModalOpen(false)}>
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label className="field-label-sparkle" style={{ marginBottom: 4 }}>
+              <Sparkles size={13} className="text-accent" />
+              <span>Search landmark, restaurant or address (auto-fill)</span>
+            </label>
+            <PlaceSearchInput
+              placeholder="Search a place or paste a Google Maps URL…"
               autoFocus
+              onSelect={(pl) => {
+                setPlaceDraft((prev) => ({
+                  ...prev,
+                  name: pl.name,
+                  address: pl.address,
+                  category: pl.category || prev.category,
+                  lat: String(pl.lat),
+                  lng: String(pl.lng),
+                  website: pl.website || prev.website,
+                }));
+              }}
             />
           </div>
-          <div className="grid grid-2">
-            <div className="field">
-              <label>Provider / Host</label>
+
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Title / Place Name</label>
+            <input
+              value={placeDraft.name}
+              onChange={(e) => setPlaceDraft({ ...placeDraft, name: e.target.value })}
+              placeholder="e.g. Grand Hotel Flora, Airbnb Villa"
+            />
+          </div>
+
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>
+              Full Description{' '}
+              <span className="muted small font-normal">(revealed when title is clicked in itinerary)</span>
+            </label>
+            <textarea
+              rows={2}
+              value={placeDraft.description}
+              onChange={(e) => setPlaceDraft({ ...placeDraft, description: e.target.value })}
+              placeholder="Full details, highlights, tour information, schedule, or tips…"
+            />
+          </div>
+
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ margin: 0 }}>Address or Coordinates</label>
+              {(placeDraft.address.trim() || placeDraft.name.trim() || (placeDraft.lat && placeDraft.lng)) && (
+                <a
+                  href={
+                    placeDraft.lat && placeDraft.lng
+                      ? `https://www.google.com/maps/search/?api=1&query=${placeDraft.lat},${placeDraft.lng}`
+                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([placeDraft.name, placeDraft.address, trip.destination].filter(Boolean).join(', '))}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', color: 'var(--accent)', textDecoration: 'none' }}
+                  title="Open in Google Maps in a new tab"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open map</span>
+                </a>
+              )}
+            </div>
+            <input
+              value={placeDraft.address}
+              onChange={(e) => {
+                const val = e.target.value;
+                const coordMatch = val.trim().match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+                if (coordMatch) {
+                  setPlaceDraft({ ...placeDraft, address: val, lat: coordMatch[1], lng: coordMatch[3] });
+                } else {
+                  setPlaceDraft({ ...placeDraft, address: val });
+                }
+              }}
+              placeholder="Street, city or 40.7128, -74.0060"
+            />
+          </div>
+
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ margin: 0 }}>Website</label>
+              {placeDraft.website.trim() && (
+                <a
+                  href={placeDraft.website.trim().startsWith('http://') || placeDraft.website.trim().startsWith('https://') ? placeDraft.website.trim() : `https://${placeDraft.website.trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', color: 'var(--accent)', textDecoration: 'none' }}
+                  title="Open website in new tab"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open site</span>
+                </a>
+              )}
+            </div>
+            <input
+              type="url"
+              value={placeDraft.website}
+              onChange={(e) => setPlaceDraft({ ...placeDraft, website: e.target.value })}
+              placeholder="https://…"
+            />
+          </div>
+
+          {/* Category, Day, and Span across days on the same horizontal row */}
+          <div className={allTripDays.length > 0 ? 'grid grid-3' : ''} style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
+            <div className="field small" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: 4 }}>Category</label>
+              <select value={placeDraft.category} onChange={(e) => setPlaceDraft({ ...placeDraft, category: e.target.value })}>
+                <option value="Accommodation">🛏 Accommodation / Hotel</option>
+                <option value="Sightseeing">🏛 Sightseeing</option>
+                <option value="Restaurant">🍽 Restaurant / Dining</option>
+                <option value="Activity">🎟 Activity / Tour</option>
+                <option value="Flight">✈ Flight</option>
+                <option value="Train">🚆 Train / Rail</option>
+                <option value="Transport">🚗 Transport / Rental</option>
+                <option value="Shopping">🛍 Shopping</option>
+                <option value="Nature">🌲 Nature / Beach / Park</option>
+                <option value="Note">📝 Note / Reminder</option>
+                <option value="">Auto-infer with AI</option>
+              </select>
+            </div>
+
+            {allTripDays.length > 0 && (
+              <div className="field small" style={{ marginBottom: 0 }}>
+                <label style={{ marginBottom: 4 }}>Day</label>
+                <select value={placeDraft.dayId ?? ''} onChange={(e) => setPlaceDraft({ ...placeDraft, dayId: e.target.value })}>
+                  <option value="">No day (unassigned)</option>
+                  {allTripDays.map((d, i) => (
+                    <option key={d.id} value={d.id}>
+                      {`Day ${i + 1}${d.label ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {allTripDays.length > 0 && (
+              <div className="field small" style={{ marginBottom: 0 }}>
+                <label style={{ marginBottom: 4 }}>Span across days</label>
+                <div className="row items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={allTripDays.length}
+                    value={placeDraft.spanDays ?? 1}
+                    disabled={!placeDraft.dayId || placeDraft.dayId === 'unassigned'}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(allTripDays.length, parseInt(e.target.value || '1', 10)));
+                      setPlaceDraft({ ...placeDraft, spanDays: val });
+                    }}
+                    style={{ width: '65px' }}
+                  />
+                  <span className="small muted" style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    {(placeDraft.spanDays ?? 1) > 1 ? 'consec. days' : 'day (single)'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-2" style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
+            <div className="field small" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: 4 }}>Start / Check-in Time</label>
               <input
-                value={bookingForm.provider}
-                onChange={(e) => setBookingForm({ ...bookingForm, provider: e.target.value })}
-                placeholder="e.g. Booking.com, Marriott"
+                type="time"
+                value={placeDraft.startTime}
+                onChange={(e) => setPlaceDraft({ ...placeDraft, startTime: e.target.value })}
               />
             </div>
-            <div className="field">
-              <label>Confirmation Reference</label>
+            <div className="field small" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: 4 }}>End / Check-out Time</label>
               <input
-                value={bookingForm.reference}
-                onChange={(e) => setBookingForm({ ...bookingForm, reference: e.target.value })}
-                placeholder="e.g. HTL-98765"
+                type="time"
+                value={placeDraft.endTime}
+                onChange={(e) => setPlaceDraft({ ...placeDraft, endTime: e.target.value })}
               />
             </div>
           </div>
-          <div className="grid grid-2">
-            <div className="field">
-              <label>Check-in Date & Time</label>
-              <input
-                type="datetime-local"
-                value={bookingForm.startAt}
-                onChange={(e) => {
-                  const startAt = e.target.value;
-                  setBookingForm({ ...bookingForm, startAt, endAt: endForStart(startAt, bookingForm.endAt) });
-                }}
-              />
-            </div>
-            <div className="field">
-              <label>Check-out Date & Time</label>
-              <input
-                type="datetime-local"
-                min={bookingForm.startAt || undefined}
-                value={bookingForm.endAt}
-                onChange={(e) => setBookingForm({ ...bookingForm, endAt: e.target.value })}
-              />
-            </div>
+
+          <div className="field" style={{ marginBottom: '0.6rem' }}>
+            <label style={{ marginBottom: 4 }}>Notes & Confirmation info</label>
+            <textarea
+              rows={2}
+              value={placeDraft.notes}
+              onChange={(e) => setPlaceDraft({ ...placeDraft, notes: e.target.value })}
+              placeholder="e.g. Booking confirmation #, key code, host contact…"
+            />
           </div>
+
           <div className="modal-actions">
-            <button className="btn primary" onClick={saveBookingForm} disabled={busy || !bookingForm.title}>
-              {busy ? 'Saving…' : 'Add Accommodation'}
+            <button className="btn primary" onClick={savePlaceDraft} disabled={busy || !placeDraft.name.trim()}>
+              {busy ? 'Saving…' : 'Save'}
             </button>
-            <button className="btn" onClick={() => setGapAddModal(null)}>Cancel</button>
+            <button className="btn" onClick={() => setPlaceModalOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}

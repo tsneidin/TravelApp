@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Calendar, Clock, MapPin, Plane, Hotel, Compass, AlertCircle,
-  ZoomIn, ZoomOut, Filter, ExternalLink
+  ZoomIn, ZoomOut, Filter, ExternalLink, Car, Train, Bus
 } from 'lucide-react';
 import type { Trip, Booking, Place, Day } from '../../lib/types';
 import { Modal } from '../../components/Modal';
@@ -33,12 +33,13 @@ interface StaySpan {
   nights: number;
   booking?: Booking;
   place?: Place;
+  laneIndex?: number;
 }
 
 interface TransitSpan {
   id: string;
   title: string;
-  type: 'flight' | 'train' | 'car' | 'transit';
+  type: 'flight' | 'train' | 'car' | 'bus' | 'transit';
   provider?: string | null;
   reference?: string | null;
   startDayIndex: number;
@@ -47,12 +48,80 @@ interface TransitSpan {
   endTime?: string | null;
   booking?: Booking;
   place?: Place;
+  laneIndex?: number;
 }
 
 function parseDateKey(val?: string | null): string | null {
   if (!val) return null;
   const m = val.match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : null;
+}
+
+function detectTransitType(str: string, defaultType: TransitSpan['type'] = 'transit'): TransitSpan['type'] {
+  const s = str.toLowerCase();
+  if (s.includes('flight') || s.includes('airline') || s.includes('air') || s.includes('plane') || s.includes('fly')) {
+    return 'flight';
+  }
+  if (s.includes('train') || s.includes('rail') || s.includes('eurostar') || s.includes('amtrak') || s.includes('freccia') || s.includes('italo')) {
+    return 'train';
+  }
+  if (s.includes('bus') || s.includes('flixbus') || s.includes('coach') || s.includes('shuttle')) {
+    return 'bus';
+  }
+  if (s.includes('car') || s.includes('rental') || s.includes('drive') || s.includes('hertz') || s.includes('avis') || s.includes('enterprise') || s.includes('sixt')) {
+    return 'car';
+  }
+  return defaultType;
+}
+
+function getTransitIcon(type: TransitSpan['type']) {
+  switch (type) {
+    case 'flight':
+      return <Plane size={13} style={{ color: '#818cf8', flexShrink: 0 }} />;
+    case 'train':
+      return <Train size={13} style={{ color: '#38bdf8', flexShrink: 0 }} />;
+    case 'bus':
+      return <Bus size={13} style={{ color: '#fb923c', flexShrink: 0 }} />;
+    case 'car':
+      return <Car size={13} style={{ color: '#facc15', flexShrink: 0 }} />;
+    default:
+      return <Plane size={13} style={{ color: '#818cf8', flexShrink: 0 }} />;
+  }
+}
+
+function getTransitColors(type: TransitSpan['type']) {
+  switch (type) {
+    case 'flight':
+      return {
+        bg: 'linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(129, 140, 248, 0.14))',
+        border: 'rgba(129, 140, 248, 0.55)',
+        badge: 'rgba(99, 102, 241, 0.25)',
+      };
+    case 'train':
+      return {
+        bg: 'linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(14, 165, 233, 0.14))',
+        border: 'rgba(56, 189, 248, 0.55)',
+        badge: 'rgba(56, 189, 248, 0.25)',
+      };
+    case 'bus':
+      return {
+        bg: 'linear-gradient(135deg, rgba(251, 146, 60, 0.22), rgba(249, 115, 22, 0.14))',
+        border: 'rgba(251, 146, 60, 0.55)',
+        badge: 'rgba(251, 146, 60, 0.25)',
+      };
+    case 'car':
+      return {
+        bg: 'linear-gradient(135deg, rgba(250, 204, 21, 0.22), rgba(234, 179, 8, 0.14))',
+        border: 'rgba(250, 204, 21, 0.55)',
+        badge: 'rgba(250, 204, 21, 0.25)',
+      };
+    default:
+      return {
+        bg: 'linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(56, 189, 248, 0.14))',
+        border: 'rgba(129, 140, 248, 0.55)',
+        badge: 'rgba(99, 102, 241, 0.25)',
+      };
+  }
 }
 
 export function TimelineTab({ trip }: TimelineTabProps) {
@@ -108,8 +177,6 @@ export function TimelineTab({ trip }: TimelineTabProps) {
     return sortedDateKeys.map((dateKey, idx) => {
       const dayRecord = dayMap.get(dateKey);
       const dateObj = new Date(dateKey + 'T00:00:00');
-
-      // Extract places for this day
       const dayPlaces = dayRecord?.places ?? [];
 
       return {
@@ -123,13 +190,13 @@ export function TimelineTab({ trip }: TimelineTabProps) {
     });
   }, [trip.days, trip.startDate, trip.endDate]);
 
-  // 2. Map Stays / Accommodations across the timeline
-  const staySpans = useMemo<StaySpan[]>(() => {
-    if (timelineDays.length === 0) return [];
+  // 2. Map Stays / Accommodations across the timeline with multi-lane packing
+  const { staySpans, totalStayLanes } = useMemo(() => {
+    if (timelineDays.length === 0) return { staySpans: [], totalStayLanes: 1 };
     const dateToIndex = new Map<string, number>();
     timelineDays.forEach((d, idx) => dateToIndex.set(d.dateStr, idx));
 
-    const stays: StaySpan[] = [];
+    const rawStays: StaySpan[] = [];
 
     // Check hotel bookings
     for (const b of trip.bookings ?? []) {
@@ -143,7 +210,7 @@ export function TimelineTab({ trip }: TimelineTabProps) {
         endIdx = Math.min(endIdx, timelineDays.length - 1);
 
         const nights = Math.max(1, endIdx - startIdx);
-        stays.push({
+        rawStays.push({
           id: b.id,
           title: b.title,
           provider: b.provider,
@@ -162,12 +229,11 @@ export function TimelineTab({ trip }: TimelineTabProps) {
       for (const p of d.places) {
         const cat = (p.category || '').toLowerCase();
         if (cat === 'lodging' || cat === 'hotel') {
-          // Only add if not already captured by booking
-          const exists = stays.some(
+          const exists = rawStays.some(
             (s) => s.title.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(s.title.toLowerCase())
           );
           if (!exists) {
-            stays.push({
+            rawStays.push({
               id: p.id,
               title: p.name,
               startDayIndex: dIdx,
@@ -180,20 +246,47 @@ export function TimelineTab({ trip }: TimelineTabProps) {
       }
     }
 
-    return stays;
+    // Sort stays by start index, then duration descending
+    const sorted = [...rawStays].sort((a, b) => {
+      if (a.startDayIndex !== b.startDayIndex) return a.startDayIndex - b.startDayIndex;
+      return (b.endDayIndex - b.startDayIndex) - (a.endDayIndex - a.startDayIndex);
+    });
+
+    // Multi-lane packing for stays
+    const laneEnds: number[] = [];
+    const packedStays: StaySpan[] = sorted.map((stay) => {
+      let lane = -1;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (stay.startDayIndex >= laneEnds[i]) {
+          lane = i;
+          laneEnds[i] = stay.endDayIndex;
+          break;
+        }
+      }
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(stay.endDayIndex);
+      }
+      return { ...stay, laneIndex: lane };
+    });
+
+    return {
+      staySpans: packedStays,
+      totalStayLanes: Math.max(1, laneEnds.length),
+    };
   }, [timelineDays, trip.bookings]);
 
-  // 3. Map Transit / Flights across the timeline
-  const transitSpans = useMemo<TransitSpan[]>(() => {
-    if (timelineDays.length === 0) return [];
+  // 3. Map Transit / Flights across the timeline with multi-lane packing
+  const { transitSpans, totalTransitLanes } = useMemo(() => {
+    if (timelineDays.length === 0) return { transitSpans: [], totalTransitLanes: 1 };
     const dateToIndex = new Map<string, number>();
     timelineDays.forEach((d, idx) => dateToIndex.set(d.dateStr, idx));
 
-    const transits: TransitSpan[] = [];
+    const rawTransits: TransitSpan[] = [];
 
-    // Check transit bookings (flight, car, train)
+    // Check transit bookings (flight, car)
     for (const b of trip.bookings ?? []) {
-      if (b.type === 'flight' || b.type === 'car' || b.type === 'activity') {
+      if (b.type === 'flight' || b.type === 'car') {
         const sKey = parseDateKey(b.startAt);
         const eKey = parseDateKey(b.endAt);
 
@@ -201,10 +294,12 @@ export function TimelineTab({ trip }: TimelineTabProps) {
         let endIdx = eKey && dateToIndex.has(eKey) ? dateToIndex.get(eKey)! : startIdx;
         endIdx = Math.min(Math.max(startIdx, endIdx), timelineDays.length - 1);
 
-        transits.push({
+        const tType = b.type === 'flight' ? 'flight' : b.type === 'car' ? 'car' : detectTransitType(b.title);
+
+        rawTransits.push({
           id: b.id,
           title: b.title,
-          type: b.type === 'flight' ? 'flight' : b.type === 'car' ? 'car' : 'transit',
+          type: tType,
           provider: b.provider,
           reference: b.reference,
           startDayIndex: startIdx,
@@ -222,21 +317,60 @@ export function TimelineTab({ trip }: TimelineTabProps) {
       for (const p of d.places) {
         const cat = (p.category || '').toLowerCase();
         if (cat === 'transport' || cat === 'transit' || cat === 'flight') {
-          transits.push({
-            id: p.id,
-            title: p.name,
-            type: p.name.toLowerCase().includes('flight') || p.name.toLowerCase().includes('air') ? 'flight' : 'transit',
-            startDayIndex: dIdx,
-            endDayIndex: dIdx,
-            startTime: p.startTime,
-            endTime: p.endTime,
-            place: p,
-          });
+          // De-duplicate if already captured by a booking
+          const exists = rawTransits.some(
+            (t) =>
+              (t.booking && t.title.toLowerCase().trim() === p.name.toLowerCase().trim()) ||
+              (t.reference && p.notes && p.notes.includes(t.reference))
+          );
+          if (!exists) {
+            rawTransits.push({
+              id: p.id,
+              title: p.name,
+              type: detectTransitType(p.name, 'transit'),
+              startDayIndex: dIdx,
+              endDayIndex: dIdx,
+              startTime: p.startTime,
+              endTime: p.endTime,
+              place: p,
+            });
+          }
         }
       }
     }
 
-    return transits;
+    // Sort transits chronologically by startDayIndex, then by duration descending, then title
+    const sorted = [...rawTransits].sort((a, b) => {
+      if (a.startDayIndex !== b.startDayIndex) return a.startDayIndex - b.startDayIndex;
+      const durA = a.endDayIndex - a.startDayIndex;
+      const durB = b.endDayIndex - b.startDayIndex;
+      if (durB !== durA) return durB - durA;
+      return a.title.localeCompare(b.title);
+    });
+
+    // Multi-lane packing algorithm for transit items
+    const laneEnds: number[] = [];
+    const packedTransits: TransitSpan[] = sorted.map((item) => {
+      let lane = -1;
+      for (let i = 0; i < laneEnds.length; i++) {
+        // Items must not overlap horizontally within the same lane
+        if (item.startDayIndex > laneEnds[i]) {
+          lane = i;
+          laneEnds[i] = item.endDayIndex;
+          break;
+        }
+      }
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(item.endDayIndex);
+      }
+      return { ...item, laneIndex: lane };
+    });
+
+    return {
+      transitSpans: packedTransits,
+      totalTransitLanes: Math.max(1, laneEnds.length),
+    };
   }, [timelineDays, trip.bookings]);
 
   // 4. Compute Lodging Gap Analysis (Which nights have no hotel)
@@ -277,6 +411,12 @@ export function TimelineTab({ trip }: TimelineTabProps) {
 
   const colWidth = zoomLevel === 'compact' ? 140 : 220;
   const totalGridWidth = Math.max(800, timelineDays.length * colWidth);
+
+  // Height sizing for multi-lane tracks
+  const barHeight = 36;
+  const barGap = 6;
+  const staysTrackHeight = Math.max(52, totalStayLanes * (barHeight + barGap) + 8);
+  const transitTrackHeight = Math.max(52, totalTransitLanes * (barHeight + barGap) + 8);
 
   return (
     <div>
@@ -474,9 +614,9 @@ export function TimelineTab({ trip }: TimelineTabProps) {
 
             {/* 2. TRACK: ACCOMMODATIONS (🏨) */}
             {(trackFilter === 'all' || trackFilter === 'stays') && (
-              <div style={{ borderBottom: '1px solid var(--line)', padding: '12px 0' }}>
-                <div style={{ padding: '0 12px 8px', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.76rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  <Hotel size={13} style={{ color: 'var(--accent)' }} /> Stays & Accommodations
+              <div style={{ borderBottom: '1px solid var(--line)', padding: '10px 0' }}>
+                <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <Hotel size={13} style={{ color: 'var(--accent)' }} /> Stays & Accommodations {totalStayLanes > 1 ? `(${totalStayLanes} Lanes)` : ''}
                 </div>
 
                 <div
@@ -484,12 +624,12 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                     display: 'grid',
                     gridTemplateColumns: `repeat(${timelineDays.length}, ${colWidth}px)`,
                     position: 'relative',
-                    minHeight: 50,
+                    minHeight: staysTrackHeight,
                   }}
                 >
                   {/* Grid background vertical lines */}
                   {timelineDays.map((d) => (
-                    <div key={d.dateStr} style={{ borderRight: '1px solid rgba(255,255,255,0.05)', minHeight: 48 }} />
+                    <div key={d.dateStr} style={{ borderRight: '1px solid rgba(255,255,255,0.05)', minHeight: staysTrackHeight }} />
                   ))}
 
                   {/* Render Lodging Spanning Bars */}
@@ -497,6 +637,8 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                     const spanCols = Math.max(1, stay.endDayIndex - stay.startDayIndex);
                     const leftPos = stay.startDayIndex * colWidth + 6;
                     const width = spanCols * colWidth - 12;
+                    const lane = stay.laneIndex ?? 0;
+                    const topPos = 4 + lane * (barHeight + barGap);
 
                     return (
                       <div
@@ -506,29 +648,30 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                           position: 'absolute',
                           left: leftPos,
                           width,
-                          top: 4,
-                          height: 38,
+                          top: topPos,
+                          height: barHeight,
                           background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(56, 189, 248, 0.14))',
                           border: '1px solid var(--accent)',
                           borderRadius: 8,
-                          padding: '4px 10px',
+                          padding: '0 10px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
+                          gap: 8,
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
                           zIndex: 2,
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
                         }}
                         title={`${stay.title} (${stay.nights} nights)`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                           <Hotel size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                          <span style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {stay.title}
                           </span>
                         </div>
-                        <span className="badge accent" style={{ fontSize: '0.68rem', padding: '1px 6px', flexShrink: 0 }}>
+                        <span className="badge accent" style={{ fontSize: '0.66rem', padding: '1px 6px', flexShrink: 0 }}>
                           {stay.nights} {stay.nights === 1 ? 'night' : 'nights'}
                         </span>
                       </div>
@@ -544,11 +687,11 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                         left: gapDayIdx * colWidth + 6,
                         width: colWidth - 12,
                         top: 4,
-                        height: 38,
+                        height: barHeight,
                         background: 'repeating-linear-gradient(45deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.08) 6px, rgba(245, 158, 11, 0.16) 6px, rgba(245, 158, 11, 0.16) 12px)',
                         border: '1px dashed var(--warning, #f59e0b)',
                         borderRadius: 8,
-                        padding: '4px 8px',
+                        padding: '0 8px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -569,9 +712,9 @@ export function TimelineTab({ trip }: TimelineTabProps) {
 
             {/* 3. TRACK: TRANSIT & FLIGHTS (✈️) */}
             {(trackFilter === 'all' || trackFilter === 'transit') && (
-              <div style={{ borderBottom: '1px solid var(--line)', padding: '12px 0' }}>
-                <div style={{ padding: '0 12px 8px', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.76rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  <Plane size={13} style={{ color: '#38bdf8' }} /> Transit & Travel Legs
+              <div style={{ borderBottom: '1px solid var(--line)', padding: '10px 0' }}>
+                <div style={{ padding: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <Plane size={13} style={{ color: '#818cf8' }} /> Transit & Travel Legs {totalTransitLanes > 1 ? `(${totalTransitLanes} Lanes)` : ''}
                 </div>
 
                 <div
@@ -579,17 +722,27 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                     display: 'grid',
                     gridTemplateColumns: `repeat(${timelineDays.length}, ${colWidth}px)`,
                     position: 'relative',
-                    minHeight: 50,
+                    minHeight: transitTrackHeight,
                   }}
                 >
                   {timelineDays.map((d) => (
-                    <div key={d.dateStr} style={{ borderRight: '1px solid rgba(255,255,255,0.05)', minHeight: 48 }} />
+                    <div key={d.dateStr} style={{ borderRight: '1px solid rgba(255,255,255,0.05)', minHeight: transitTrackHeight }} />
                   ))}
 
                   {transitSpans.map((transit) => {
                     const spanCols = Math.max(1, transit.endDayIndex - transit.startDayIndex + 1);
                     const leftPos = transit.startDayIndex * colWidth + 6;
                     const width = spanCols * colWidth - 12;
+                    const lane = transit.laneIndex ?? 0;
+                    const topPos = 4 + lane * (barHeight + barGap);
+                    const theme = getTransitColors(transit.type);
+
+                    // Extract short time label if available
+                    let timeLabel: string | null = null;
+                    if (transit.startTime) {
+                      const m = transit.startTime.match(/(\d{1,2}:\d{2})/);
+                      if (m) timeLabel = m[1];
+                    }
 
                     return (
                       <div
@@ -599,33 +752,42 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                           position: 'absolute',
                           left: leftPos,
                           width,
-                          top: 4,
-                          height: 38,
-                          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(56, 189, 248, 0.16))',
-                          border: '1px solid #818cf8',
+                          top: topPos,
+                          height: barHeight,
+                          background: theme.bg,
+                          border: `1px solid ${theme.border}`,
                           borderRadius: 8,
-                          padding: '4px 10px',
+                          padding: '0 10px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
+                          gap: 8,
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
                           zIndex: 2,
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
                         }}
                         title={transit.title}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                          <Plane size={14} style={{ color: '#818cf8', flexShrink: 0 }} />
-                          <span style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+                          {getTransitIcon(transit.type)}
+                          <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {transit.title}
                           </span>
                         </div>
-                        {transit.reference && (
-                          <span className="badge" style={{ fontSize: '0.68rem', padding: '1px 6px', flexShrink: 0, opacity: 0.85 }}>
-                            Ref: {transit.reference}
-                          </span>
-                        )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                          {timeLabel && (
+                            <span className="badge" style={{ fontSize: '0.64rem', padding: '1px 5px', opacity: 0.9 }}>
+                              <Clock size={9} style={{ marginRight: 2 }} /> {timeLabel}
+                            </span>
+                          )}
+                          {transit.reference && (
+                            <span className="badge" style={{ fontSize: '0.64rem', padding: '1px 5px', opacity: 0.85 }}>
+                              {transit.reference}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

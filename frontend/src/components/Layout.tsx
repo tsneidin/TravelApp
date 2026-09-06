@@ -298,24 +298,28 @@ export function Layout() {
           <Menu size={20} />
         </button>
         <div className="mobile-top-title-wrap">
-          <Link to="/" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            {currentTrip ? (
-              <>
-                <span className="mobile-top-title">{currentTrip.name}</span>
-                {currentTrip.destination && (
-                  <span className="mobile-top-sub">{currentTrip.destination}</span>
-                )}
-              </>
-            ) : location.pathname === '/calendar' ? (
-              <span className="mobile-top-title">Calendar</span>
-            ) : location.pathname === '/email' ? (
-              <span className="mobile-top-title">Email Imports</span>
-            ) : (
-              <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                <Plane size={18} style={{ color: 'var(--accent)' }} />
-                <span className="mobile-top-title">TravelApp</span>
-              </div>
-            )}
+          <Link
+            to="/"
+            style={{
+              textDecoration: 'none',
+              color: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
+              maxWidth: '100%',
+            }}
+            title="Go to Home / Your Trips"
+          >
+            <Plane size={20} className="side-brand-icon" style={{ flexShrink: 0 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, textAlign: 'left' }}>
+              <span className="mobile-top-title" style={{ fontWeight: 800 }}>
+                {currentTrip ? currentTrip.name : location.pathname === '/calendar' ? 'Calendar' : location.pathname === '/email' ? 'Email Imports' : 'TravelApp'}
+              </span>
+              {currentTrip?.destination && (
+                <span className="mobile-top-sub">{currentTrip.destination}</span>
+              )}
+            </div>
           </Link>
         </div>
         <div className="mobile-top-actions">
@@ -401,8 +405,8 @@ export function Layout() {
             }}
             title="Go to Home / Your Trips"
           >
-            <Plane size={22} style={{ flexShrink: 0, color: 'var(--accent)' }} />
-            <span style={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: '1.05rem' }}>TravelApp</span>
+            <Plane size={22} className="side-brand-icon" style={{ flexShrink: 0 }} />
+            <span className="side-brand-title" style={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: '1.05rem' }}>TravelApp</span>
           </Link>
           <button
             type="button"

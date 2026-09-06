@@ -1,9 +1,10 @@
-import React, { useRef, useState } from 'react';
-import { Upload, KeyRound, User, Check, Sparkles } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Upload, KeyRound, User, Check, Sparkles, Palette } from 'lucide-react';
 import { Modal } from './Modal';
 import { Avatar, PRESET_AVATARS } from './Avatar';
 import { useAuth } from '../lib/auth';
 import { apiPatch, apiPost, uploadAvatar } from '../lib/api';
+import { THEMES, getSavedTheme, applyTheme, type ThemeId } from '../lib/theme';
 
 export interface UserSettingsModalProps {
   onClose: () => void;
@@ -13,13 +14,32 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
   const { user, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'theme' | 'security'>('profile');
   const [name, setName] = useState(user?.name ?? '');
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(user?.avatarUrl ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState('');
   const [profileError, setProfileError] = useState('');
+
+  // Theme state
+  const [currentTheme, setCurrentTheme] = useState<ThemeId>(getSavedTheme);
+
+  useEffect(() => {
+    const handleThemeChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ theme: ThemeId }>;
+      if (customEvent.detail?.theme) {
+        setCurrentTheme(customEvent.detail.theme);
+      }
+    };
+    window.addEventListener('travelapp:theme-changed', handleThemeChange);
+    return () => window.removeEventListener('travelapp:theme-changed', handleThemeChange);
+  }, []);
+
+  const handleSelectTheme = (id: ThemeId) => {
+    applyTheme(id);
+    setCurrentTheme(id);
+  };
 
   // Password fields
   const [currentPassword, setCurrentPassword] = useState('');
@@ -104,13 +124,20 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
   return (
     <Modal title="Account & Member Settings" onClose={onClose} wide>
       {/* Settings Navigation Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, borderBottom: '1px solid var(--line)', paddingBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, borderBottom: '1px solid var(--line)', paddingBottom: 10, flexWrap: 'wrap' }}>
         <button
           type="button"
           className={`btn sm ${activeTab === 'profile' ? 'primary' : 'ghost'}`}
           onClick={() => setActiveTab('profile')}
         >
           <User size={14} /> Profile & Avatar
+        </button>
+        <button
+          type="button"
+          className={`btn sm ${activeTab === 'theme' ? 'primary' : 'ghost'}`}
+          onClick={() => setActiveTab('theme')}
+        >
+          <Palette size={14} /> Appearance & Theme
         </button>
         <button
           type="button"
@@ -233,14 +260,95 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
           </div>
 
           <div className="modal-actions">
-            <button type="button" className="btn" onClick={onClose}>
-              Cancel
-            </button>
             <button type="submit" className="btn primary" disabled={savingProfile || !name.trim()}>
               {savingProfile ? 'Saving…' : 'Save Changes'}
             </button>
+            <button type="button" className="btn" onClick={onClose}>
+              Cancel
+            </button>
           </div>
         </form>
+      )}
+
+      {activeTab === 'theme' && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: '1rem' }}>Workspace Theme</h3>
+            <p className="small muted" style={{ margin: 0 }}>
+              Choose your personalized workspace theme. Themes customize color palettes, navigation accents, card borders, and brand gradients across the app.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, marginBottom: 20 }}>
+            {THEMES.map((theme) => {
+              const isSelected = currentTheme === theme.id;
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => handleSelectTheme(theme.id)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    padding: 14,
+                    borderRadius: 10,
+                    border: isSelected ? '2px solid var(--accent)' : '1px solid var(--line)',
+                    background: isSelected ? 'rgba(34, 211, 238, 0.08)' : 'var(--panel)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                    position: 'relative',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: '50%',
+                          background: theme.primaryColor,
+                          border: '2px solid rgba(255,255,255,0.2)',
+                          boxShadow: `0 0 8px ${theme.primaryColor}55`,
+                        }}
+                      />
+                      <span style={{ fontWeight: 700, fontSize: '0.94rem', color: 'var(--text)' }}>
+                        {theme.name}
+                      </span>
+                    </div>
+
+                    {isSelected && (
+                      <span className="badge ok" style={{ fontSize: '0.7rem', padding: '2px 6px', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <Check size={11} /> Active
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="small muted" style={{ fontSize: '0.78rem', lineHeight: 1.35, marginBottom: 10 }}>
+                    {theme.tagline}
+                  </span>
+
+                  {/* Color Palette Preview Bar */}
+                  <div style={{ display: 'flex', width: '100%', height: 6, borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div style={{ flex: 1, background: theme.primaryColor }} />
+                    <div style={{ flex: 1, background: theme.secondaryColor }} />
+                    <div style={{ flex: 1, background: theme.bgColor }} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="modal-actions">
+            <button type="button" className="btn primary" onClick={onClose}>
+              Done
+            </button>
+            <button type="button" className="btn" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
       {activeTab === 'security' && (
@@ -293,15 +401,15 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
           </div>
 
           <div className="modal-actions">
-            <button type="button" className="btn" onClick={onClose}>
-              Cancel
-            </button>
             <button
               type="submit"
               className="btn primary"
               disabled={savingPassword || !currentPassword || !newPassword || newPassword !== confirmPassword}
             >
               {savingPassword ? 'Updating…' : 'Update Password'}
+            </button>
+            <button type="button" className="btn" onClick={onClose}>
+              Cancel
             </button>
           </div>
         </form>

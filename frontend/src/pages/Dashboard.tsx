@@ -7,7 +7,6 @@ import { endForStart } from '../lib/dateRange';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
 import { Modal } from '../components/Modal';
-import { ThemeSelector } from '../components/ThemeSelector';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -78,7 +77,6 @@ export function Dashboard() {
           <p className="page-sub">Plan upcoming journeys or relive past ones.</p>
         </div>
         <div className="row" style={{ gap: 10, alignItems: 'center' }}>
-          <ThemeSelector />
           <button className="btn primary" onClick={() => setShowCreate(true)}>
             <Plus size={16} /> New trip
           </button>

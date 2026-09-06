@@ -63,6 +63,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
             destination={trip.destination}
             focusPlaceId={selected}
             tripId={trip.id}
+            days={trip.days}
             mapViews={trip.mapViews}
             onMapViewsChange={reload}
             onPlaceClick={setSelected}

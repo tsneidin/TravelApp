@@ -2432,3 +2432,107 @@ a.link:hover {
   font-size: 0.72rem;
 }
 
+.active-layer-btn {
+  background: rgba(34, 211, 238, 0.25) !important;
+  border-color: var(--accent, #22d3ee) !important;
+  color: var(--accent, #22d3ee) !important;
+}
+
+/* Map Transit & Route Planner Drawer */
+.map-transit-drawer {
+  position: absolute;
+  top: 48px;
+  left: 10px;
+  z-index: 10;
+  width: 320px;
+  max-width: calc(100% - 20px);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  color: #f8fafc;
+  pointer-events: auto;
+}
+
+.map-mode-selector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mode-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mode-btn.active {
+  background: var(--accent, #0891b2);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dot-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.map-route-input {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.8rem;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.map-route-input:focus {
+  border-color: var(--accent, #22d3ee);
+  box-shadow: 0 0 0 1px var(--accent, #22d3ee);
+}
+
+.map-route-summary {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.transit-step-row {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 5px;
+  padding: 5px 7px;
+  border-left: 2px solid var(--accent, #22d3ee);
+}
+
+

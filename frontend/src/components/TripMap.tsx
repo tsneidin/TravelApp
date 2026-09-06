@@ -1,6 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Compass, Plus, X } from 'lucide-react';
-import type { GeocodedPlace, MapView, Place } from '../lib/types';
+import {
+  ArrowDownUp,
+  Bookmark,
+  Car,
+  ChevronDown,
+  ChevronRight,
+  Compass,
+  Footprints,
+  Layers,
+  Navigation,
+  Plus,
+  Route,
+  Train,
+  X,
+} from 'lucide-react';
+import type { Day, GeocodedPlace, MapView, Place } from '../lib/types';
 import { apiDelete, apiPost } from '../lib/api';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
@@ -86,6 +100,7 @@ export function TripMap({
   focusPlaceId,
   activePlaceId,
   tripId,
+  days,
   mapViews,
   onMapViewsChange,
   onPlaceClick,
@@ -98,6 +113,7 @@ export function TripMap({
   focusPlaceId?: string;
   activePlaceId?: string;
   tripId?: string;
+  days?: Day[];
   mapViews?: MapView[];
   onMapViewsChange?: () => void | Promise<void>;
   onPlaceClick?: (placeId: string) => void;
@@ -109,6 +125,8 @@ export function TripMap({
   const overlaysRef = useRef<any[]>([]);
   const markersMapRef = useRef<Map<string, { marker: any; coord: Coord; place: PlaceWithStop; infoContent: string }>>(new Map());
   const resolvedCoordsRef = useRef<Coord[]>([]);
+  const transitLayerRef = useRef<any>(null);
+  const directionsRendererRef = useRef<any>(null);
   const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
   const mapClickRef = useRef(onMapClick);
@@ -117,6 +135,21 @@ export function TripMap({
   const [isSavingView, setIsSavingView] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [savingPending, setSavingPending] = useState(false);
+
+  // Transit layer & route planner state
+  const [showTransitLayer, setShowTransitLayer] = useState(false);
+  const [showRouter, setShowRouter] = useState(false);
+  const [originInput, setOriginInput] = useState('');
+  const [destInput, setDestInput] = useState('');
+  const [travelMode, setTravelMode] = useState<'TRANSIT' | 'DRIVING' | 'WALKING' | 'BICYCLING'>('TRANSIT');
+  const [calculating, setCalculating] = useState(false);
+  const [routeResult, setRouteResult] = useState<any>(null);
+  const [routeError, setRouteError] = useState('');
+  const [targetDayId, setTargetDayId] = useState('');
+  const [savingRoute, setSavingRoute] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+
   const targetId = activePlaceId || focusPlaceId;
 
   useEffect(() => {
@@ -390,6 +423,16 @@ export function TripMap({
     return () => { cancelled = true; };
   }, [signature, fallbackSig, destination, targetId, onPlaceClick]);
 
+  const toggleTransitLayer = () => {
+    if (!mapRef.current || !window.google?.maps) return;
+    if (!transitLayerRef.current) {
+      transitLayerRef.current = new window.google.maps.TransitLayer();
+    }
+    const nextState = !showTransitLayer;
+    setShowTransitLayer(nextState);
+    transitLayerRef.current.setMap(nextState ? mapRef.current : null);
+  };
+
   const fitAllStops = () => {
     if (!mapRef.current || !window.google?.maps) return;
     infoWindowRef.current?.close();
@@ -451,6 +494,157 @@ export function TripMap({
     }
   };
 
+  const calculateRoute = async () => {
+    if (!mapRef.current || !window.google?.maps || !originInput.trim() || !destInput.trim()) return;
+    setCalculating(true);
+    setRouteError('');
+    setRouteResult(null);
+
+    try {
+      const directionsService = new window.google.maps.DirectionsService();
+      if (!directionsRendererRef.current) {
+        directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
+          map: mapRef.current,
+          suppressMarkers: false,
+          polylineOptions: {
+            strokeColor: '#0891b2',
+            strokeWeight: 5,
+            strokeOpacity: 0.85,
+          },
+        });
+      } else {
+        directionsRendererRef.current.setMap(mapRef.current);
+      }
+
+      const mode = (window.google.maps.TravelMode as any)[travelMode] || window.google.maps.TravelMode.TRANSIT;
+      const request: any = {
+        origin: originInput.trim(),
+        destination: destInput.trim(),
+        travelMode: mode,
+      };
+
+      const result = await new Promise<any>((resolve, reject) => {
+        directionsService.route(request, (res: any, status: any) => {
+          if (status === window.google.maps.DirectionsStatus.OK) {
+            resolve(res);
+          } else {
+            reject(new Error(`Routing calculation: ${status}`));
+          }
+        });
+      });
+
+      directionsRendererRef.current.setDirections(result);
+
+      const leg = result.routes?.[0]?.legs?.[0];
+      if (leg) {
+        const transitLines: string[] = [];
+        const steps: { instruction: string; distance?: string; duration?: string; lineName?: string }[] = [];
+
+        leg.steps?.forEach((step: any) => {
+          const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+          if (step.transit) {
+            const line = step.transit.line;
+            const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
+            transitLines.push(lineName);
+            steps.push({
+              instruction: `${line.vehicle?.name || 'Transit'} ${lineName}: ${step.transit.departure_stop?.name || ''} → ${step.transit.arrival_stop?.name || ''} (${step.transit.num_stops || 1} stops)`,
+              distance: step.distance?.text,
+              duration: step.duration?.text,
+              lineName,
+            });
+          } else {
+            steps.push({
+              instruction: cleanInstruction,
+              distance: step.distance?.text,
+              duration: step.duration?.text,
+            });
+          }
+        });
+
+        const startAddr = leg.start_address || originInput;
+        const endAddr = leg.end_address || destInput;
+
+        setRouteResult({
+          durationText: leg.duration?.text || '',
+          distanceText: leg.distance?.text || '',
+          startAddress: startAddr,
+          endAddress: endAddr,
+          startLocation: leg.start_location,
+          endLocation: leg.end_location,
+          transitLines: Array.from(new Set(transitLines)),
+          steps,
+        });
+      }
+    } catch (err: any) {
+      setRouteError(err.message || 'No route found between selected points.');
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const saveTransitToItinerary = async () => {
+    if (!tripId || !routeResult) return;
+    setSavingRoute(true);
+    try {
+      const modeLabel = travelMode === 'TRANSIT'
+        ? (routeResult.transitLines.length ? `Transit (${routeResult.transitLines.join(', ')})` : 'Transit')
+        : travelMode === 'DRIVING'
+        ? 'Drive'
+        : travelMode === 'WALKING'
+        ? 'Walk'
+        : 'Bike';
+
+      const originName = originInput.split(',')[0].trim();
+      const destName = destInput.split(',')[0].trim();
+      const title = `${modeLabel}: ${originName} → ${destName}`;
+
+      const notesParts = [
+        `${routeResult.durationText} (${routeResult.distanceText})`,
+        routeResult.transitLines.length ? `Lines: ${routeResult.transitLines.join(', ')}` : null,
+      ].filter(Boolean);
+
+      const notes = notesParts.join(' · ');
+
+      const endLat = routeResult.endLocation ? routeResult.endLocation.lat() : undefined;
+      const endLng = routeResult.endLocation ? routeResult.endLocation.lng() : undefined;
+
+      await apiPost(`/trips/${tripId}/places`, {
+        name: title,
+        category: 'Transport',
+        address: `${routeResult.startAddress} to ${routeResult.endAddress}`,
+        notes,
+        lat: endLat,
+        lng: endLng,
+        dayId: targetDayId || undefined,
+      });
+
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+      void onMapViewsChange?.();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save transit leg to itinerary');
+    } finally {
+      setSavingRoute(false);
+    }
+  };
+
+  const clearRoute = () => {
+    directionsRendererRef.current?.setMap(null);
+    setRouteResult(null);
+    setRouteError('');
+    setShowSteps(false);
+  };
+
+  const swapOriginDest = () => {
+    const temp = originInput;
+    setOriginInput(destInput);
+    setDestInput(temp);
+  };
+
+  const sortedDays = useMemo(() => {
+    return [...(days || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder);
+  }, [days]);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: typeof height === 'number' ? `${height}px` : height }}>
       <div className="map-views-bar">
@@ -461,6 +655,24 @@ export function TripMap({
           title="Fit all itinerary stops on screen"
         >
           <Compass size={13} /> Fit All
+        </button>
+
+        <button
+          type="button"
+          className={`map-view-chip map-view-chip-standalone ${showTransitLayer ? 'active-layer-btn' : ''}`}
+          onClick={toggleTransitLayer}
+          title="Toggle Google Maps Transit Layer (trains, subways, transit lines)"
+        >
+          <Layers size={13} /> {showTransitLayer ? '🚊 Transit ON' : '🚊 Transit'}
+        </button>
+
+        <button
+          type="button"
+          className={`map-view-chip map-view-chip-standalone ${showRouter ? 'active-layer-btn' : ''}`}
+          onClick={() => setShowRouter(!showRouter)}
+          title="Open Transit & Directions Route Planner"
+        >
+          <Route size={13} /> Directions & Transit
         </button>
 
         {localViews.map((view) => (
@@ -536,6 +748,220 @@ export function TripMap({
           )
         )}
       </div>
+
+      {/* Interactive Transit & Directions Route Planner Drawer */}
+      {showRouter && (
+        <div className="map-transit-drawer">
+          <div className="row between mb" style={{ marginBottom: 10 }}>
+            <div className="row" style={{ gap: 6 }}>
+              <Navigation size={15} style={{ color: 'var(--accent)' }} />
+              <strong style={{ fontSize: '0.9rem', color: '#fff' }}>Route & Transit Planner</strong>
+            </div>
+            <button
+              type="button"
+              className="btn sm ghost"
+              style={{ padding: '2px 6px', color: '#94a3b8' }}
+              onClick={() => setShowRouter(false)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Travel Mode Selector */}
+          <div className="map-mode-selector mb">
+            <button
+              type="button"
+              className={`mode-btn ${travelMode === 'TRANSIT' ? 'active' : ''}`}
+              onClick={() => setTravelMode('TRANSIT')}
+              title="Public Transit (Train, Subway, Bus)"
+            >
+              <Train size={13} /> Transit
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${travelMode === 'DRIVING' ? 'active' : ''}`}
+              onClick={() => setTravelMode('DRIVING')}
+              title="Driving"
+            >
+              <Car size={13} /> Drive
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${travelMode === 'WALKING' ? 'active' : ''}`}
+              onClick={() => setTravelMode('WALKING')}
+              title="Walking"
+            >
+              <Footprints size={13} /> Walk
+            </button>
+          </div>
+
+          {/* Origin & Destination */}
+          <div className="mb" style={{ display: 'grid', gap: 6 }}>
+            <div className="row" style={{ gap: 6 }}>
+              <span className="dot-label" style={{ background: '#22c55e' }}>A</span>
+              <input
+                list="map-stops-origin"
+                className="map-route-input grow"
+                placeholder="Origin stop or address..."
+                value={originInput}
+                onChange={(e) => setOriginInput(e.target.value)}
+              />
+              <datalist id="map-stops-origin">
+                {places.map((p) => (
+                  <option key={p.id} value={p.address || p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+
+            <div className="row" style={{ justifyContent: 'center', margin: '-2px 0' }}>
+              <button
+                type="button"
+                className="btn sm ghost"
+                style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#94a3b8' }}
+                onClick={swapOriginDest}
+                title="Swap origin and destination"
+              >
+                <ArrowDownUp size={12} /> Swap
+              </button>
+            </div>
+
+            <div className="row" style={{ gap: 6 }}>
+              <span className="dot-label" style={{ background: '#ef4444' }}>B</span>
+              <input
+                list="map-stops-dest"
+                className="map-route-input grow"
+                placeholder="Destination stop or address..."
+                value={destInput}
+                onChange={(e) => setDestInput(e.target.value)}
+              />
+              <datalist id="map-stops-dest">
+                {places.map((p) => (
+                  <option key={p.id} value={p.address || p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          </div>
+
+          <div className="row" style={{ gap: 6, marginBottom: 10 }}>
+            <button
+              type="button"
+              className="btn sm primary grow"
+              onClick={calculateRoute}
+              disabled={calculating || !originInput.trim() || !destInput.trim()}
+            >
+              {calculating ? 'Calculating route…' : 'Find Route'}
+            </button>
+            {routeResult && (
+              <button type="button" className="btn sm ghost" onClick={clearRoute}>
+                Clear
+              </button>
+            )}
+          </div>
+
+          {routeError && (
+            <div className="small" style={{ color: 'var(--danger)', marginBottom: 8 }}>
+              {routeError}
+            </div>
+          )}
+
+          {/* Route Summary & Save to Itinerary */}
+          {routeResult && (
+            <div className="map-route-summary">
+              <div className="row between mb" style={{ marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent)' }}>
+                    {routeResult.durationText}
+                  </div>
+                  <div className="small muted">{routeResult.distanceText}</div>
+                </div>
+
+                {routeResult.transitLines.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end', maxWidth: 160 }}>
+                    {routeResult.transitLines.map((line: string) => (
+                      <span key={line} className="badge accent" style={{ fontSize: '0.72rem', padding: '2px 6px' }}>
+                        {line}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Save Transit Leg Card */}
+              {tripId && (
+                <div style={{ background: 'rgba(255, 255, 255, 0.06)', borderRadius: 7, padding: '8px 10px', marginTop: 8 }}>
+                  <div className="small font-semibold mb" style={{ marginBottom: 6, color: '#e2e8f0' }}>
+                    Save Transit Leg to Itinerary:
+                  </div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <select
+                      className="grow"
+                      value={targetDayId}
+                      onChange={(e) => setTargetDayId(e.target.value)}
+                      style={{ fontSize: '0.78rem', padding: '4px 6px', background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 5 }}
+                    >
+                      <option value="">Unassigned (No Day)</option>
+                      {sortedDays.map((d, idx) => (
+                        <option key={d.id} value={d.id}>
+                          Day {idx + 1} ({new Date(d.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      className="btn sm primary"
+                      style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}
+                      onClick={saveTransitToItinerary}
+                      disabled={savingRoute}
+                    >
+                      {savingRoute ? 'Saving…' : savedSuccess ? '✓ Saved!' : '+ Save Leg'}
+                    </button>
+                  </div>
+                  {savedSuccess && (
+                    <div className="small mt" style={{ color: 'var(--success, #10b981)', fontSize: '0.74rem' }}>
+                      ✓ Transit route saved to your itinerary!
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step-by-Step Instructions Toggle */}
+              {routeResult.steps?.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    style={{ width: '100%', justifyContent: 'space-between', padding: '4px 6px', fontSize: '0.78rem', color: '#94a3b8' }}
+                    onClick={() => setShowSteps(!showSteps)}
+                  >
+                    <span>{showSteps ? 'Hide' : 'Show'} step-by-step directions ({routeResult.steps.length})</span>
+                    {showSteps ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  </button>
+
+                  {showSteps && (
+                    <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4, marginTop: 6 }}>
+                      {routeResult.steps.map((st: any, sIdx: number) => (
+                        <div key={sIdx} className="transit-step-row">
+                          <div style={{ color: '#e2e8f0', fontSize: '0.78rem' }}>{st.instruction}</div>
+                          {(st.duration || st.distance) && (
+                            <div className="small muted" style={{ fontSize: '0.7rem' }}>
+                              {[st.duration, st.distance].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div ref={elementRef} style={{ width: '100%', height: '100%', borderRadius: 10 }} />
       {error && <div className="empty-state" style={{ position: 'absolute', inset: 12 }}><b>Google Map unavailable</b><div className="small muted">{error}</div></div>}

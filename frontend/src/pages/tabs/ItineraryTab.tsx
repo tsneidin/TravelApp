@@ -1047,7 +1047,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </div>
                 </div>
 
-              {day.notes && <div className="small mt mb" style={{ whiteSpace: 'pre-wrap' }}><NotebookPen size={12} style={{ verticalAlign: -2 }} /> {day.notes}</div>}
+              {day.notes && (
+                <div className="day-notes-box mt mb">
+                  <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
+                  <span>{day.notes}</span>
+                </div>
+              )}
 
               {day.places.length === 0 ? (
                 <div

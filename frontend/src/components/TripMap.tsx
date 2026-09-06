@@ -63,10 +63,15 @@ function categoryFromGoogleTypes(types: string[] = []): string {
   return 'Sightseeing';
 }
 
-function isTransportation(place: PlaceWithStop): boolean {
-  return /transport|flight|airport|train|rail|bus|coach|drive|driving|car rental|ferry|boat|transfer|taxi|rideshare/i.test(
-    [place.category, place.name, place.notes].filter(Boolean).join(' '),
-  );
+function isFlight(place: PlaceWithStop): boolean {
+  const cat = (place.category || '').toLowerCase();
+  if (cat === 'flight' || cat === 'flights' || cat === 'airline') return true;
+  const text = [place.category, place.name, place.notes, place.address].filter(Boolean).join(' ').toLowerCase();
+  if (/train|subway|metro|bus|driving|rental car|ferry|walk/i.test(text) && !/flight|fly|airline|airways/i.test(text)) {
+    return false;
+  }
+  return /flight|fly to|flying|airline|airways|\bair\b|layover|boarding pass/i.test(text) ||
+    (/\bairport\b/i.test(text) && (/→|->|\bto\b/i.test(place.name) || /flight/i.test(text)));
 }
 
 function getGeocodeQueries(place: PlaceWithStop, destination?: string | null): string[] {
@@ -608,16 +613,17 @@ export function TripMap({
         markersMapRef.current.set(place.id, { marker, coord, place, infoContent });
       }
 
-      // Ordinary itinerary stops are independent pins. Draw a segment only
-      // when the destination entry represents transportation from the prior stop.
+      // Only show connections between places for flights (as curved geodesic flight paths).
+      // All other ground travel relies on actual turn-by-turn directions & transit layers.
       for (let index = 1; index < resolved.length; index += 1) {
-        if (!isTransportation(resolved[index].place)) continue;
+        if (!isFlight(resolved[index].place) && !isFlight(resolved[index - 1].place)) continue;
         overlaysRef.current.push(new maps.Polyline({
           map: mapRef.current,
           path: [resolved[index - 1].coord, resolved[index].coord],
-          strokeColor: '#22d3ee',
+          geodesic: true,
+          strokeColor: '#38bdf8',
           strokeOpacity: 0.85,
-          strokeWeight: 3,
+          strokeWeight: 2.5,
         }));
       }
 

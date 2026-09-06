@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeReceiptText, extractFlightLegs } from '../src/services/bookingHelper.js';
+import { sanitizeReceiptText, extractFlightLegs, extractHotelInfo, extractBookingInfo } from '../src/services/bookingHelper.js';
 
 describe('sanitizeReceiptText', () => {
   it('cleans up doubled characters from PDF copy-paste', () => {
@@ -148,6 +148,90 @@ describe('cleanAirportCity', () => {
     expect(cleanAirportCity('Arrive Naples Airport')).toBe('Naples');
     expect(cleanAirportCity('New York')).toBe('New York');
     expect(cleanAirportCity('San Francisco')).toBe('San Francisco');
+  });
+});
+
+describe('extractHotelInfo', () => {
+  const sampleHotelReservation = `
+Your reservation is confirmed
+
+Vesuvio Terrace Apartment
+Naples, Campania, Italy
+
+Confirmation code: TEST-HM4K29
+Status: Confirmed test reservation
+
+Guests
+Todd Neidinger
+Jenny Schienle
+2 adults
+
+Check-in
+Tuesday, September 29, 2026
+After 3:00 PM
+
+Check-out
+Friday, October 2, 2026
+Before 11:00 AM
+
+Length of stay
+3 nights
+
+Property address
+29 Via Esempio
+80100 Naples NA
+Italy
+
+This is a fictional, non-deliverable address created for software testing.
+
+Host
+Marco Testa
+Synthetic host profile
+
+Price details
+
+€158.00 × 3 nights: €474.00
+Cleaning fee: €55.00
+Guest service fee: €72.00
+Local occupancy taxes: €18.00
+
+Total: €619.00
+`;
+
+  it('extracts property title, confirmation code, host, and total amount with currency', () => {
+    const info = extractHotelInfo(sampleHotelReservation);
+    expect(info.title).toBe('Vesuvio Terrace Apartment');
+    expect(info.reference).toBe('TEST-HM4K29');
+    expect(info.host).toBe('Marco Testa');
+    expect(info.totalAmount).toBe(619.00);
+    expect(info.currency).toBe('EUR');
+  });
+
+  it('extracts check-in and check-out dates and times accurately', () => {
+    const info = extractHotelInfo(sampleHotelReservation);
+    expect(info.startDate).toBeDefined();
+    expect(info.endDate).toBeDefined();
+    expect(info.checkInTimeStr).toBe('3:00 PM');
+    expect(info.checkOutTimeStr).toBe('11:00 AM');
+
+    const startISO = info.startDate?.toISOString();
+    const endISO = info.endDate?.toISOString();
+    expect(startISO?.startsWith('2026-09-29')).toBe(true);
+    expect(endISO?.startsWith('2026-10-02')).toBe(true);
+  });
+
+  it('extracts address from property address section', () => {
+    const info = extractHotelInfo(sampleHotelReservation);
+    expect(info.address).toContain('29 Via Esempio');
+    expect(info.address).toContain('Naples');
+    expect(info.address).toContain('Italy');
+  });
+
+  it('extractBookingInfo identifies hotel reservation vs flight legs', () => {
+    const hotelInfo = extractBookingInfo(sampleHotelReservation);
+    expect(hotelInfo.type).toBe('hotel');
+    expect(hotelInfo.title).toBe('Vesuvio Terrace Apartment');
+    expect(hotelInfo.reference).toBe('TEST-HM4K29');
   });
 });
 

@@ -393,6 +393,8 @@ export const TRIP_TOOLS: ToolDef[] = [
           endAt: { type: 'string', description: 'Optional end ISO datetime or YYYY-MM-DD' },
           price: { type: 'number', description: 'Confirmed price/fare' },
           currency: { type: 'string', description: 'Currency code, e.g. USD, EUR' },
+          address: { type: 'string', description: 'Property or venue address' },
+          notes: { type: 'string', description: 'Check-in/out instructions, host name, or lockbox codes' },
           legs: {
             type: 'array',
             description: 'Optional array of structured flight/train legs if extracting a multi-segment journey',
@@ -1205,7 +1207,7 @@ export async function executeTripTool(
         tripId,
         userId,
         booking.id,
-        ctx.sourceText || `${title} ${a.provider ?? ''} ${a.reference ?? ''}`,
+        ctx.sourceText || `${title} ${a.provider ?? ''} ${a.reference ?? ''} ${a.address ?? ''}`,
         title,
         {
           type,
@@ -1216,6 +1218,8 @@ export async function executeTripTool(
           totalAmount: confirmedPrice,
           currency: a.currency ? String(a.currency).trim() : undefined,
           legs: structuredLegs,
+          address: a.address ? String(a.address).trim() : undefined,
+          notes: a.notes ? String(a.notes).trim() : undefined,
         },
       );
 

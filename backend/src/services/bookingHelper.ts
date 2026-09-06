@@ -23,6 +23,13 @@ export interface ExtractedBookingInfo {
   legs: ExtractedFlightLeg[];
   startDate?: Date;
   endDate?: Date;
+  address?: string;
+  checkInTimeStr?: string;
+  checkOutTimeStr?: string;
+  host?: string;
+  type?: BookingType;
+  title?: string;
+  notes?: string;
 }
 
 /**
@@ -105,7 +112,6 @@ export function parseDateTimeString(dateStr: string): Date | undefined {
   const d = new Date(cleaned);
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
-
 
 export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   const text = sanitizeReceiptText(rawText);
@@ -238,6 +244,154 @@ export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   };
 }
 
+export function extractHotelInfo(rawText: string): ExtractedBookingInfo {
+  const text = sanitizeReceiptText(rawText);
+
+  // 1. Reference / Confirmation code
+  let reference: string | undefined;
+  const refMatch =
+    /(?:confirmation\s*(?:code|number|#)?|reservation\s*(?:code|number|#)|booking\s*(?:code|number|#|reference)|pin\s*code|pnr|record\s*locator)[\s:]*([A-Z0-9-]{5,15})\b/i.exec(
+      text,
+    );
+  if (refMatch) {
+    reference = refMatch[1].toUpperCase();
+  }
+
+  // 2. Dates & check-in / check-out times
+  let startDate: Date | undefined;
+  let endDate: Date | undefined;
+  let checkInTimeStr: string | undefined;
+  let checkOutTimeStr: string | undefined;
+
+  const checkInDateMatch =
+    /check-in[\s\S]*?(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+)?([A-Za-z]+\s+\d{1,2},\s+\d{4})/i.exec(
+      text,
+    );
+  const checkInTimeMatch =
+    /check-in[\s\S]*?(?:After|From|at)?\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i.exec(
+      text,
+    );
+
+  if (checkInDateMatch) {
+    const rawTime = checkInTimeMatch ? checkInTimeMatch[1].trim() : '';
+    if (rawTime) checkInTimeStr = rawTime;
+    const combined = rawTime ? `${checkInDateMatch[1]} ${rawTime}` : checkInDateMatch[1];
+    startDate = parseDateTimeString(combined);
+  }
+
+  const checkOutDateMatch =
+    /check-out[\s\S]*?(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+)?([A-Za-z]+\s+\d{1,2},\s+\d{4})/i.exec(
+      text,
+    );
+  const checkOutTimeMatch =
+    /check-out[\s\S]*?(?:Before|Until|By|at)?\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i.exec(
+      text,
+    );
+
+  if (checkOutDateMatch) {
+    const rawTime = checkOutTimeMatch ? checkOutTimeMatch[1].trim() : '';
+    if (rawTime) checkOutTimeStr = rawTime;
+    const combined = rawTime ? `${checkOutDateMatch[1]} ${rawTime}` : checkOutDateMatch[1];
+    endDate = parseDateTimeString(combined);
+  }
+
+  if (!startDate) {
+    const rangeMatch =
+      /(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+)?([A-Za-z]+\s+\d{1,2},\s+\d{4})\s*–\s*(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+)?([A-Za-z]+\s+\d{1,2},\s+\d{4})/i.exec(
+        text,
+      );
+    if (rangeMatch) {
+      startDate = parseDateTimeString(rangeMatch[1]);
+      endDate = parseDateTimeString(rangeMatch[2]);
+    }
+  }
+
+  // 3. Address
+  let address: string | undefined;
+  const addrMatch =
+    /(?:Property\s*address|Hotel\s*address|Address)[\s:]*\n+([\s\S]+?)(?=\n\s*(?:This is|Host|Price|Payment|Total|Guests|Cancellation|Directions|\n{2,}|$))/i.exec(
+      text,
+    );
+  if (addrMatch) {
+    address = addrMatch[1]
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !/^This is/i.test(l))
+      .join(', ');
+  }
+
+  // 4. Host / Provider
+  let host: string | undefined;
+  const hostMatch = /Host[\s:]*\n+([^\n]+)/i.exec(text);
+  if (hostMatch) {
+    host = hostMatch[1].trim();
+  }
+
+  let provider = host || 'Accommodation';
+  if (/airbnb/i.test(text)) provider = host ? `Airbnb (${host})` : 'Airbnb';
+  else if (/booking\.com/i.test(text)) provider = 'Booking.com';
+  else if (/vrbo/i.test(text)) provider = 'VRBO';
+  else if (/marriott/i.test(text)) provider = 'Marriott';
+  else if (/hilton/i.test(text)) provider = 'Hilton';
+  else if (/hyatt/i.test(text)) provider = 'Hyatt';
+
+  // 5. Total amount & currency
+  let totalAmount: number | undefined;
+  let currency = 'USD';
+  const totalMatch =
+    /(?:Total(?:\s*paid)?|Grand\s*total)[\s:]*([€$£¥]?)\s*([\d,]+(?:\.\d{2})?)\s*([A-Z]{3})?/i.exec(
+      text,
+    );
+  if (totalMatch) {
+    if (totalMatch[1] === '€' || totalMatch[3] === 'EUR') currency = 'EUR';
+    else if (totalMatch[1] === '£' || totalMatch[3] === 'GBP') currency = 'GBP';
+    else if (totalMatch[1] === '¥' || totalMatch[3] === 'JPY') currency = 'JPY';
+    else if (totalMatch[3]) currency = totalMatch[3].toUpperCase();
+
+    totalAmount = parseFloat(totalMatch[2].replace(/,/g, ''));
+  }
+
+  // 6. Property Title
+  let title: string | undefined;
+  const titleMatch =
+    /(?:Your reservation is confirmed|Reservation confirmed|Booking confirmed)[\s\r\n]+([^\n\r]+)/i.exec(
+      text,
+    );
+  if (titleMatch) {
+    title = titleMatch[1].trim();
+  }
+
+  return {
+    provider,
+    reference,
+    totalAmount,
+    currency,
+    legs: [],
+    startDate,
+    endDate,
+    address,
+    checkInTimeStr,
+    checkOutTimeStr,
+    host,
+    type: 'hotel',
+    title,
+  };
+}
+
+export function extractBookingInfo(rawText: string): ExtractedBookingInfo {
+  const flightInfo = extractFlightLegs(rawText);
+  if (flightInfo.legs.length > 0) {
+    return flightInfo;
+  }
+
+  const hotelInfo = extractHotelInfo(rawText);
+  if (hotelInfo.startDate || hotelInfo.reference || hotelInfo.address || hotelInfo.totalAmount) {
+    return hotelInfo;
+  }
+
+  return flightInfo;
+}
+
 export interface BookingSyncFallback {
   type?: BookingType;
   provider?: string;
@@ -247,6 +401,8 @@ export interface BookingSyncFallback {
   totalAmount?: number;
   currency?: string;
   legs?: ExtractedFlightLeg[];
+  address?: string;
+  notes?: string;
 }
 
 export async function syncBookingToItinerary(
@@ -263,7 +419,7 @@ export async function syncBookingToItinerary(
   });
   if (!trip) return { daysAdded: 0, placesAdded: 0, expenseAdded: false };
 
-  const info = extractFlightLegs(rawSourceText);
+  const info = extractBookingInfo(rawSourceText);
 
   // If fallback provided structured legs (e.g. from LLM extraction), use them or merge
   if (fallback.legs && fallback.legs.length > 0) {
@@ -292,10 +448,14 @@ export async function syncBookingToItinerary(
 
   // The LLM has already extracted structured booking fields. Use them whenever
   // receipt regexes cannot understand a vendor's particular confirmation layout.
-  if ((!info.provider || info.provider === 'Airline') && fallback.provider) info.provider = fallback.provider;
+  if ((!info.provider || info.provider === 'Airline' || info.provider === 'Accommodation') && fallback.provider) {
+    info.provider = fallback.provider;
+  }
   if (!info.reference && fallback.reference) info.reference = fallback.reference;
   if (!info.startDate && fallback.startAt) info.startDate = fallback.startAt;
   if (!info.endDate && fallback.endAt) info.endDate = fallback.endAt;
+  if (!info.address && fallback.address) info.address = fallback.address;
+  if (!info.notes && fallback.notes) info.notes = fallback.notes;
   if ((!info.totalAmount || info.totalAmount <= 0) && fallback.totalAmount && fallback.totalAmount > 0) {
     info.totalAmount = fallback.totalAmount;
   }
@@ -319,6 +479,8 @@ export async function syncBookingToItinerary(
     daysAdded++;
     return newDay.id;
   };
+
+  const cleanTitle = fallbackTitle.replace(/^(?:🏨|✈️|🚗|🎟️|🛬|🏠|📍)\s*/, '').trim();
 
   // 1. Process explicit flight legs
   if (info.legs.length > 0) {
@@ -397,79 +559,246 @@ export async function syncBookingToItinerary(
         }
       }
     }
-  } else {
-    // Fallback: create a useful itinerary item from the AI's structured dates.
-    // If the confirmation omitted a parseable date, use the trip start rather
-    // than silently dropping a confirmed booking from the itinerary.
-    const itineraryDate = info.startDate || fallback.startAt || trip.startDate;
-    if (itineraryDate) {
-    const dayId = await getOrCreateDay(itineraryDate);
-    const existingPlace = await prisma.place.findFirst({
-      where: { tripId, dayId, name: { contains: fallbackTitle } },
-    });
+  } else if (
+    fallback.type === 'hotel' ||
+    info.type === 'hotel' ||
+    /hotel|apartment|airbnb|hostel|villa|resort|accommodation|lodging/i.test(fallbackTitle) ||
+    /check-in|property address/i.test(rawSourceText)
+  ) {
+    // Multi-day hotel / accommodation reservation: add entry for EVERY day of the stay
+    const startDate = info.startDate || fallback.startAt || trip.startDate;
+    const endDate = info.endDate || fallback.endAt;
+    const address = fallback.address || info.address;
 
-    if (!existingPlace) {
-      const count = await prisma.place.count({ where: { tripId } });
-      await prisma.place.create({
-        data: {
-          tripId,
-          dayId,
-          name: `${fallback.type === 'hotel' ? '🏨' : fallback.type === 'car' ? '🚗' : fallback.type === 'activity' ? '🎟️' : '✈️'} ${fallbackTitle}`,
-          category: fallback.type === 'hotel' ? 'Accommodation' : fallback.type === 'activity' ? 'Activity' : 'Transport',
-          startTime: info.startDate || fallback.startAt,
-          endTime: info.endDate,
-          notes: info.reference ? `Confirmation: ${info.reference}` : undefined,
-          sortOrder: count,
-          sourceText: rawSourceText.slice(0, 10_000),
-        },
-      });
-      placesAdded++;
+    if (startDate) {
+      const stayDates: Date[] = [];
+      if (endDate && toDayKey(endDate) >= toDayKey(startDate)) {
+        const endKey = toDayKey(endDate);
+        const curr = new Date(startDate);
+        while (toDayKey(curr) <= endKey && stayDates.length < 60) {
+          stayDates.push(new Date(curr));
+          curr.setUTCDate(curr.getUTCDate() + 1);
+        }
+      } else {
+        stayDates.push(new Date(startDate));
+      }
+
+      const baseNotesParts = [
+        info.reference ? `Confirmation: ${info.reference}` : (fallback.reference ? `Confirmation: ${fallback.reference}` : ''),
+        info.host ? `Host: ${info.host}` : '',
+        info.notes || fallback.notes || '',
+      ].filter(Boolean);
+
+      for (let idx = 0; idx < stayDates.length; idx++) {
+        const date = stayDates[idx];
+        const dayId = await getOrCreateDay(date);
+        const isFirstDay = idx === 0;
+        const isLastDay = idx === stayDates.length - 1 && stayDates.length > 1;
+
+        let name: string;
+        let startTime: Date | undefined;
+        let endTime: Date | undefined;
+        const dayNotesParts = [...baseNotesParts];
+
+        if (stayDates.length === 1) {
+          name = `🏨 ${cleanTitle}`;
+          startTime = startDate;
+          endTime = endDate;
+        } else if (isFirstDay) {
+          name = `🏨 Check-in: ${cleanTitle}`;
+          startTime = startDate;
+          if (info.checkInTimeStr) dayNotesParts.push(`Check-in: ${info.checkInTimeStr}`);
+        } else if (isLastDay) {
+          name = `🏨 Check-out: ${cleanTitle}`;
+          startTime = endDate;
+          endTime = endDate;
+          if (info.checkOutTimeStr) dayNotesParts.push(`Check-out: ${info.checkOutTimeStr}`);
+        } else {
+          name = `🏨 Stay: ${cleanTitle}`;
+        }
+
+        const existingPlace = await prisma.place.findFirst({
+          where: {
+            tripId,
+            dayId,
+            OR: [{ name }, { name: { contains: cleanTitle } }],
+          },
+        });
+
+        if (!existingPlace) {
+          const count = await prisma.place.count({ where: { tripId } });
+          await prisma.place.create({
+            data: {
+              tripId,
+              dayId,
+              name,
+              category: 'Accommodation',
+              address: address || undefined,
+              startTime,
+              endTime,
+              notes: dayNotesParts.join(' · ') || undefined,
+              sortOrder: count,
+              sourceText: rawSourceText.slice(0, 10_000),
+            },
+          });
+          placesAdded++;
+        }
+      }
     }
+  } else if (fallback.type === 'car') {
+    // Rental car handling
+    const startDate = info.startDate || fallback.startAt || trip.startDate;
+    const endDate = info.endDate || fallback.endAt;
+    const address = fallback.address || info.address;
 
-    if (fallback.type === 'flight' && info.endDate && info.startDate && toDayKey(info.endDate) !== toDayKey(info.startDate)) {
-      const returnDayId = await getOrCreateDay(info.endDate);
-      const returnName = `✈️ Return: ${fallbackTitle}`;
-      const existingReturn = await prisma.place.findFirst({
-        where: { tripId, dayId: returnDayId, name: returnName },
+    if (startDate) {
+      const dayId = await getOrCreateDay(startDate);
+      const isMultiDay = endDate && toDayKey(endDate) !== toDayKey(startDate);
+      const pickupName = isMultiDay ? `🚗 Pick-up: ${cleanTitle}` : `🚗 ${cleanTitle}`;
+
+      const existingPlace = await prisma.place.findFirst({
+        where: { tripId, dayId, name: pickupName },
       });
-      if (!existingReturn) {
+
+      if (!existingPlace) {
         const count = await prisma.place.count({ where: { tripId } });
         await prisma.place.create({
           data: {
             tripId,
-            dayId: returnDayId,
-            name: returnName,
+            dayId,
+            name: pickupName,
             category: 'Transport',
-            startTime: info.endDate,
+            address: address || undefined,
+            startTime: startDate,
+            endTime: isMultiDay ? undefined : endDate,
+            notes: info.reference ? `Confirmation: ${info.reference}` : (fallback.reference ? `Confirmation: ${fallback.reference}` : undefined),
             sortOrder: count,
             sourceText: rawSourceText.slice(0, 10_000),
           },
         });
         placesAdded++;
       }
+
+      if (isMultiDay && endDate) {
+        const dropoffDayId = await getOrCreateDay(endDate);
+        const dropoffName = `🚗 Drop-off: ${cleanTitle}`;
+        const existingDropoff = await prisma.place.findFirst({
+          where: { tripId, dayId: dropoffDayId, name: dropoffName },
+        });
+        if (!existingDropoff) {
+          const count = await prisma.place.count({ where: { tripId } });
+          await prisma.place.create({
+            data: {
+              tripId,
+              dayId: dropoffDayId,
+              name: dropoffName,
+              category: 'Transport',
+              address: address || undefined,
+              startTime: endDate,
+              endTime: endDate,
+              notes: info.reference ? `Confirmation: ${info.reference}` : (fallback.reference ? `Confirmation: ${fallback.reference}` : undefined),
+              sortOrder: count,
+              sourceText: rawSourceText.slice(0, 10_000),
+            },
+          });
+          placesAdded++;
+        }
+      }
     }
+  } else {
+    // Fallback: create a useful itinerary item from structured dates
+    const itineraryDate = info.startDate || fallback.startAt || trip.startDate;
+    if (itineraryDate) {
+      const dayId = await getOrCreateDay(itineraryDate);
+      const icon = fallback.type === 'activity' ? '🎟️' : '📍';
+      const category = fallback.type === 'activity' ? 'Activity' : 'Transport';
+      const name = `${icon} ${cleanTitle}`;
+
+      const existingPlace = await prisma.place.findFirst({
+        where: { tripId, dayId, name: { contains: cleanTitle } },
+      });
+
+      if (!existingPlace) {
+        const count = await prisma.place.count({ where: { tripId } });
+        await prisma.place.create({
+          data: {
+            tripId,
+            dayId,
+            name,
+            category,
+            address: fallback.address || info.address || undefined,
+            startTime: info.startDate || fallback.startAt,
+            endTime: info.endDate || fallback.endAt,
+            notes: info.reference ? `Confirmation: ${info.reference}` : (fallback.reference ? `Confirmation: ${fallback.reference}` : undefined),
+            sortOrder: count,
+            sourceText: rawSourceText.slice(0, 10_000),
+          },
+        });
+        placesAdded++;
+      }
+
+      if (fallback.type === 'flight' && info.endDate && info.startDate && toDayKey(info.endDate) !== toDayKey(info.startDate)) {
+        const returnDayId = await getOrCreateDay(info.endDate);
+        const returnName = `✈️ Return: ${cleanTitle}`;
+        const existingReturn = await prisma.place.findFirst({
+          where: { tripId, dayId: returnDayId, name: returnName },
+        });
+        if (!existingReturn) {
+          const count = await prisma.place.count({ where: { tripId } });
+          await prisma.place.create({
+            data: {
+              tripId,
+              dayId: returnDayId,
+              name: returnName,
+              category: 'Transport',
+              startTime: info.endDate,
+              sortOrder: count,
+              sourceText: rawSourceText.slice(0, 10_000),
+            },
+          });
+          placesAdded++;
+        }
+      }
     }
   }
 
   // 2. Automatically log expense if price is extracted
   if (info.totalAmount && info.totalAmount > 0) {
+    const isHotelBooking =
+      fallback.type === 'hotel' ||
+      info.type === 'hotel' ||
+      /hotel|apartment|airbnb|hostel|villa|resort|accommodation|lodging/i.test(fallbackTitle) ||
+      /check-in|property address/i.test(rawSourceText);
+    const isActivityBooking = fallback.type === 'activity';
+
+    const expenseCategory = isHotelBooking
+      ? 'lodging'
+      : isActivityBooking
+      ? 'activity'
+      : 'transport';
+
     const existingExpense = await prisma.expense.findFirst({
       where: {
         tripId,
         amount: info.totalAmount,
-        category: 'transport',
+        category: expenseCategory,
       },
     });
 
     if (!existingExpense) {
+      const descProvider =
+        info.provider && info.provider !== 'Airline' && info.provider !== 'Accommodation'
+          ? info.provider
+          : fallback.provider || cleanTitle;
+
       await prisma.expense.create({
         data: {
           tripId,
           userId,
-          description: `${info.provider} ${info.reference ? `(${info.reference})` : 'Flights'}`,
+          description: `${descProvider} ${info.reference ? `(${info.reference})` : ''}`.trim(),
           amount: info.totalAmount,
           currency: info.currency || 'USD',
-          category: 'transport',
+          category: expenseCategory,
           date: info.startDate || new Date(),
         },
       });

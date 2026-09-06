@@ -23,9 +23,81 @@ interface PlaceForm {
   website: string;
   description: string;
   notes: string;
+  startTime: string;
+  endTime: string;
 }
 
-const EMPTY_FORM: PlaceForm = { dayId: '', name: '', category: '', address: '', lat: '', lng: '', website: '', description: '', notes: '' };
+const EMPTY_FORM: PlaceForm = {
+  dayId: '',
+  name: '',
+  category: '',
+  address: '',
+  lat: '',
+  lng: '',
+  website: '',
+  description: '',
+  notes: '',
+  startTime: '',
+  endTime: '',
+};
+
+export function extractTimeHHMM(isoOrTime?: string | null): string {
+  if (!isoOrTime) return '';
+  const match = isoOrTime.match(/T(\d{2}):(\d{2})/);
+  if (match) return `${match[1]}:${match[2]}`;
+  const tMatch = isoOrTime.match(/^(\d{1,2}):(\d{2})\s*([AP]M)?$/i);
+  if (tMatch) {
+    let h = parseInt(tMatch[1], 10);
+    const m = tMatch[2];
+    const ampm = tMatch[3]?.toUpperCase();
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+  return '';
+}
+
+export function formatPlaceTime(startTime?: string | null, endTime?: string | null): string | null {
+  if (!startTime) return null;
+
+  const parseTime = (isoOrTime: string): string => {
+    const isoMatch = isoOrTime.match(/T(\d{2}):(\d{2})/);
+    if (isoMatch) {
+      const h = parseInt(isoMatch[1], 10);
+      const m = isoMatch[2];
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${h12}:${m} ${ampm}`;
+    }
+    const tMatch = isoOrTime.match(/^(\d{1,2}):(\d{2})\s*([AP]M)?$/i);
+    if (tMatch) {
+      let h = parseInt(tMatch[1], 10);
+      const m = tMatch[2];
+      const ampm = tMatch[3] ? tMatch[3].toUpperCase() : h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${h12}:${m} ${ampm}`;
+    }
+    try {
+      const d = new Date(isoOrTime);
+      if (!Number.isNaN(d.getTime())) {
+        const h = d.getUTCHours();
+        const m = String(d.getUTCMinutes()).padStart(2, '0');
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${h12}:${m} ${ampm}`;
+      }
+    } catch {
+      // ignore
+    }
+    return isoOrTime;
+  };
+
+  const startFormatted = parseTime(startTime);
+  if (!endTime) return startFormatted;
+  const endFormatted = parseTime(endTime);
+  if (startFormatted === endFormatted) return startFormatted;
+  return `${startFormatted} – ${endFormatted}`;
+}
 
 function isGenericDayLabel(label?: string | null): boolean {
   if (!label) return true;
@@ -309,6 +381,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       website: p.website ?? '',
       description: p.description ?? '',
       notes: p.notes ?? '',
+      startTime: extractTimeHHMM(p.startTime),
+      endTime: extractTimeHHMM(p.endTime),
     });
     setOpen(true);
   };
@@ -324,6 +398,21 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const save = async () => {
     setBusy(true);
     try {
+      let finalStartTime: string | null = null;
+      let finalEndTime: string | null = null;
+
+      const selectedDay = days.find((d) => d.id === editing.dayId);
+      const baseDate = selectedDay?.date
+        ? selectedDay.date.slice(0, 10)
+        : trip.startDate?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+
+      if (editing.startTime) {
+        finalStartTime = `${baseDate}T${editing.startTime}:00.000Z`;
+      }
+      if (editing.endTime) {
+        finalEndTime = `${baseDate}T${editing.endTime}:00.000Z`;
+      }
+
       const payload = {
         name: editing.name.trim(),
         category: editing.category || undefined,
@@ -334,6 +423,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         description: editing.description || undefined,
         notes: editing.notes || undefined,
         dayId: editing.dayId || undefined,
+        startTime: finalStartTime,
+        endTime: finalEndTime,
       };
       if (editingId) {
         await apiPatch(`/trips/${trip.id}/places/${editingId}`, payload);
@@ -491,9 +582,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       ? `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`
       : null;
 
-    const formattedTime = p.startTime
-      ? new Date(p.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : null;
+    const formattedTime = formatPlaceTime(p.startTime, p.endTime);
 
     const categoryText = p.category?.trim() || null;
     const hasMeta = Boolean(locationText || categoryText || formattedTime);
@@ -1325,6 +1414,30 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               <option value="Shopping">🛍 Shopping</option>
               <option value="Nature">🌲 Nature / Beach / Park</option>
             </select>
+          </div>
+          <div className="grid grid-2">
+            <div className="field small">
+              <label>
+                <Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                Start / Departure Time
+              </label>
+              <input
+                type="time"
+                value={editing.startTime}
+                onChange={(e) => setEditing({ ...editing, startTime: e.target.value })}
+              />
+            </div>
+            <div className="field small">
+              <label>
+                <Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                End / Arrival Time
+              </label>
+              <input
+                type="time"
+                value={editing.endTime}
+                onChange={(e) => setEditing({ ...editing, endTime: e.target.value })}
+              />
+            </div>
           </div>
           <div className="field">
             <label>Address</label>

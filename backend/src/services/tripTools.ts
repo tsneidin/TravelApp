@@ -64,13 +64,51 @@ export function parseArgs(raw: string | Record<string, unknown>): Record<string,
   }
 }
 
-export function toDate(v: unknown): Date | undefined {
+export function toDate(v: unknown, anchorDate?: Date | string): Date | undefined {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? undefined : v;
   if (typeof v !== 'string' || !v) return undefined;
   const str = v.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [y, m, d] = str.split('-').map(Number);
-    return new Date(y, m - 1, d, 12, 0, 0);
+    return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
   }
+
+  // Handle time-only strings e.g. "12:56 PM", "12:56", "17:35:00", "5:35 PM"
+  const timeMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?$/i.exec(str);
+  if (timeMatch) {
+    let hour = parseInt(timeMatch[1], 10);
+    const min = parseInt(timeMatch[2], 10);
+    const sec = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+    const ampm = timeMatch[4]?.toUpperCase();
+    if (ampm === 'PM' && hour < 12) hour += 12;
+    if (ampm === 'AM' && hour === 12) hour = 0;
+
+    let y = 2026;
+    let mo = 0;
+    let d = 1;
+    if (anchorDate) {
+      const parsedAnchor = typeof anchorDate === 'string' ? new Date(anchorDate) : anchorDate;
+      if (!Number.isNaN(parsedAnchor.getTime())) {
+        y = parsedAnchor.getUTCFullYear();
+        mo = parsedAnchor.getUTCMonth();
+        d = parsedAnchor.getUTCDate();
+      }
+    }
+    return new Date(Date.UTC(y, mo, d, hour, min, sec));
+  }
+
+  // Handle ISO / datetime strings e.g. "2026-09-28T12:56:00.000Z" or "2026-09-28 12:56"
+  const dtMatch = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/i.exec(str);
+  if (dtMatch) {
+    const y = parseInt(dtMatch[1], 10);
+    const mo = parseInt(dtMatch[2], 10) - 1;
+    const d = parseInt(dtMatch[3], 10);
+    const h = parseInt(dtMatch[4], 10);
+    const mi = parseInt(dtMatch[5], 10);
+    const s = dtMatch[6] ? parseInt(dtMatch[6], 10) : 0;
+    return new Date(Date.UTC(y, mo, d, h, mi, s));
+  }
+
   const d = new Date(str);
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
@@ -355,6 +393,25 @@ export const TRIP_TOOLS: ToolDef[] = [
           endAt: { type: 'string', description: 'Optional end ISO datetime or YYYY-MM-DD' },
           price: { type: 'number', description: 'Confirmed price/fare' },
           currency: { type: 'string', description: 'Currency code, e.g. USD, EUR' },
+          legs: {
+            type: 'array',
+            description: 'Optional array of structured flight/train legs if extracting a multi-segment journey',
+            items: {
+              type: 'object',
+              properties: {
+                carrier: { type: 'string', description: 'e.g. American Airlines or Envoy Air' },
+                flightNumber: { type: 'string', description: 'e.g. 6256 or 180' },
+                fromCity: { type: 'string', description: 'e.g. Madison' },
+                fromCode: { type: 'string', description: 'e.g. MSN' },
+                toCity: { type: 'string', description: 'e.g. Chicago' },
+                toCode: { type: 'string', description: 'e.g. ORD' },
+                departTime: { type: 'string', description: 'Departure date/time ISO string or YYYY-MM-DD HH:mm' },
+                arriveTime: { type: 'string', description: 'Arrival date/time ISO string or YYYY-MM-DD HH:mm' },
+                seat: { type: 'string', description: 'e.g. 27H, 27J' },
+                flightClass: { type: 'string', description: 'e.g. Basic Economy or Main Cabin' },
+              },
+            },
+          },
         },
         required: ['type', 'title'],
       },
@@ -1128,6 +1185,21 @@ export async function executeTripTool(
         },
       });
 
+      const structuredLegs = Array.isArray(a.legs)
+        ? (a.legs as Record<string, unknown>[]).map((l) => ({
+            carrier: String(l.carrier ?? a.provider ?? 'Airline'),
+            flightNumber: String(l.flightNumber ?? ''),
+            fromCity: String(l.fromCity ?? ''),
+            fromCode: String(l.fromCode ?? ''),
+            toCity: String(l.toCity ?? ''),
+            toCode: String(l.toCode ?? ''),
+            departTime: toDate(l.departTime),
+            arriveTime: toDate(l.arriveTime),
+            seat: l.seat ? String(l.seat) : undefined,
+            flightClass: l.flightClass ? String(l.flightClass) : undefined,
+          }))
+        : undefined;
+
       // Synchronize booking with itinerary days, places, and budget expense
       const sync = await syncBookingToItinerary(
         tripId,
@@ -1143,6 +1215,7 @@ export async function executeTripTool(
           endAt: toDate(a.endAt),
           totalAmount: confirmedPrice,
           currency: a.currency ? String(a.currency).trim() : undefined,
+          legs: structuredLegs,
         },
       );
 

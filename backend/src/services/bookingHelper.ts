@@ -63,33 +63,47 @@ export function sanitizeReceiptText(text: string): string {
     .join('\n');
 }
 
-const MONTH_NAMES = [
-  'january', 'february', 'march', 'april', 'may', 'june',
-  'july', 'august', 'september', 'october', 'november', 'december',
+const MONTH_PREFIXES = [
+  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+  'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
 ];
 
-function parseDateTimeString(dateStr: string): Date | undefined {
+export function parseDateTimeString(dateStr: string): Date | undefined {
   if (!dateStr) return undefined;
   const cleaned = dateStr.trim();
-  const d = new Date(cleaned);
-  if (!Number.isNaN(d.getTime())) return d;
 
-  // Try regex for "September 28, 2026 12:56 PM"
-  const m = /([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*([AP]M)?)?/i.exec(cleaned);
+  // Try regex for "September 28, 2026 12:56 PM" or "Sep 28, 2026 05:35 PM" or "28 Sep 2026 12:56"
+  const m = /([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?)?/i.exec(cleaned);
   if (m) {
-    const monthIdx = MONTH_NAMES.indexOf(m[1].toLowerCase());
+    const monthPrefix = m[1].toLowerCase().slice(0, 3);
+    const monthIdx = MONTH_PREFIXES.indexOf(monthPrefix);
     if (monthIdx >= 0) {
       const day = parseInt(m[2], 10);
       const year = parseInt(m[3], 10);
       let hour = m[4] ? parseInt(m[4], 10) : 12;
       const min = m[5] ? parseInt(m[5], 10) : 0;
-      const ampm = m[6]?.toUpperCase();
+      const sec = m[6] ? parseInt(m[6], 10) : 0;
+      const ampm = m[7]?.toUpperCase();
       if (ampm === 'PM' && hour < 12) hour += 12;
       if (ampm === 'AM' && hour === 12) hour = 0;
-      return new Date(year, monthIdx, day, hour, min);
+      return new Date(Date.UTC(year, monthIdx, day, hour, min, sec));
     }
   }
-  return undefined;
+
+  // Handle ISO strings e.g. "2026-09-28T12:56:00.000Z" or "2026-09-28 12:56"
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/i.exec(cleaned);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const mo = parseInt(isoMatch[2], 10) - 1;
+    const d = parseInt(isoMatch[3], 10);
+    const h = isoMatch[4] ? parseInt(isoMatch[4], 10) : 12;
+    const mi = isoMatch[5] ? parseInt(isoMatch[5], 10) : 0;
+    const s = isoMatch[6] ? parseInt(isoMatch[6], 10) : 0;
+    return new Date(Date.UTC(y, mo, d, h, mi, s));
+  }
+
+  const d = new Date(cleaned);
+  return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
 
@@ -232,6 +246,7 @@ export interface BookingSyncFallback {
   endAt?: Date;
   totalAmount?: number;
   currency?: string;
+  legs?: ExtractedFlightLeg[];
 }
 
 export async function syncBookingToItinerary(
@@ -249,6 +264,31 @@ export async function syncBookingToItinerary(
   if (!trip) return { daysAdded: 0, placesAdded: 0, expenseAdded: false };
 
   const info = extractFlightLegs(rawSourceText);
+
+  // If fallback provided structured legs (e.g. from LLM extraction), use them or merge
+  if (fallback.legs && fallback.legs.length > 0) {
+    if (info.legs.length === 0) {
+      info.legs = fallback.legs;
+    } else {
+      // Merge structured fields if regex missed any leg or seats
+      info.legs = info.legs.map((leg, idx) => {
+        const fbLeg = fallback.legs?.[idx];
+        if (!fbLeg) return leg;
+        return {
+          ...leg,
+          seat: leg.seat || fbLeg.seat,
+          flightClass: leg.flightClass || fbLeg.flightClass,
+          flightNumber: leg.flightNumber || fbLeg.flightNumber,
+          carrier: leg.carrier === 'Airline' && fbLeg.carrier ? fbLeg.carrier : leg.carrier,
+          departTime: leg.departTime || fbLeg.departTime,
+          arriveTime: leg.arriveTime || fbLeg.arriveTime,
+        };
+      });
+      if (fallback.legs.length > info.legs.length) {
+        info.legs.push(...fallback.legs.slice(info.legs.length));
+      }
+    }
+  }
 
   // The LLM has already extracted structured booking fields. Use them whenever
   // receipt regexes cannot understand a vendor's particular confirmation layout.

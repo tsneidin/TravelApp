@@ -5,6 +5,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { Modal } from '../../components/Modal';
 import { apiPost } from '../../lib/api';
 import type { GeocodedPlace, Trip } from '../../lib/types';
+import { formatPlaceTime } from './ItineraryTab';
 
 export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const [params] = useSearchParams();
@@ -96,7 +97,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
                       {day > 0 ? `Day ${day} · ` : ''}{place.name}
                     </div>
                     <div className="sub"><MapPin size={11} /> {place.address || 'Location resolved from item name'}</div>
-                    <div className="small muted">{[place.category, place.startTime ? new Date(place.startTime).toLocaleString() : null, place.notes].filter(Boolean).join(' · ').slice(0, 220)}</div>
+                    <div className="small muted">{[place.category, formatPlaceTime(place.startTime, place.endTime), place.notes].filter(Boolean).join(' · ').slice(0, 220)}</div>
                     <div className="row mt" style={{ gap: 6 }}>
                       {place.website && <a className="btn sm ghost" href={place.website} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><ExternalLink size={11} /> Info</a>}
                       <a className="btn sm ghost" href={googleUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><MapPin size={11} /> Google Maps</a>

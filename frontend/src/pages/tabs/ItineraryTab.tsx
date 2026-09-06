@@ -14,7 +14,6 @@ import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
 import { computePlaceStopNumberMap } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
-import { JournalContent } from '../../components/JournalContent';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
 import {
   generateSpanId,
@@ -884,6 +883,22 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     <span className="place-location-text">{locationText}</span>
                   </span>
                 )}
+                <a
+                  href={
+                    p.lat && p.lng
+                      ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
+                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address, trip.destination].filter(Boolean).join(', '))}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="place-meta-pill location"
+                  title="Open in Google Maps in a new tab"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ textDecoration: 'none' }}
+                >
+                  <MapPin size={11} />
+                  <span>Open map</span>
+                </a>
                 {p.website && (
                   <a
                     href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
@@ -922,8 +937,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <div className="place-expanded-text">{p.description}</div>
               </div>
             ) : null}
-            {p.website && (
-              <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {p.website && (
                 <a
                   href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
                   target="_blank"
@@ -933,10 +948,25 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   onClick={(e) => e.stopPropagation()}
                 >
                   <ExternalLink size={12} />
-                  <span>Visit website ({p.website})</span>
+                  <span>Visit website</span>
                 </a>
-              </div>
-            )}
+              )}
+              <a
+                href={
+                  p.lat && p.lng
+                    ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
+                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address, trip.destination].filter(Boolean).join(', '))}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn xs ghost"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MapPin size={12} />
+                <span>Open in Google Maps ↗</span>
+              </a>
+            </div>
             {p.notes?.trim() ? (
               <div className="place-expanded-section">
                 <div className="place-expanded-label">Notes</div>
@@ -1066,6 +1096,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               <span>Full list</span>
             </button>
           </div>
+          {trip.destination && (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trip.destination)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn sm ghost"
+              title={`Open ${trip.destination} on Google Maps in a new tab`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
+            >
+              <MapPin size={13} />
+              <span>Open map</span>
+            </a>
+          )}
           <button type="button" className="btn sm ghost" onClick={() => void addDay()}>
             <Plus size={14} /> Add day
           </button>
@@ -1173,7 +1216,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                                 body: first.body,
                                 date: first.date ? first.date.slice(0, 10) : day.date.slice(0, 10),
                               },
-                              dayLabel: `Day ${dayIndex + 1}`,
                             });
                           }}
                         >
@@ -1224,15 +1266,29 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         title={dayJournalEntries.length > 0 ? 'Add or view journal entries for this day' : 'Add journal entry for this day'}
                         onClick={() => {
                           const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
-                          setJournalModalState({
-                            open: true,
-                            entry: {
-                              title: '',
-                              body: '',
-                              date: day.date.slice(0, 10),
-                            },
-                            dayLabel: `Day ${dayIndex + 1}${customTitle}`,
-                          });
+                          if (dayJournalEntries.length > 0) {
+                            const first = dayJournalEntries[0];
+                            setJournalModalState({
+                              open: true,
+                              entry: {
+                                id: first.id,
+                                title: first.title,
+                                body: first.body,
+                                date: first.date ? first.date.slice(0, 10) : day.date.slice(0, 10),
+                              },
+                              dayLabel: `Day ${dayIndex + 1}${customTitle}`,
+                            });
+                          } else {
+                            setJournalModalState({
+                              open: true,
+                              entry: {
+                                title: '',
+                                body: '',
+                                date: day.date.slice(0, 10),
+                              },
+                              dayLabel: `Day ${dayIndex + 1}${customTitle}`,
+                            });
+                          }
                         }}
                       >
                         <BookOpen size={13} /> Journal{dayJournalEntries.length > 0 ? ` (${dayJournalEntries.length})` : ''}
@@ -1265,67 +1321,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <div className="day-notes-box mt mb">
                   <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
                   <span>{day.notes}</span>
-                </div>
-              )}
-
-              {/* Day's Journal Entries preview */}
-              {dayJournalEntries.length > 0 && (
-                <div style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}>
-                  {dayJournalEntries.map((j) => (
-                    <div
-                      key={j.id}
-                      style={{
-                        padding: '10px 12px',
-                        background: 'var(--surface-hover)',
-                        borderRadius: 8,
-                        border: '1px solid var(--border)',
-                        marginBottom: 8,
-                      }}
-                    >
-                      <div className="row between" style={{ alignItems: 'center', marginBottom: 6 }}>
-                        <div className="row" style={{ alignItems: 'center', gap: 6 }}>
-                          <BookOpen size={14} style={{ color: 'var(--accent)' }} />
-                          <strong style={{ fontSize: '0.95rem' }}>{j.title}</strong>
-                        </div>
-                        <div className="row" style={{ gap: 4 }}>
-                          <button
-                            type="button"
-                            className="btn xs ghost"
-                            title="Edit journal entry"
-                            onClick={() => {
-                              setJournalModalState({
-                                open: true,
-                                entry: {
-                                  id: j.id,
-                                  title: j.title,
-                                  body: j.body,
-                                  date: j.date ? j.date.slice(0, 10) : day.date.slice(0, 10),
-                                },
-                              });
-                            }}
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn xs ghost danger"
-                            title="Delete journal entry"
-                            onClick={() => setDeletingJournalId(j.id)}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '0.88rem', lineHeight: 1.5, color: 'var(--text)' }}>
-                        <JournalContent content={j.body} />
-                      </div>
-                      {(j.createdBy || j.updatedBy) && (
-                        <div style={{ marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
-                          <AuditBadge createdBy={j.createdBy} createdAt={j.createdAt} updatedBy={j.updatedBy} updatedAt={j.updatedAt} />
-                        </div>
-                      )}
-                    </div>
-                  ))}
                 </div>
               )}
 
@@ -1860,7 +1855,26 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           </div>
 
           <div className="field" style={{ marginBottom: '0.6rem' }}>
-            <label style={{ marginBottom: 4 }}>Address or Coordinates</label>
+            <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ margin: 0 }}>Address or Coordinates</label>
+              {(editing.address.trim() || editing.name.trim() || (editing.lat && editing.lng)) && (
+                <a
+                  href={
+                    editing.lat && editing.lng
+                      ? `https://www.google.com/maps/search/?api=1&query=${editing.lat},${editing.lng}`
+                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([editing.name, editing.address, trip.destination].filter(Boolean).join(', '))}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', color: 'var(--accent)', textDecoration: 'none' }}
+                  title="Open in Google Maps in a new tab"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open map</span>
+                </a>
+              )}
+            </div>
             <input
               value={editing.address}
               onChange={(e) => {
@@ -1998,24 +2012,27 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '12px',
-              marginTop: '18px',
-              flexWrap: 'wrap',
+              gap: '10px',
+              marginTop: '12px',
+              flexWrap: 'nowrap',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               {editingId && editingPlaceItem && (() => {
                 const siblingPlaces = findSpannedPlaces(editingPlaceItem, allPlaces, days);
                 if (siblingPlaces.length > 1) {
                   return (
                     <label
-                      className="row items-center gap-2"
                       style={{
                         margin: 0,
                         cursor: 'pointer',
                         fontWeight: 500,
                         fontSize: '13px',
                         userSelect: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        whiteSpace: 'nowrap',
                       }}
                       title={`This item appears on ${siblingPlaces.length} days. Uncheck to update only this single instance.`}
                     >
@@ -2023,7 +2040,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         type="checkbox"
                         checked={updateAllInSeries}
                         onChange={(e) => setUpdateAllInSeries(e.target.checked)}
-                        style={{ cursor: 'pointer' }}
+                        style={{ cursor: 'pointer', margin: 0 }}
                       />
                       <span>Apply to all {siblingPlaces.length} occurrences</span>
                     </label>
@@ -2033,7 +2050,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               })()}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', flexShrink: 0 }}>
               <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>
                 {busy ? 'Saving…' : 'Save'}
               </button>

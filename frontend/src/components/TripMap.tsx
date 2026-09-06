@@ -559,13 +559,12 @@ export function TripMap({
         }));
       }
 
-      // Handle focus and centering
+      // Handle focus and centering: center and zoom to pin without showing the popup dialog
       const targetMarkerInfo = targetId ? markersMapRef.current.get(targetId) : undefined;
       if (targetMarkerInfo) {
-        mapRef.current.setCenter(targetMarkerInfo.coord);
+        infoWindowRef.current?.close();
+        mapRef.current.panTo(targetMarkerInfo.coord);
         mapRef.current.setZoom(15);
-        infoWindowRef.current?.setContent(targetMarkerInfo.infoContent);
-        infoWindowRef.current?.open({ map: mapRef.current, anchor: targetMarkerInfo.marker });
       } else if (resolved.length > 1) {
         infoWindowRef.current?.close();
         mapRef.current.fitBounds(bounds, 48);

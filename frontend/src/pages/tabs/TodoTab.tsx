@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   AlertCircle,
+  Calendar,
   CheckSquare,
   Clock,
   Compass,
@@ -90,36 +91,92 @@ export function normalizePhase(category?: string | null): TripPhase | string {
   return trimmed;
 }
 
-function formatDueDate(dateStr?: string | null): { text: string; isOverdue: boolean; isToday: boolean; isSoon: boolean } | null {
+function parseLocalDate(dateStr: string): Date {
+  const clean = dateStr.trim();
+  const m = clean.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const year = parseInt(m[1], 10);
+    const month = parseInt(m[2], 10) - 1;
+    const day = parseInt(m[3], 10);
+    return new Date(year, month, day);
+  }
+  const d = new Date(clean);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+export function formatDueDate(dateStr?: string | null): {
+  text: string;
+  formattedDate: string;
+  isOverdue: boolean;
+  isToday: boolean;
+  isSoon: boolean;
+  diffDays: number;
+} | null {
   if (!dateStr) return null;
-  const target = new Date(dateStr);
-  if (isNaN(target.getTime())) return null;
+  const targetDay = parseLocalDate(dateStr);
+  if (isNaN(targetDay.getTime())) return null;
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate());
 
   const diffDays = Math.round((targetDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-  const text = targetDay.toLocaleDateString(undefined, {
+  const formattedDate = targetDay.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     year: targetDay.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
   });
 
   if (diffDays < 0) {
-    return { text: `Overdue · ${text}`, isOverdue: true, isToday: false, isSoon: false };
+    const overdueDays = Math.abs(diffDays);
+    const overdueText = overdueDays === 1 ? '1 day' : `${overdueDays} days`;
+    return {
+      text: `Overdue (${overdueText}) · ${formattedDate}`,
+      formattedDate,
+      isOverdue: true,
+      isToday: false,
+      isSoon: false,
+      diffDays,
+    };
   }
   if (diffDays === 0) {
-    return { text: 'Due Today', isOverdue: false, isToday: true, isSoon: true };
+    return {
+      text: `Due Today · ${formattedDate}`,
+      formattedDate,
+      isOverdue: false,
+      isToday: true,
+      isSoon: true,
+      diffDays,
+    };
   }
   if (diffDays === 1) {
-    return { text: 'Due Tomorrow', isOverdue: false, isToday: false, isSoon: true };
+    return {
+      text: `Due Tomorrow · ${formattedDate}`,
+      formattedDate,
+      isOverdue: false,
+      isToday: false,
+      isSoon: true,
+      diffDays,
+    };
   }
-  if (diffDays <= 3) {
-    return { text: `Due in ${diffDays} days (${text})`, isOverdue: false, isToday: false, isSoon: true };
+  if (diffDays <= 7) {
+    return {
+      text: `Due in ${diffDays} days · ${formattedDate}`,
+      formattedDate,
+      isOverdue: false,
+      isToday: false,
+      isSoon: true,
+      diffDays,
+    };
   }
-  return { text: `Due ${text}`, isOverdue: false, isToday: false, isSoon: false };
+  return {
+    text: `Due ${formattedDate}`,
+    formattedDate,
+    isOverdue: false,
+    isToday: false,
+    isSoon: false,
+    diffDays,
+  };
 }
 
 export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
@@ -484,7 +541,7 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
                 type="date"
                 value={newDueDate}
                 onChange={(e) => setNewDueDate(e.target.value)}
-                title="Optional due date"
+                title="Due date (displays in list)"
                 style={{ width: 'auto', padding: '6px 8px' }}
               />
             </div>
@@ -618,45 +675,73 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
                               {item.title}
                             </span>
 
-                            {due && !item.done && (
+                            {/* Due Date Display in the List */}
+                            {due ? (
                               <span
                                 className="todo-due-chip"
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: 4,
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  padding: '2px 7px',
+                                  gap: 5,
+                                  fontSize: '0.78rem',
+                                  fontWeight: item.done ? 500 : 600,
+                                  padding: '2px 8px',
                                   borderRadius: 5,
-                                  background: due.isOverdue
+                                  textDecoration: item.done ? 'line-through' : undefined,
+                                  background: item.done
+                                    ? 'rgba(255, 255, 255, 0.05)'
+                                    : due.isOverdue
                                     ? 'rgba(239, 68, 68, 0.15)'
-                                    : due.isSoon
+                                    : due.isToday || due.isSoon
                                     ? 'rgba(245, 158, 11, 0.15)'
-                                    : 'rgba(255, 255, 255, 0.08)',
-                                  color: due.isOverdue
+                                    : 'rgba(34, 211, 238, 0.10)',
+                                  color: item.done
+                                    ? 'var(--muted)'
+                                    : due.isOverdue
                                     ? 'var(--danger, #ef4444)'
-                                    : due.isSoon
+                                    : due.isToday || due.isSoon
                                     ? 'var(--warning, #f59e0b)'
-                                    : 'var(--muted)',
+                                    : 'var(--accent, #22d3ee)',
                                   border: `1px solid ${
-                                    due.isOverdue
-                                      ? 'rgba(239, 68, 68, 0.3)'
-                                      : due.isSoon
-                                      ? 'rgba(245, 158, 11, 0.3)'
-                                      : 'rgba(255, 255, 255, 0.12)'
+                                    item.done
+                                      ? 'rgba(255, 255, 255, 0.1)'
+                                      : due.isOverdue
+                                      ? 'rgba(239, 68, 68, 0.35)'
+                                      : due.isToday || due.isSoon
+                                      ? 'rgba(245, 158, 11, 0.35)'
+                                      : 'rgba(34, 211, 238, 0.25)'
                                   }`,
                                 }}
+                                title={`Due Date: ${due.formattedDate}`}
                               >
-                                {due.isOverdue ? <AlertCircle size={11} /> : <Clock size={11} />}
-                                {due.text}
+                                {item.done ? (
+                                  <Calendar size={12} />
+                                ) : due.isOverdue ? (
+                                  <AlertCircle size={12} />
+                                ) : due.isToday ? (
+                                  <Clock size={12} />
+                                ) : (
+                                  <Calendar size={12} />
+                                )}
+                                <span>{item.done ? `Due: ${due.formattedDate}` : due.text}</span>
                               </span>
-                            )}
-
-                            {due && item.done && (
-                              <span className="small muted" style={{ fontSize: '0.74rem' }}>
-                                {due.text}
-                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn xs link muted"
+                                style={{
+                                  fontSize: '0.75rem',
+                                  padding: '1px 5px',
+                                  opacity: 0.65,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                }}
+                                onClick={() => openEdit(item)}
+                                title="Set a due date for this task"
+                              >
+                                <Calendar size={11} /> + Due date
+                              </button>
                             )}
                           </div>
 
@@ -732,12 +817,70 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
           </div>
 
           <div className="field small">
-            <label>Due Date</label>
+            <div className="row between" style={{ marginBottom: 4 }}>
+              <label style={{ margin: 0 }}>Due Date (displayed in list)</label>
+              {editing.dueDate && (
+                <button
+                  type="button"
+                  className="btn xs link danger"
+                  onClick={() => setEditing({ ...editing, dueDate: '' })}
+                >
+                  Clear date
+                </button>
+              )}
+            </div>
             <input
               type="date"
               value={editing.dueDate}
               onChange={(e) => setEditing({ ...editing, dueDate: e.target.value })}
             />
+            {/* Quick Presets */}
+            <div className="row" style={{ gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn xs ghost"
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  setEditing({ ...editing, dueDate: today });
+                }}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className="btn xs ghost"
+                onClick={() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 1);
+                  setEditing({ ...editing, dueDate: d.toISOString().slice(0, 10) });
+                }}
+              >
+                Tomorrow
+              </button>
+              <button
+                type="button"
+                className="btn xs ghost"
+                onClick={() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 7);
+                  setEditing({ ...editing, dueDate: d.toISOString().slice(0, 10) });
+                }}
+              >
+                In 1 Week
+              </button>
+              {trip.startDate && (
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  onClick={() => {
+                    const departure = trip.startDate?.slice(0, 10);
+                    if (departure) setEditing({ ...editing, dueDate: departure });
+                  }}
+                >
+                  Trip Departure
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="field">

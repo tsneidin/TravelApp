@@ -1621,11 +1621,14 @@ export async function executeTripTool(
       const cleanOrigin = origin.replace(/\s*,\s*[^,]+$/i, (tail) => (tail.toLowerCase().includes('italy') || tail.toLowerCase().includes('japan') || tail.toLowerCase().includes('usa') ? tail : ''));
       const cleanDest = dest.replace(/\s*,\s*[^,]+$/i, (tail) => (tail.toLowerCase().includes('italy') || tail.toLowerCase().includes('japan') || tail.toLowerCase().includes('usa') ? tail : ''));
 
-      const summary = `Transit route options from "${cleanOrigin || origin}" to "${cleanDest || dest}":\n` +
-        `- Train / Rail: Regional and Intercity train connections (e.g. Trenitalia Regionale or Intercity, frequent daily departures)\n` +
-        `- Driving: direct highway / regional road route\n` +
-        `- Bus: Regional bus services connecting main terminals\n` +
-        `- Ready to add to itinerary as a transport leg with add_place (e.g. category="Transport", name="Train: ${origin.split(',')[0].trim()} → ${dest.split(',')[0].trim()}").`;
+      const fromShort = cleanOrigin || origin;
+      const toShort = cleanDest || dest;
+      const summary = `Found multiple travel options from "${fromShort}" to "${toShort}":\n` +
+        `• Option 1 (High-Speed / Intercity Train): Direct rail service connecting main stations; fastest public transit option with reserved seating.\n` +
+        `• Option 2 (Regional Train): Frequent local rail service stopping at regional stations along the line; budget-friendly with open seating.\n` +
+        `• Option 3 (Driving / Rental Car): Direct highway/road route offering complete flexibility to stop along the way.\n` +
+        `• Option 4 (Regional Coach / Bus): Express or regional bus routes between terminal stations.\n\n` +
+        `Ask the user which option they prefer, or add their preferred option to the itinerary using add_place with category="Transport".`;
 
       return {
         action: name,

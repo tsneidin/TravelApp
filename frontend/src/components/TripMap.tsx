@@ -16,6 +16,7 @@ import {
   Minimize2,
   Navigation,
   Plus,
+  Route,
   Train,
   X,
 } from 'lucide-react';
@@ -23,6 +24,21 @@ import type { Day, GeocodedPlace, MapView, Place } from '../lib/types';
 import { apiPost } from '../lib/api';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
+export interface RouteOption {
+  index: number;
+  summary?: string;
+  durationText: string;
+  durationValue: number;
+  distanceText: string;
+  distanceValue: number;
+  startAddress: string;
+  endAddress: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  transitLines: string[];
+  steps: { instruction: string; distance?: string; duration?: string; lineName?: string; legTitle?: string }[];
+  legsCount: number;
+}
 type Coord = { lat: number; lng: number };
 
 declare global {
@@ -202,7 +218,9 @@ export function TripMap({
   const pickingTargetRef = useRef<'origin' | 'dest' | number | null>(null);
   const [travelMode, setTravelMode] = useState<'TRANSIT' | 'DRIVING' | 'WALKING' | 'BICYCLING'>('TRANSIT');
   const [calculating, setCalculating] = useState(false);
-  const [routeResult, setRouteResult] = useState<any>(null);
+  const [routeResult, setRouteResult] = useState<RouteOption | null>(null);
+  const [availableRoutes, setAvailableRoutes] = useState<RouteOption[]>([]);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number>(0);
   const [routeError, setRouteError] = useState('');
   const [targetDayId, setTargetDayId] = useState('');
   const [savingRoute, setSavingRoute] = useState(false);
@@ -984,6 +1002,96 @@ export function TripMap({
     }
   };
 
+  const parseGoogleRoute = (route: any, originFallback: string, destFallback: string, index: number): RouteOption => {
+    let totalDurationSec = 0;
+    let totalDistanceM = 0;
+    const transitLines: string[] = [];
+    const steps: { instruction: string; distance?: string; duration?: string; lineName?: string; legTitle?: string }[] = [];
+    let departureTime: string | undefined;
+    let arrivalTime: string | undefined;
+
+    route.legs?.forEach((leg: any, lIdx: number) => {
+      totalDurationSec += leg.duration?.value || 0;
+      totalDistanceM += leg.distance?.value || 0;
+
+      if (leg.departure_time?.text && !departureTime) {
+        departureTime = leg.departure_time.text;
+      }
+      if (leg.arrival_time?.text) {
+        arrivalTime = leg.arrival_time.text;
+      }
+
+      if ((route.legs?.length || 1) > 1) {
+        steps.push({
+          instruction: `Leg ${lIdx + 1}: ${leg.start_address?.split(',')[0]} → ${leg.end_address?.split(',')[0]} (${leg.duration?.text || ''})`,
+          legTitle: `Leg ${lIdx + 1}`,
+        });
+      }
+
+      leg.steps?.forEach((step: any) => {
+        const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+        if (step.transit) {
+          const line = step.transit.line;
+          const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
+          transitLines.push(lineName);
+          const depStop = step.transit.departure_stop?.name || '';
+          const arrStop = step.transit.arrival_stop?.name || '';
+          const stopsCount = step.transit.num_stops ? ` (${step.transit.num_stops} stop${step.transit.num_stops > 1 ? 's' : ''})` : '';
+          const depTime = step.transit.departure_time?.text ? ` at ${step.transit.departure_time.text}` : '';
+          steps.push({
+            instruction: `${line.vehicle?.name || 'Transit'} ${lineName}${depTime}: ${depStop} → ${arrStop}${stopsCount}`,
+            distance: step.distance?.text,
+            duration: step.duration?.text,
+            lineName,
+          });
+        } else {
+          steps.push({
+            instruction: cleanInstruction,
+            distance: step.distance?.text,
+            duration: step.duration?.text,
+          });
+        }
+      });
+    });
+
+    const hours = Math.floor(totalDurationSec / 3600);
+    const mins = Math.round((totalDurationSec % 3600) / 60);
+    const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
+    const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
+    const startAddress = route.legs?.[0]?.start_address || originFallback;
+    const endAddress = route.legs?.[route.legs.length - 1]?.end_address || destFallback;
+
+    return {
+      index,
+      summary: route.summary || (transitLines.length ? transitLines.join(' + ') : undefined),
+      durationText: durText,
+      durationValue: totalDurationSec,
+      distanceText: distText,
+      distanceValue: totalDistanceM,
+      startAddress,
+      endAddress,
+      departureTime,
+      arrivalTime,
+      transitLines: Array.from(new Set(transitLines)),
+      steps,
+      legsCount: route.legs?.length || 1,
+    };
+  };
+
+  const handleSelectRouteOption = (index: number) => {
+    setSelectedRouteIndex(index);
+    if (availableRoutes[index]) {
+      setRouteResult(availableRoutes[index]);
+    }
+    if (directionsRenderersRef.current[0] && typeof directionsRenderersRef.current[0].setRouteIndex === 'function') {
+      try {
+        directionsRenderersRef.current[0].setRouteIndex(index);
+      } catch (e) {
+        console.warn('setRouteIndex error:', e);
+      }
+    }
+  };
+
   const calculateRoute = async (
     customOrigin?: string,
     customDest?: string,
@@ -999,6 +1107,8 @@ export function TripMap({
     setCalculating(true);
     setRouteError('');
     setRouteResult(null);
+    setAvailableRoutes([]);
+    setSelectedRouteIndex(0);
 
     // Clear previous directions renderers from map
     directionsRenderersRef.current.forEach((r) => r.setMap(null));
@@ -1089,21 +1199,30 @@ export function TripMap({
         const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
         const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
 
-        setRouteResult({
+        const combinedOption: RouteOption = {
+          index: 0,
+          summary: allTransitLines.length ? allTransitLines.join(' + ') : undefined,
           durationText: durText,
+          durationValue: totalDurationSec,
           distanceText: distText,
+          distanceValue: totalDistanceM,
           startAddress: origin,
           endAddress: dest,
           transitLines: Array.from(new Set(allTransitLines)),
           steps: allSteps,
           legsCount: allPoints.length - 1,
-        });
+        };
+
+        setRouteResult(combinedOption);
+        setAvailableRoutes([combinedOption]);
+        setSelectedRouteIndex(0);
       } else {
         // Single transit query or Driving / Walking / Bicycling with waypoints
         const request: any = {
           origin,
           destination: dest,
           travelMode: mode,
+          provideRouteAlternatives: stops.length === 0,
           waypoints: stops.map((s) => ({ location: s, stopover: true })),
         };
 
@@ -1120,6 +1239,7 @@ export function TripMap({
         const renderer = new window.google.maps.DirectionsRenderer({
           map: mapRef.current,
           suppressMarkers: false,
+          routeIndex: 0,
           polylineOptions: {
             strokeColor: '#0891b2',
             strokeWeight: 5,
@@ -1129,60 +1249,14 @@ export function TripMap({
         renderer.setDirections(result);
         directionsRenderersRef.current.push(renderer);
 
-        const route = result.routes?.[0];
-        if (route) {
-          let totalDurationSec = 0;
-          let totalDistanceM = 0;
-          const transitLines: string[] = [];
-          const steps: { instruction: string; distance?: string; duration?: string; lineName?: string; legTitle?: string }[] = [];
-
-          route.legs?.forEach((leg: any, lIdx: number) => {
-            totalDurationSec += leg.duration?.value || 0;
-            totalDistanceM += leg.distance?.value || 0;
-
-            if (route.legs.length > 1) {
-              steps.push({
-                instruction: `Leg ${lIdx + 1}: ${leg.start_address?.split(',')[0]} → ${leg.end_address?.split(',')[0]} (${leg.duration?.text || ''})`,
-                legTitle: `Leg ${lIdx + 1}`,
-              });
-            }
-
-            leg.steps?.forEach((step: any) => {
-              const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-              if (step.transit) {
-                const line = step.transit.line;
-                const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
-                transitLines.push(lineName);
-                steps.push({
-                  instruction: `${line.vehicle?.name || 'Transit'} ${lineName}: ${step.transit.departure_stop?.name || ''} → ${step.transit.arrival_stop?.name || ''} (${step.transit.num_stops || 1} stops)`,
-                  distance: step.distance?.text,
-                  duration: step.duration?.text,
-                  lineName,
-                });
-              } else {
-                steps.push({
-                  instruction: cleanInstruction,
-                  distance: step.distance?.text,
-                  duration: step.duration?.text,
-                });
-              }
-            });
-          });
-
-          const hours = Math.floor(totalDurationSec / 3600);
-          const mins = Math.round((totalDurationSec % 3600) / 60);
-          const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
-          const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
-
-          setRouteResult({
-            durationText: durText,
-            distanceText: distText,
-            startAddress: origin,
-            endAddress: dest,
-            transitLines: Array.from(new Set(transitLines)),
-            steps,
-            legsCount: route.legs?.length || 1,
-          });
+        const routes = result.routes || [];
+        if (routes.length > 0) {
+          const parsedRoutes: RouteOption[] = routes.map((r: any, idx: number) =>
+            parseGoogleRoute(r, origin, dest, idx),
+          );
+          setAvailableRoutes(parsedRoutes);
+          setSelectedRouteIndex(0);
+          setRouteResult(parsedRoutes[0]);
         }
       }
     } catch (err: any) {
@@ -1193,11 +1267,12 @@ export function TripMap({
   };
 
   const saveTransitToItinerary = async () => {
-    if (!tripId || !routeResult) return;
+    const selectedOption = availableRoutes[selectedRouteIndex] || routeResult;
+    if (!tripId || !selectedOption) return;
     setSavingRoute(true);
     try {
       const modeLabel = travelMode === 'TRANSIT'
-        ? (routeResult.transitLines.length ? `Transit (${routeResult.transitLines.join(', ')})` : 'Transit')
+        ? (selectedOption.transitLines.length ? `Transit (${selectedOption.transitLines.join(', ')})` : 'Transit')
         : travelMode === 'DRIVING'
         ? 'Drive'
         : travelMode === 'WALKING'
@@ -1211,15 +1286,15 @@ export function TripMap({
       const title = `${modeLabel}: ${stopChain}`;
 
       const notesParts = [
-        `${routeResult.durationText} (${routeResult.distanceText})`,
-        routeResult.transitLines.length ? `Lines: ${routeResult.transitLines.join(', ')}` : null,
+        `${selectedOption.durationText} (${selectedOption.distanceText})`,
+        selectedOption.transitLines.length ? `Lines: ${selectedOption.transitLines.join(', ')}` : null,
         validStops.length ? `Via: ${validStops.join(', ')}` : null,
       ].filter(Boolean);
 
       const notes = notesParts.join(' · ');
 
       // Format complete step-by-step directions for offline reading
-      const formattedSteps = (routeResult.steps || [])
+      const formattedSteps = (selectedOption.steps || [])
         .map((step: any, idx: number) => {
           const distDur = [step.distance, step.duration].filter(Boolean).join(', ');
           const extra = distDur ? ` (${distDur})` : '';
@@ -1230,8 +1305,9 @@ export function TripMap({
 
       const descriptionParts = [
         `🗺️ Route: ${originInput} → ${destInput}`,
-        `⏱️ Travel Time: ${routeResult.durationText} · Distance: ${routeResult.distanceText}`,
-        routeResult.transitLines?.length ? `🚆 Transit Lines: ${routeResult.transitLines.join(', ')}` : null,
+        `⏱️ Travel Time: ${selectedOption.durationText} · Distance: ${selectedOption.distanceText}`,
+        selectedOption.departureTime && selectedOption.arrivalTime ? `🕒 Schedule: Departure ${selectedOption.departureTime} → Arrival ${selectedOption.arrivalTime}` : null,
+        selectedOption.transitLines?.length ? `🚆 Transit Lines: ${selectedOption.transitLines.join(', ')}` : null,
         formattedSteps ? `\n📍 Step-by-Step Directions:\n${formattedSteps}` : null,
       ].filter(Boolean);
 
@@ -1240,7 +1316,7 @@ export function TripMap({
       await apiPost(`/trips/${tripId}/places`, {
         name: title,
         category: 'Transport',
-        address: `${routeResult.startAddress} to ${routeResult.endAddress}`,
+        address: `${selectedOption.startAddress} to ${selectedOption.endAddress}`,
         notes,
         description,
         dayId: targetDayId || undefined,
@@ -1260,6 +1336,8 @@ export function TripMap({
     directionsRenderersRef.current.forEach((r) => r.setMap(null));
     directionsRenderersRef.current = [];
     setRouteResult(null);
+    setAvailableRoutes([]);
+    setSelectedRouteIndex(0);
     setRouteError('');
     setShowSteps(false);
   };
@@ -1709,12 +1787,101 @@ export function TripMap({
           {/* Route Summary & Save to Itinerary */}
           {routeResult && (
             <div className="map-route-summary">
+              {/* Multiple Route Options Selector */}
+              {availableRoutes.length > 1 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div className="small font-semibold muted mb" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Route size={13} style={{ color: 'var(--accent, #38bdf8)' }} />
+                    <span>{availableRoutes.length} Route Options Available:</span>
+                  </div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {availableRoutes.map((opt, idx) => {
+                      const isSelected = selectedRouteIndex === idx;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSelectRouteOption(idx)}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
+                            textAlign: 'left',
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: 7,
+                            border: isSelected ? '1.5px solid var(--accent, #38bdf8)' : '1px solid rgba(255, 255, 255, 0.12)',
+                            background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.04)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 18,
+                                  height: 18,
+                                  borderRadius: '50%',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  background: isSelected ? 'var(--accent, #38bdf8)' : 'rgba(255,255,255,0.15)',
+                                  color: isSelected ? '#0f172a' : '#fff',
+                                }}
+                              >
+                                {idx + 1}
+                              </span>
+                              <span style={{ fontWeight: 600, fontSize: '0.84rem', color: isSelected ? 'var(--accent, #38bdf8)' : '#f8fafc' }}>
+                                Option {idx + 1} {opt.summary ? `· ${opt.summary}` : ''}
+                              </span>
+                            </div>
+                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: isSelected ? 'var(--accent, #38bdf8)' : '#e2e8f0' }}>
+                              {opt.durationText}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', fontSize: '0.74rem', color: '#94a3b8' }}>
+                            <div>
+                              {opt.departureTime && opt.arrivalTime ? (
+                                <span>🕒 {opt.departureTime} – {opt.arrivalTime} · </span>
+                              ) : null}
+                              <span>{opt.distanceText}</span>
+                            </div>
+
+                            {opt.transitLines.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'flex-end' }}>
+                                {opt.transitLines.map((line) => (
+                                  <span key={line} className="badge accent" style={{ fontSize: '0.68rem', padding: '1px 5px' }}>
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="row between mb" style={{ marginBottom: 6 }}>
                 <div>
                   <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent)' }}>
                     {routeResult.durationText}
+                    {availableRoutes.length > 1 && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8', marginLeft: 8 }}>
+                        (Option {selectedRouteIndex + 1} of {availableRoutes.length})
+                      </span>
+                    )}
                   </div>
-                  <div className="small muted">{routeResult.distanceText}</div>
+                  <div className="small muted">
+                    {routeResult.distanceText}
+                    {routeResult.departureTime && routeResult.arrivalTime ? ` · 🕒 Departure ${routeResult.departureTime} → Arrival ${routeResult.arrivalTime}` : ''}
+                  </div>
                 </div>
 
                 {routeResult.transitLines.length > 0 && (

@@ -1615,10 +1615,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
           </div>
           <div className="modal-actions">
-            <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>
             <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>
               {busy ? 'Saving…' : 'Save'}
             </button>
+            <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}

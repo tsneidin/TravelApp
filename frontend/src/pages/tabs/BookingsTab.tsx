@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import { Plus, Trash2, FileText, StickyNote } from 'lucide-react';
+import { Plus, Trash2, FileText, StickyNote, Pencil, Hotel, Plane, Car, Compass } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
 import type { Trip, Booking, BookingType } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
 import { AuditBadge } from '../../components/AuditBadge';
 
-const TYPES: { value: BookingType; label: string; hint: string }[] = [
-  { value: 'flight', label: 'Flight', hint: 'Airline, flight number, times' },
-  { value: 'hotel', label: 'Hotel / stay', hint: 'Property, check-in/out' },
-  { value: 'car', label: 'Car / transport', hint: 'Rental company, pickup details' },
-  { value: 'activity', label: 'Activity / tour', hint: 'Tour, tickets, admissions' },
+const TYPES: { value: BookingType; label: string; hint: string; startLabel: string; endLabel: string }[] = [
+  { value: 'hotel', label: 'Hotel / Stay', hint: 'Hotel, resort, villa, Airbnb', startLabel: 'Check-in Date & Time', endLabel: 'Check-out Date & Time' },
+  { value: 'flight', label: 'Flight', hint: 'Airline, flight number, route', startLabel: 'Departure Date & Time', endLabel: 'Arrival Date & Time' },
+  { value: 'car', label: 'Car / Transport', hint: 'Rental company, pickup details', startLabel: 'Pick-up Date & Time', endLabel: 'Drop-off Date & Time' },
+  { value: 'activity', label: 'Activity / Tour', hint: 'Tour, tickets, admissions', startLabel: 'Start Date & Time', endLabel: 'End Date & Time' },
 ];
 
 interface BookingForm {
@@ -22,27 +22,109 @@ interface BookingForm {
   endAt: string;
 }
 
+function toDatetimeLocal(val?: string | null): string {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  return `${y}-${m}-${day}T${hours}:${minutes}`;
+}
+
+function formatBookingDateTime(val?: string | null): string {
+  if (!val) return '—';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getBookingTypeIcon(t: BookingType) {
+  switch (t) {
+    case 'hotel':
+      return <Hotel size={13} style={{ color: 'var(--accent)', marginRight: 4 }} />;
+    case 'flight':
+      return <Plane size={13} style={{ color: '#818cf8', marginRight: 4 }} />;
+    case 'car':
+      return <Car size={13} style={{ color: '#facc15', marginRight: 4 }} />;
+    default:
+      return <Compass size={13} style={{ color: '#10b981', marginRight: 4 }} />;
+  }
+}
+
 export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const bookings = trip.bookings ?? [];
   const [open, setOpen] = useState(false);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [busy, setBusy] = useState(false);
   const [rawBooking, setRawBooking] = useState<Booking | null>(null);
   const [noteBooking, setNoteBooking] = useState<Booking | null>(null);
   const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
-  const [form, setForm] = useState<BookingForm>({ type: 'hotel', title: '', provider: '', reference: '', startAt: '', endAt: '' });
+  const [form, setForm] = useState<BookingForm>({
+    type: 'hotel',
+    title: '',
+    provider: '',
+    reference: '',
+    startAt: '',
+    endAt: '',
+  });
+
+  const openAdd = () => {
+    setEditingBooking(null);
+    setForm({
+      type: 'hotel',
+      title: '',
+      provider: '',
+      reference: '',
+      startAt: '',
+      endAt: '',
+    });
+    setOpen(true);
+  };
+
+  const openEdit = (b: Booking) => {
+    setEditingBooking(b);
+    setForm({
+      type: b.type,
+      title: b.title,
+      provider: b.provider || '',
+      reference: b.reference || '',
+      startAt: toDatetimeLocal(b.startAt),
+      endAt: toDatetimeLocal(b.endAt),
+    });
+    setOpen(true);
+  };
 
   const save = async () => {
     if (!form.title) return;
     setBusy(true);
     try {
-      await apiPost(`/trips/${trip.id}/bookings`, {
-        ...form,
-        startAt: form.startAt || undefined,
-        endAt: form.endAt || undefined,
-      });
+      if (editingBooking) {
+        await apiPatch(`/trips/${trip.id}/bookings/${editingBooking.id}`, {
+          ...form,
+          startAt: form.startAt ? new Date(form.startAt).toISOString() : null,
+          endAt: form.endAt ? new Date(form.endAt).toISOString() : null,
+        });
+      } else {
+        await apiPost(`/trips/${trip.id}/bookings`, {
+          ...form,
+          startAt: form.startAt ? new Date(form.startAt).toISOString() : undefined,
+          endAt: form.endAt ? new Date(form.endAt).toISOString() : undefined,
+        });
+      }
       setOpen(false);
+      setEditingBooking(null);
       setForm({ type: 'hotel', title: '', provider: '', reference: '', startAt: '', endAt: '' });
       await reload();
     } finally {
@@ -87,7 +169,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
     }
   };
 
-  const typeLabel = (t: BookingType) => TYPES.find((x) => x.value === t)?.label ?? t;
+  const typeConfig = TYPES.find((x) => x.value === form.type) ?? TYPES[0];
 
   const hasRaw = (b: Booking) =>
     typeof b.details === 'object' && b.details != null && typeof b.details.sourceRaw === 'string';
@@ -97,8 +179,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   return (
     <div>
       <div className="row between">
-        <h2 className="panel-title">Bookings</h2>
-        <button className="btn sm" onClick={() => setOpen(true)}><Plus size={14} /> Add booking</button>
+        <h2 className="panel-title">Bookings & Reservations</h2>
+        <button className="btn sm primary" onClick={openAdd}><Plus size={14} /> Add booking</button>
       </div>
 
       {bookings.length === 0 ? (
@@ -111,15 +193,33 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <table>
             <thead>
               <tr>
-                <th>Type</th><th>Title</th><th>Provider</th><th>Reference</th><th>Starts</th><th>Notes</th><th></th>
+                <th>Type</th>
+                <th>Title</th>
+                <th>Provider</th>
+                <th>Confirmation #</th>
+                <th>Starts / Check-in</th>
+                <th>Ends / Check-out</th>
+                <th>Notes</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {bookings.map((b) => (
                 <tr key={b.id}>
-                  <td><span className="badge">{typeLabel(b.type)}</span></td>
+                  <td>
+                    <span className="badge" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {getBookingTypeIcon(b.type)}
+                      {TYPES.find((x) => x.value === b.type)?.label ?? b.type}
+                    </span>
+                  </td>
                   <td style={{ textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600 }}>{b.title}</div>
+                    <div
+                      style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--text)' }}
+                      onClick={() => openEdit(b)}
+                      title="Click to edit reservation"
+                    >
+                      {b.title}
+                    </div>
                     {(b.createdBy || b.updatedBy) && (
                       <div style={{ marginTop: 4 }}>
                         <AuditBadge createdBy={b.createdBy} createdAt={b.createdAt} updatedBy={b.updatedBy} updatedAt={b.updatedAt} />
@@ -127,11 +227,21 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                     )}
                   </td>
                   <td>{b.provider || '—'}</td>
-                  <td>{b.reference || '—'}</td>
-                  <td>{b.startAt ? new Date(b.startAt).toLocaleDateString() : '—'}</td>
+                  <td>
+                    {b.reference ? (
+                      <span className="badge" style={{ fontWeight: 700 }}>{b.reference}</span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td style={{ fontSize: '0.84rem' }}>{formatBookingDateTime(b.startAt)}</td>
+                  <td style={{ fontSize: '0.84rem' }}>{formatBookingDateTime(b.endAt)}</td>
                   <td>{bookingNotes(b).length || '—'}</td>
                   <td>
                     <div className="row" style={{ gap: 4 }}>
+                      <button className="btn sm ghost" title="Edit booking details" onClick={() => openEdit(b)}>
+                        <Pencil size={13} />
+                      </button>
                       <button className="btn sm ghost" title="Add or edit booking notes" onClick={() => openNotes(b)}>
                         <StickyNote size={13} /> {bookingNotes(b).length || ''}
                       </button>
@@ -140,7 +250,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                           <FileText size={13} />
                         </button>
                       )}
-                      <button className="btn sm ghost danger" onClick={() => remove(b)}><Trash2 size={13} /></button>
+                      <button className="btn sm ghost danger" title="Delete booking" onClick={() => remove(b)}><Trash2 size={13} /></button>
                     </div>
                   </td>
                 </tr>
@@ -151,44 +261,75 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
       )}
 
       {open && (
-        <Modal title="Add booking" onClose={() => setOpen(false)}>
+        <Modal title={editingBooking ? `Edit ${typeConfig.label}` : 'Add Booking'} onClose={() => setOpen(false)}>
           <div className="field small">
-            <label>Type</label>
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as BookingType })}>
-              {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            <label>Booking Type</label>
+            <select
+              value={form.type}
+              onChange={(e) => setForm({ ...form, type: e.target.value as BookingType })}
+            >
+              {TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
             </select>
           </div>
           <div className="field">
-            <label>Title</label>
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={TYPES.find((t) => t.value === form.type)?.hint} autoFocus />
+            <label>Title / Property Name</label>
+            <input
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder={typeConfig.hint}
+              autoFocus
+            />
           </div>
           <div className="grid grid-2">
             <div className="field">
-              <label>Provider / company</label>
-              <input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} placeholder="e.g. ANA" />
+              <label>Provider / Company / Host</label>
+              <input
+                value={form.provider}
+                onChange={(e) => setForm({ ...form, provider: e.target.value })}
+                placeholder="e.g. Marriott, Airbnb, Delta"
+              />
             </div>
             <div className="field">
-              <label>Confirmation #</label>
-              <input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="e.g. ABC123" />
+              <label>Confirmation # / Reference</label>
+              <input
+                value={form.reference}
+                onChange={(e) => setForm({ ...form, reference: e.target.value })}
+                placeholder="e.g. ABC123"
+              />
             </div>
           </div>
           <div className="grid grid-2">
             <div className="field">
-              <label>Starts</label>
-              <input type="datetime-local" value={form.startAt} onChange={(e) => { const startAt = e.target.value; setForm({ ...form, startAt, endAt: endForStart(startAt, form.endAt) }); }} />
+              <label>{typeConfig.startLabel}</label>
+              <input
+                type="datetime-local"
+                value={form.startAt}
+                onChange={(e) => {
+                  const startAt = e.target.value;
+                  setForm({ ...form, startAt, endAt: endForStart(startAt, form.endAt) });
+                }}
+              />
             </div>
             <div className="field">
-              <label>Ends</label>
-              <input type="datetime-local" min={form.startAt || undefined} value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} />
+              <label>{typeConfig.endLabel}</label>
+              <input
+                type="datetime-local"
+                min={form.startAt || undefined}
+                value={form.endAt}
+                onChange={(e) => setForm({ ...form, endAt: e.target.value })}
+              />
             </div>
           </div>
           <div className="modal-actions">
-            <button className="btn primary" onClick={save} disabled={busy || !form.title}>Save</button>
+            <button className="btn primary" onClick={save} disabled={busy || !form.title}>
+              {busy ? 'Saving…' : editingBooking ? 'Save Changes' : 'Add Booking'}
+            </button>
             <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}
-
 
       {noteBooking && (
         <Modal title={`Notes — ${noteBooking.title}`} onClose={() => setNoteBooking(null)} wide>
@@ -239,7 +380,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
             {rawText(rawBooking)}
           </pre>
           <div className="modal-actions">
-            <button className="btn" onClick={() => setRawBooking(null)}>Close</button>
+            <button className="btn primary" onClick={() => setRawBooking(null)}>Close</button>
           </div>
         </Modal>
       )}

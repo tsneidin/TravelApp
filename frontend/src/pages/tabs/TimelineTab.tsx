@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
   Calendar, Clock, MapPin, Plane, Hotel, Compass, AlertCircle,
-  ZoomIn, ZoomOut, Filter, ExternalLink, Car, Train, Bus
+  ZoomIn, ZoomOut, Filter, ExternalLink, Car, Train, Bus, Pencil, Plus
 } from 'lucide-react';
-import type { Trip, Booking, Place, Day } from '../../lib/types';
+import type { Trip, Booking, BookingType, Place, Day } from '../../lib/types';
 import { Modal } from '../../components/Modal';
 import { AuditBadge } from '../../components/AuditBadge';
 import { getCategoryIcon } from '../../lib/icons';
+import { apiPost, apiPatch } from '../../lib/api';
+import { endForStart } from '../../lib/dateRange';
 
 interface TimelineTabProps {
   trip: Trip;
@@ -55,6 +57,32 @@ function parseDateKey(val?: string | null): string | null {
   if (!val) return null;
   const m = val.match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : null;
+}
+
+function toDatetimeLocal(val?: string | null): string {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  return `${y}-${m}-${day}T${hours}:${minutes}`;
+}
+
+function formatBookingDateTime(val?: string | null): string {
+  if (!val) return '—';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function detectTransitType(str: string, defaultType: TransitSpan['type'] = 'transit'): TransitSpan['type'] {
@@ -124,7 +152,7 @@ function getTransitColors(type: TransitSpan['type']) {
   }
 }
 
-export function TimelineTab({ trip }: TimelineTabProps) {
+export function TimelineTab({ trip, reload }: TimelineTabProps) {
   const [zoomLevel, setZoomLevel] = useState<'standard' | 'compact'>('standard');
   const [trackFilter, setTrackFilter] = useState<'all' | 'stays' | 'transit' | 'activities'>('all');
   const [selectedItem, setSelectedItem] = useState<{
@@ -135,6 +163,79 @@ export function TimelineTab({ trip }: TimelineTabProps) {
     place?: Place;
     day?: TimelineDay;
   } | null>(null);
+
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [gapAddModal, setGapAddModal] = useState<{ startDayIndex: number; endDayIndex: number } | null>(null);
+  const [bookingForm, setBookingForm] = useState<{
+    type: BookingType;
+    title: string;
+    provider: string;
+    reference: string;
+    startAt: string;
+    endAt: string;
+  }>({
+    type: 'hotel',
+    title: '',
+    provider: '',
+    reference: '',
+    startAt: '',
+    endAt: '',
+  });
+  const [busy, setBusy] = useState(false);
+
+  const openEditBooking = (b: Booking) => {
+    setEditingBooking(b);
+    setBookingForm({
+      type: b.type,
+      title: b.title,
+      provider: b.provider || '',
+      reference: b.reference || '',
+      startAt: toDatetimeLocal(b.startAt),
+      endAt: toDatetimeLocal(b.endAt),
+    });
+  };
+
+  const openAddStayForGap = (gapDayIdx: number) => {
+    const curDay = timelineDays[gapDayIdx];
+    const nextDay = timelineDays[Math.min(gapDayIdx + 1, timelineDays.length - 1)];
+    const startAtStr = curDay ? `${curDay.dateStr}T15:00` : '';
+    const endAtStr = nextDay ? `${nextDay.dateStr}T11:00` : '';
+
+    setGapAddModal({ startDayIndex: gapDayIdx, endDayIndex: Math.min(gapDayIdx + 1, timelineDays.length - 1) });
+    setBookingForm({
+      type: 'hotel',
+      title: '',
+      provider: '',
+      reference: '',
+      startAt: startAtStr,
+      endAt: endAtStr,
+    });
+  };
+
+  const saveBookingForm = async () => {
+    if (!bookingForm.title) return;
+    setBusy(true);
+    try {
+      if (editingBooking) {
+        await apiPatch(`/trips/${trip.id}/bookings/${editingBooking.id}`, {
+          ...bookingForm,
+          startAt: bookingForm.startAt ? new Date(bookingForm.startAt).toISOString() : null,
+          endAt: bookingForm.endAt ? new Date(bookingForm.endAt).toISOString() : null,
+        });
+        setEditingBooking(null);
+      } else {
+        await apiPost(`/trips/${trip.id}/bookings`, {
+          ...bookingForm,
+          startAt: bookingForm.startAt ? new Date(bookingForm.startAt).toISOString() : undefined,
+          endAt: bookingForm.endAt ? new Date(bookingForm.endAt).toISOString() : undefined,
+        });
+        setGapAddModal(null);
+      }
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // 1. Build sorted distinct timeline days
   const timelineDays = useMemo<TimelineDay[]>(() => {
@@ -284,7 +385,45 @@ export function TimelineTab({ trip }: TimelineTabProps) {
 
     const rawTransits: TransitSpan[] = [];
 
-    // Check transit bookings (flight, car)
+    // Collect daily transport/flight places from itinerary days first
+    const placeTransits: TransitSpan[] = [];
+    for (const d of timelineDays) {
+      const dIdx = dateToIndex.get(d.dateStr) ?? 0;
+      for (const p of d.places) {
+        const cat = (p.category || '').toLowerCase();
+        const pNameLower = p.name.toLowerCase();
+        if (
+          cat === 'transport' ||
+          cat === 'transit' ||
+          cat === 'flight' ||
+          pNameLower.includes('flight') ||
+          pNameLower.includes('airline') ||
+          pNameLower.includes('american airlines') ||
+          pNameLower.includes('delta') ||
+          pNameLower.includes('united') ||
+          pNameLower.includes('train') ||
+          pNameLower.includes('flixbus')
+        ) {
+          let endDIdx = dIdx;
+          if (p.endTime && p.startTime && p.endTime < p.startTime) {
+            endDIdx = Math.min(dIdx + 1, timelineDays.length - 1);
+          }
+
+          placeTransits.push({
+            id: p.id,
+            title: p.name,
+            type: detectTransitType(p.name, 'transit'),
+            startDayIndex: dIdx,
+            endDayIndex: endDIdx,
+            startTime: p.startTime,
+            endTime: p.endTime,
+            place: p,
+          });
+        }
+      }
+    }
+
+    // Process transit bookings (flight, car)
     for (const b of trip.bookings ?? []) {
       if (b.type === 'flight' || b.type === 'car') {
         const sKey = parseDateKey(b.startAt);
@@ -294,48 +433,80 @@ export function TimelineTab({ trip }: TimelineTabProps) {
         let endIdx = eKey && dateToIndex.has(eKey) ? dateToIndex.get(eKey)! : startIdx;
         endIdx = Math.min(Math.max(startIdx, endIdx), timelineDays.length - 1);
 
-        const tType = b.type === 'flight' ? 'flight' : b.type === 'car' ? 'car' : detectTransitType(b.title);
+        // Check if booking has structured legs array in details
+        const detailsObj = b.details && typeof b.details === 'object' ? (b.details as Record<string, unknown>) : null;
+        const legs = detailsObj && (Array.isArray(detailsObj.legs) ? detailsObj.legs : Array.isArray(detailsObj.flights) ? detailsObj.flights : null);
 
-        rawTransits.push({
-          id: b.id,
-          title: b.title,
-          type: tType,
-          provider: b.provider,
-          reference: b.reference,
-          startDayIndex: startIdx,
-          endDayIndex: endIdx,
-          startTime: b.startAt,
-          endTime: b.endAt,
-          booking: b,
-        });
-      }
-    }
+        if (legs && legs.length > 0) {
+          // Unpack each structured flight leg as an individual timeline transit bar
+          for (let lIdx = 0; lIdx < legs.length; lIdx++) {
+            const leg = legs[lIdx] as Record<string, unknown>;
+            const depKey = parseDateKey(typeof leg.departTime === 'string' ? leg.departTime : null);
+            const arrKey = parseDateKey(typeof leg.arriveTime === 'string' ? leg.arriveTime : null);
+            const legStartIdx = depKey && dateToIndex.has(depKey) ? dateToIndex.get(depKey)! : startIdx;
+            const legEndIdx = arrKey && dateToIndex.has(arrKey) ? dateToIndex.get(arrKey)! : legStartIdx;
 
-    // Check transport places
-    for (const d of timelineDays) {
-      const dIdx = dateToIndex.get(d.dateStr) ?? 0;
-      for (const p of d.places) {
-        const cat = (p.category || '').toLowerCase();
-        if (cat === 'transport' || cat === 'transit' || cat === 'flight') {
-          // De-duplicate if already captured by a booking
-          const exists = rawTransits.some(
-            (t) =>
-              (t.booking && t.title.toLowerCase().trim() === p.name.toLowerCase().trim()) ||
-              (t.reference && p.notes && p.notes.includes(t.reference))
-          );
-          if (!exists) {
+            const carrier = (typeof leg.carrier === 'string' && leg.carrier) || b.provider || 'Flight';
+            const flightNo = typeof leg.flightNumber === 'string' ? leg.flightNumber : '';
+            const fromCode = (typeof leg.fromCode === 'string' && leg.fromCode) || (typeof leg.fromCity === 'string' && leg.fromCity) || '';
+            const toCode = (typeof leg.toCode === 'string' && leg.toCode) || (typeof leg.toCity === 'string' && leg.toCity) || '';
+            const route = fromCode && toCode ? `${fromCode} → ${toCode}` : '';
+            const legTitle = [carrier, flightNo, route ? `(${route})` : ''].filter(Boolean).join(' ');
+
             rawTransits.push({
-              id: p.id,
-              title: p.name,
-              type: detectTransitType(p.name, 'transit'),
-              startDayIndex: dIdx,
-              endDayIndex: dIdx,
-              startTime: p.startTime,
-              endTime: p.endTime,
-              place: p,
+              id: `${b.id}-leg-${lIdx}`,
+              title: legTitle || b.title,
+              type: 'flight',
+              provider: carrier,
+              reference: b.reference,
+              startDayIndex: legStartIdx,
+              endDayIndex: Math.min(Math.max(legStartIdx, legEndIdx), timelineDays.length - 1),
+              startTime: typeof leg.departTime === 'string' ? leg.departTime : b.startAt,
+              endTime: typeof leg.arriveTime === 'string' ? leg.arriveTime : b.endAt,
+              booking: b,
+            });
+          }
+        } else {
+          // Check if daily places already represent individual flight legs
+          const hasMatchingPlaces = placeTransits.some(
+            (pt) =>
+              (b.reference && pt.place?.notes && pt.place.notes.includes(b.reference)) ||
+              (b.provider && pt.title.toLowerCase().includes(b.provider.toLowerCase()))
+          );
+
+          // If this is a multi-day flight booking (e.g. 25 days round-trip) and individual flight places exist,
+          // prefer the individual day flight places over the monolithic 25-day block!
+          if (b.type === 'flight' && (endIdx - startIdx > 1) && hasMatchingPlaces) {
+            // Skip the monolithic multi-day booking in favor of the individual daily place legs
+          } else {
+            const tType = b.type === 'flight' ? 'flight' : b.type === 'car' ? 'car' : detectTransitType(b.title);
+            rawTransits.push({
+              id: b.id,
+              title: b.title,
+              type: tType,
+              provider: b.provider,
+              reference: b.reference,
+              startDayIndex: startIdx,
+              endDayIndex: endIdx,
+              startTime: b.startAt,
+              endTime: b.endAt,
+              booking: b,
             });
           }
         }
+      }
+    }
+
+    // Add daily transport places (avoiding duplicates if a booking already created that exact leg)
+    for (const pt of placeTransits) {
+      const isDupe = rawTransits.some(
+        (rt) =>
+          rt.startDayIndex === pt.startDayIndex &&
+          (rt.title.toLowerCase().trim() === pt.title.toLowerCase().trim() ||
+           (rt.reference && pt.place?.notes && pt.place.notes.includes(rt.reference) && rt.title.includes(pt.title)))
+      );
+      if (!isDupe) {
+        rawTransits.push(pt);
       }
     }
 
@@ -682,6 +853,7 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                   {lodgingGaps.map((gapDayIdx) => (
                     <div
                       key={`gap-${gapDayIdx}`}
+                      onClick={() => openAddStayForGap(gapDayIdx)}
                       style={{
                         position: 'absolute',
                         left: gapDayIdx * colWidth + 6,
@@ -697,12 +869,14 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                         justifyContent: 'center',
                         gap: 4,
                         zIndex: 1,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
                       }}
-                      title={`No hotel booked for Day ${gapDayIdx + 1} night`}
+                      title={`No hotel booked for Day ${gapDayIdx + 1} night — click to add accommodation`}
                     >
-                      <AlertCircle size={12} style={{ color: 'var(--warning, #f59e0b)' }} />
+                      <Plus size={12} style={{ color: 'var(--warning, #f59e0b)' }} />
                       <span style={{ fontSize: '0.72rem', color: 'var(--warning, #f59e0b)', fontWeight: 600 }}>
-                        No Lodging
+                        + Add Stay
                       </span>
                     </div>
                   ))}
@@ -880,6 +1054,125 @@ export function TimelineTab({ trip }: TimelineTabProps) {
         </div>
       )}
 
+      {/* LODGING GAP QUICK ADD MODAL */}
+      {gapAddModal && (
+        <Modal title="Add Accommodation for Gap" onClose={() => setGapAddModal(null)}>
+          <div className="field">
+            <label>Hotel / Property Name</label>
+            <input
+              value={bookingForm.title}
+              onChange={(e) => setBookingForm({ ...bookingForm, title: e.target.value })}
+              placeholder="e.g. Grand Hotel Flora, Airbnb Villa"
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-2">
+            <div className="field">
+              <label>Provider / Host</label>
+              <input
+                value={bookingForm.provider}
+                onChange={(e) => setBookingForm({ ...bookingForm, provider: e.target.value })}
+                placeholder="e.g. Booking.com, Marriott"
+              />
+            </div>
+            <div className="field">
+              <label>Confirmation Reference</label>
+              <input
+                value={bookingForm.reference}
+                onChange={(e) => setBookingForm({ ...bookingForm, reference: e.target.value })}
+                placeholder="e.g. HTL-98765"
+              />
+            </div>
+          </div>
+          <div className="grid grid-2">
+            <div className="field">
+              <label>Check-in Date & Time</label>
+              <input
+                type="datetime-local"
+                value={bookingForm.startAt}
+                onChange={(e) => {
+                  const startAt = e.target.value;
+                  setBookingForm({ ...bookingForm, startAt, endAt: endForStart(startAt, bookingForm.endAt) });
+                }}
+              />
+            </div>
+            <div className="field">
+              <label>Check-out Date & Time</label>
+              <input
+                type="datetime-local"
+                min={bookingForm.startAt || undefined}
+                value={bookingForm.endAt}
+                onChange={(e) => setBookingForm({ ...bookingForm, endAt: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="modal-actions">
+            <button className="btn primary" onClick={saveBookingForm} disabled={busy || !bookingForm.title}>
+              {busy ? 'Saving…' : 'Add Accommodation'}
+            </button>
+            <button className="btn" onClick={() => setGapAddModal(null)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* EDIT BOOKING MODAL */}
+      {editingBooking && (
+        <Modal title={`Edit ${editingBooking.type === 'hotel' ? 'Accommodation' : editingBooking.type === 'flight' ? 'Flight' : 'Reservation'}`} onClose={() => setEditingBooking(null)}>
+          <div className="field">
+            <label>Title / Property Name</label>
+            <input
+              value={bookingForm.title}
+              onChange={(e) => setBookingForm({ ...bookingForm, title: e.target.value })}
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-2">
+            <div className="field">
+              <label>Provider / Company / Host</label>
+              <input
+                value={bookingForm.provider}
+                onChange={(e) => setBookingForm({ ...bookingForm, provider: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>Confirmation Reference</label>
+              <input
+                value={bookingForm.reference}
+                onChange={(e) => setBookingForm({ ...bookingForm, reference: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-2">
+            <div className="field">
+              <label>{bookingForm.type === 'hotel' ? 'Check-in Date & Time' : bookingForm.type === 'flight' ? 'Departure Date & Time' : 'Starts (Date & Time)'}</label>
+              <input
+                type="datetime-local"
+                value={bookingForm.startAt}
+                onChange={(e) => {
+                  const startAt = e.target.value;
+                  setBookingForm({ ...bookingForm, startAt, endAt: endForStart(startAt, bookingForm.endAt) });
+                }}
+              />
+            </div>
+            <div className="field">
+              <label>{bookingForm.type === 'hotel' ? 'Check-out Date & Time' : bookingForm.type === 'flight' ? 'Arrival Date & Time' : 'Ends (Date & Time)'}</label>
+              <input
+                type="datetime-local"
+                min={bookingForm.startAt || undefined}
+                value={bookingForm.endAt}
+                onChange={(e) => setBookingForm({ ...bookingForm, endAt: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="modal-actions">
+            <button className="btn primary" onClick={saveBookingForm} disabled={busy || !bookingForm.title}>
+              {busy ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button className="btn" onClick={() => setEditingBooking(null)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+
       {/* INSPECTION MODAL */}
       {selectedItem && (
         <Modal title={selectedItem.title} onClose={() => setSelectedItem(null)} wide>
@@ -904,12 +1197,12 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                 <div className="grid grid-2 mb-3">
                   <div>
                     <label className="small muted">Check-In</label>
-                    <div>{new Date(selectedItem.stay.booking.startAt).toLocaleString()}</div>
+                    <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.stay.booking.startAt)}</div>
                   </div>
                   {selectedItem.stay.booking?.endAt && (
                     <div>
                       <label className="small muted">Check-Out</label>
-                      <div>{new Date(selectedItem.stay.booking.endAt).toLocaleString()}</div>
+                      <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.stay.booking.endAt)}</div>
                     </div>
                   )}
                 </div>
@@ -940,7 +1233,8 @@ export function TimelineTab({ trip }: TimelineTabProps) {
             <div>
               <div className="row mb-3" style={{ gap: 8, alignItems: 'center' }}>
                 <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)' }}>
-                  <Plane size={13} style={{ marginRight: 4 }} /> Transit Leg
+                  {getTransitIcon(selectedItem.transit.type)}
+                  <span style={{ marginLeft: 4, textTransform: 'capitalize' }}>{selectedItem.transit.type} Leg</span>
                 </span>
                 {selectedItem.transit.provider && <span className="badge">{selectedItem.transit.provider}</span>}
               </div>
@@ -958,12 +1252,12 @@ export function TimelineTab({ trip }: TimelineTabProps) {
                 <div className="grid grid-2 mb-3">
                   <div>
                     <label className="small muted">Departure</label>
-                    <div>{new Date(selectedItem.transit.booking.startAt).toLocaleString()}</div>
+                    <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.transit.booking.startAt)}</div>
                   </div>
                   {selectedItem.transit.booking?.endAt && (
                     <div>
                       <label className="small muted">Arrival</label>
-                      <div>{new Date(selectedItem.transit.booking.endAt).toLocaleString()}</div>
+                      <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.transit.booking.endAt)}</div>
                     </div>
                   )}
                 </div>
@@ -1043,7 +1337,33 @@ export function TimelineTab({ trip }: TimelineTabProps) {
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn primary" onClick={() => setSelectedItem(null)}>
+            {selectedItem.type === 'stay' && selectedItem.stay?.booking && (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  const b = selectedItem.stay!.booking!;
+                  setSelectedItem(null);
+                  openEditBooking(b);
+                }}
+              >
+                <Pencil size={13} style={{ marginRight: 4 }} /> Edit Stay
+              </button>
+            )}
+            {selectedItem.type === 'transit' && selectedItem.transit?.booking && (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  const b = selectedItem.transit!.booking!;
+                  setSelectedItem(null);
+                  openEditBooking(b);
+                }}
+              >
+                <Pencil size={13} style={{ marginRight: 4 }} /> Edit Flight / Booking
+              </button>
+            )}
+            <button type="button" className="btn" onClick={() => setSelectedItem(null)}>
               Close
             </button>
           </div>

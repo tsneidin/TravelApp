@@ -412,6 +412,10 @@ tripsRouter.post(
         lat: Number(req.body.lat),
         lng: Number(req.body.lng),
         zoom: Number(req.body.zoom),
+        origin: req.body.origin ? String(req.body.origin).trim() : null,
+        destination: req.body.destination ? String(req.body.destination).trim() : null,
+        travelMode: req.body.travelMode ? String(req.body.travelMode).trim() : null,
+        showTransit: req.body.showTransit === true,
       },
     });
     res.status(201).json({ mapView });
@@ -428,6 +432,13 @@ tripsRouter.patch(
     if (typeof req.body.lat === 'number') data.lat = req.body.lat;
     if (typeof req.body.lng === 'number') data.lng = req.body.lng;
     if (typeof req.body.zoom === 'number') data.zoom = req.body.zoom;
+    if (typeof req.body.origin === 'string') data.origin = req.body.origin.trim();
+    if (req.body.origin === null) data.origin = null;
+    if (typeof req.body.destination === 'string') data.destination = req.body.destination.trim();
+    if (req.body.destination === null) data.destination = null;
+    if (typeof req.body.travelMode === 'string') data.travelMode = req.body.travelMode.trim();
+    if (req.body.travelMode === null) data.travelMode = null;
+    if (typeof req.body.showTransit === 'boolean') data.showTransit = req.body.showTransit;
 
     const mapView = await prisma.mapView.update({
       where: { id: viewId },

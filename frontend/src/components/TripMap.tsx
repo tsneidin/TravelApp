@@ -659,20 +659,48 @@ export function TripMap({
     infoWindowRef.current?.close();
     mapRef.current.panTo({ lat: view.lat, lng: view.lng });
     mapRef.current.setZoom(view.zoom);
+
+    if (view.showTransit != null && window.google?.maps) {
+      if (!transitLayerRef.current) {
+        transitLayerRef.current = new window.google.maps.TransitLayer();
+      }
+      setShowTransitLayer(Boolean(view.showTransit));
+      transitLayerRef.current?.setMap(view.showTransit ? mapRef.current : null);
+    }
+
+    if (view.origin && view.destination) {
+      setOriginInput(view.origin);
+      setDestInput(view.destination);
+      const mode = (view.travelMode as any) || 'TRANSIT';
+      setTravelMode(mode);
+      setShowRouter(true);
+      void calculateRoute(view.origin, view.destination, mode);
+    } else {
+      clearRoute();
+    }
   };
 
-  const handleSaveCurrentView = async () => {
-    if (!mapRef.current || !tripId || !newViewName.trim()) return;
+  const handleSaveCurrentView = async (customName?: string) => {
+    if (!mapRef.current || !tripId) return;
     const center = mapRef.current.getCenter();
     const zoom = mapRef.current.getZoom();
     if (!center || zoom == null) return;
+
+    const nameToSave = (customName ?? newViewName).trim();
+    if (!nameToSave) return;
+
     setSavingPending(true);
     try {
+      const hasRoute = Boolean(originInput.trim() && destInput.trim());
       const res = await apiPost<{ mapView: MapView }>(`/trips/${tripId}/map-views`, {
-        name: newViewName.trim(),
+        name: nameToSave,
         lat: center.lat(),
         lng: center.lng(),
         zoom,
+        origin: hasRoute ? originInput.trim() : null,
+        destination: hasRoute ? destInput.trim() : null,
+        travelMode: hasRoute ? travelMode : null,
+        showTransit: showTransitLayer,
       });
       setLocalViews((prev) => [...prev, res.mapView]);
       setIsSavingView(false);
@@ -696,8 +724,16 @@ export function TripMap({
     }
   };
 
-  const calculateRoute = async () => {
-    if (!mapRef.current || !window.google?.maps || !originInput.trim() || !destInput.trim()) return;
+  const calculateRoute = async (
+    customOrigin?: string,
+    customDest?: string,
+    customMode?: 'TRANSIT' | 'DRIVING' | 'WALKING' | 'BICYCLING',
+  ) => {
+    const origin = (customOrigin ?? originInput).trim();
+    const dest = (customDest ?? destInput).trim();
+    const modeKey = customMode ?? travelMode;
+
+    if (!mapRef.current || !window.google?.maps || !origin || !dest) return;
     setCalculating(true);
     setRouteError('');
     setRouteResult(null);
@@ -718,10 +754,10 @@ export function TripMap({
         directionsRendererRef.current.setMap(mapRef.current);
       }
 
-      const mode = (window.google.maps.TravelMode as any)[travelMode] || window.google.maps.TravelMode.TRANSIT;
+      const mode = (window.google.maps.TravelMode as any)[modeKey] || window.google.maps.TravelMode.TRANSIT;
       const request: any = {
-        origin: originInput.trim(),
-        destination: destInput.trim(),
+        origin,
+        destination: dest,
         travelMode: mode,
       };
 
@@ -763,8 +799,8 @@ export function TripMap({
           }
         });
 
-        const startAddr = leg.start_address || originInput;
-        const endAddr = leg.end_address || destInput;
+        const startAddr = leg.start_address || origin;
+        const endAddr = leg.end_address || dest;
 
         setRouteResult({
           durationText: leg.duration?.text || '',
@@ -883,9 +919,14 @@ export function TripMap({
               type="button"
               className="map-view-chip"
               onClick={() => jumpToView(view)}
-              title={`Jump to ${view.name} (zoom ${view.zoom})`}
+              title={view.origin && view.destination ? `Directions: ${view.origin} → ${view.destination} (${view.travelMode || 'TRANSIT'})` : `Jump to ${view.name} (zoom ${view.zoom})`}
             >
-              <Bookmark size={12} style={{ opacity: 0.85 }} /> {view.name}
+              {view.origin && view.destination ? (
+                <Route size={12} style={{ color: '#0891b2' }} />
+              ) : (
+                <Bookmark size={12} style={{ opacity: 0.85 }} />
+              )}
+              <span>{view.name}</span>
             </button>
             {tripId && (
               <button
@@ -941,11 +982,16 @@ export function TripMap({
               className="map-view-chip map-view-save-btn"
               onClick={() => {
                 setIsSavingView(true);
-                setNewViewName(`View ${localViews.length + 1}`);
+                if (originInput.trim() && destInput.trim()) {
+                  const modeLabel = travelMode === 'TRANSIT' ? 'Transit' : travelMode === 'DRIVING' ? 'Drive' : 'Route';
+                  setNewViewName(`${modeLabel}: ${originInput.split(',')[0].trim()} → ${destInput.split(',')[0].trim()}`);
+                } else {
+                  setNewViewName(`View ${localViews.length + 1}`);
+                }
               }}
-              title="Save current camera position & zoom"
+              title="Save current camera position, zoom, and any active directions"
             >
-              <Plus size={12} /> Save View
+              <Plus size={12} /> {originInput.trim() && destInput.trim() ? 'Save Route View' : 'Save View'}
             </button>
           )
         )}
@@ -1052,7 +1098,7 @@ export function TripMap({
             <button
               type="button"
               className="btn sm primary grow"
-              onClick={calculateRoute}
+              onClick={() => void calculateRoute()}
               disabled={calculating || !originInput.trim() || !destInput.trim()}
             >
               {calculating ? 'Calculating route…' : 'Find Route'}
@@ -1092,11 +1138,25 @@ export function TripMap({
                 )}
               </div>
 
-              {/* Save Transit Leg Card */}
+              {/* Quick Save as Map View & Save Transit Leg Actions */}
               {tripId && (
                 <div style={{ background: 'rgba(255, 255, 255, 0.06)', borderRadius: 7, padding: '8px 10px', marginTop: 8 }}>
-                  <div className="small font-semibold mb" style={{ marginBottom: 6, color: '#e2e8f0' }}>
-                    Save Transit Leg to Itinerary:
+                  <div className="row between mb" style={{ marginBottom: 6 }}>
+                    <span className="small font-semibold" style={{ color: '#e2e8f0' }}>Save Transit Leg to Itinerary:</span>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      style={{ fontSize: '0.72rem', padding: '2px 6px', color: '#38bdf8' }}
+                      onClick={() => {
+                        const modeLabel = travelMode === 'TRANSIT' ? 'Transit' : travelMode === 'DRIVING' ? 'Drive' : 'Route';
+                        const defaultName = `${modeLabel}: ${originInput.split(',')[0].trim()} → ${destInput.split(',')[0].trim()}`;
+                        void handleSaveCurrentView(defaultName);
+                      }}
+                      disabled={savingPending}
+                      title="Save this camera view + directions route as a Saved Map View"
+                    >
+                      <Bookmark size={11} /> Save as Map View
+                    </button>
                   </div>
                   <div className="row" style={{ gap: 6 }}>
                     <select

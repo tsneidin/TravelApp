@@ -38,6 +38,10 @@ export interface MapView {
   lat: number;
   lng: number;
   zoom: number;
+  origin?: string | null;
+  destination?: string | null;
+  travelMode?: string | null;
+  showTransit?: boolean | null;
   createdAt?: string;
   updatedAt?: string;
 }

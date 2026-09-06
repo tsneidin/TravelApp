@@ -148,20 +148,26 @@ async function buildSystemPrompt(tripId: string, focusedDayId?: string): Promise
     .join('\n');
 
   let focusDesc = 'All Days (no single day filtered)';
+  let focusedLocationDesc = '';
   if (focusedDayId === 'unassigned') {
     focusDesc = 'Unassigned Places / Ideas (no day assigned)';
   } else if (focusedDayId) {
     const d = trip.days.find((item) => item.id === focusedDayId);
     if (d) {
       const idx = trip.days.findIndex((item) => item.id === focusedDayId) + 1;
+      const placeNames = d.places.map((p) => p.name).join(', ');
+      const placeAddresses = d.places.map((p) => p.address).filter(Boolean).join(', ');
       focusDesc = `Day ${idx} (${toDayKey(d.date)}) [id=${d.id}]${d.label ? ` — ${d.label}` : ''}`;
+      if (placeNames || placeAddresses || d.label) {
+        focusedLocationDesc = `\nFOCUSED DAY LOCATION & STOPS: ${[d.label, placeAddresses, placeNames].filter(Boolean).join(' · ')}`;
+      }
     }
   }
 
   return [
     `You are the AI travel assistant embedded in TravelApp, a self-hosted trip planner.`,
     `CURRENT TRIP: "${trip.name}" [id=${trip.id}] (destination: ${trip.destination || 'unknown'}, currency: ${trip.currency}${trip.startDate ? `, from ${toDayKey(trip.startDate)}` : ''}${trip.endDate ? ` to ${toDayKey(trip.endDate)}` : ''}).`,
-    `CURRENT FOCUSED DAY: ${focusDesc}`,
+    `CURRENT FOCUSED DAY: ${focusDesc}${focusedLocationDesc}`,
     ``,
     `ITINERARY:`,
     daysDesc || '  (no days yet)',
@@ -179,6 +185,12 @@ async function buildSystemPrompt(tripId: string, focusedDayId?: string): Promise
     `RULES & CAPABILITIES:`,
     `- You have FULL authority and capability to READ, WRITE, UPDATE, and DELETE everything about this trip using your tools.`,
     `- You are fully aware of the CURRENT FOCUSED DAY above. If the user asks you to add an activity, meal, or place without specifying a day/date, and a specific day is in focus, default to that focused day!`,
+    `- When the user asks about transit, transportation, trains, driving, or how to get to another city (e.g. "transit to Lecce options", "train options to Florence", "how do we get to Rome"):`,
+    `  1. Identify the origin location from the user's CURRENT FOCUSED DAY (or previous stop on that day), and the destination from the user's prompt.`,
+    `  2. Call get_transit_directions (or provide concrete train lines, operators like Trenitalia/Italo, typical travel time, frequency, road routes, and bus options).`,
+    `  3. Do NOT call get_suggestions for transit/route inquiries (get_suggestions is strictly for sights/restaurants/activities).`,
+    `  4. Never combine the origin/destination with unrelated trip destinations (e.g. do not inject "Naples" when traveling from Brindisi to Lecce).`,
+    `  5. Offer to add the transit leg to the itinerary on the appropriate day via add_place (e.g. category="Transport", name="Train: Brindisi → Lecce").`,
     `- You can change the user's active focus in the UI and on the live map by calling the focus_day tool (e.g. when the user asks "switch to Day 2", "show Day 3", "focus on Tokyo arrival day", "show unassigned", or "show all days").`,
     `- When the user instructs you to add, edit, move, or delete any place, day, booking, expense, packing item, or journal entry, execute the appropriate tool IMMEDIATELY and report what was changed clearly and concisely.`,
     `- When updating or deleting, identify the item by its ID (preferred if known) or by its matching title/name.`,
@@ -195,14 +207,38 @@ async function buildSystemPrompt(tripId: string, focusedDayId?: string): Promise
 
 // ---------------- main entry ----------------
 
+function extractCountryOrRegion(dest: string): string | null {
+  const parts = dest.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return parts[parts.length - 1];
+  }
+  return null;
+}
+
 function qualifyTripLocation(location: string, destination: string): string {
   const loc = location.trim();
   const dest = destination.trim();
-  if (!loc || !dest) return loc || dest;
+  if (!loc) return dest;
+  if (!dest) return loc;
+
   const locLower = loc.toLowerCase();
-  const significantDestinationWords = dest.toLowerCase().match(/[a-z]{4,}/g) ?? [];
-  if (significantDestinationWords.some((word) => locLower.includes(word))) return loc;
-  return `${loc}, ${dest}`;
+  const destLower = dest.toLowerCase();
+
+  // If loc already contains destination or vice versa, don't duplicate
+  if (locLower.includes(destLower) || destLower.includes(locLower)) return loc;
+
+  // Extract country / region from destination (e.g. "Italy" from "Naples, Italy")
+  const country = extractCountryOrRegion(dest);
+  if (country && !locLower.includes(country.toLowerCase())) {
+    return `${loc}, ${country}`;
+  }
+
+  // If destination is a pure country (e.g. "Italy", "Japan", "France"), append it if not present
+  if (!dest.includes(',') && !locLower.includes(destLower)) {
+    return `${loc}, ${dest}`;
+  }
+
+  return loc;
 }
 
 interface RecommendationContext {
@@ -216,6 +252,7 @@ async function inferRecommendationContext(
   tripId: string,
   message: string,
   destination: string,
+  focusedDayId?: string,
 ): Promise<RecommendationContext> {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -227,9 +264,35 @@ async function inferRecommendationContext(
       bookings: { orderBy: { startAt: 'asc' } },
     },
   });
-  const wantsArrival = /(when|after|once).{0,20}(land|arriv)|\bland(?:ing)?\b|\barrival\b/i.test(message);
   if (!trip) return { location: destination };
 
+  // 1. If a day is currently focused, prioritize the focused day's location!
+  if (focusedDayId && focusedDayId !== 'unassigned') {
+    const focusedDay = trip.days.find((d) => d.id === focusedDayId);
+    if (focusedDay) {
+      const validPlaces = focusedDay.places.filter((p) => p.address?.trim() || p.name?.trim());
+      if (validPlaces.length > 0) {
+        const lastPlace = validPlaces[validPlaces.length - 1];
+        const loc = lastPlace.address || lastPlace.name;
+        return {
+          location: loc,
+          dayId: focusedDay.id,
+          recommendedAt: (lastPlace.startTime ?? focusedDay.date).toISOString(),
+          label: `${loc} on Day ${trip.days.indexOf(focusedDay) + 1} (${toDayKey(focusedDay.date)})`,
+        };
+      }
+      if (focusedDay.label && !isGenericDayLabel(focusedDay.label)) {
+        return {
+          location: focusedDay.label,
+          dayId: focusedDay.id,
+          recommendedAt: focusedDay.date.toISOString(),
+          label: `${focusedDay.label} on Day ${trip.days.indexOf(focusedDay) + 1}`,
+        };
+      }
+    }
+  }
+
+  const wantsArrival = /(when|after|once).{0,20}(land|arriv)|\bland(?:ing)?\b|\barrival\b/i.test(message);
   const allPlaces = trip.days.flatMap((day) => day.places.map((place) => ({ day, place })));
   const transports = allPlaces.filter(({ place }) =>
     /transport/i.test(place.category ?? '') || /✈|flight|airport|\b[A-Z]{3}\b/.test(place.name),
@@ -305,7 +368,7 @@ export async function processTripChat(
 
   const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { destination: true } });
   const destination = trip?.destination ?? '';
-  let recommendationContext = await inferRecommendationContext(tripId, userMessage, destination);
+  let recommendationContext = await inferRecommendationContext(tripId, userMessage, destination, focusedDayId);
   recommendationContext = {
     ...recommendationContext,
     location: qualifyTripLocation(recommendationContext.location, destination),

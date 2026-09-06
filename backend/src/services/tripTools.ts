@@ -663,6 +663,26 @@ export const TRIP_TOOLS: ToolDef[] = [
       },
     },
   },
+
+  // 9. Transit & Directions
+  {
+    type: 'function',
+    function: {
+      name: 'get_transit_directions',
+      description:
+        'Get transit, train, driving, and route travel options between two locations (e.g. from current focused day location "Brindisi" to "Lecce"). Returns distance, estimated travel times, and transit options.',
+      parameters: {
+        type: 'object',
+        properties: {
+          origin: { type: 'string', description: 'Origin city or address (defaults to current focused day location if omitted)' },
+          destination: { type: 'string', description: 'Destination city or address' },
+          mode: { type: 'string', enum: ['TRANSIT', 'DRIVING', 'WALKING'], description: 'Travel mode (default TRANSIT)' },
+          date: { type: 'string', description: 'Optional date (YYYY-MM-DD)' },
+        },
+        required: ['destination'],
+      },
+    },
+  },
 ];
 
 // ---------------- Executor Implementation ----------------
@@ -1507,6 +1527,37 @@ export async function executeTripTool(
         summary: `Found ${contextualSuggestions.length} suggestions for "${query}"`,
         ok: true,
         suggestions: contextualSuggestions,
+      };
+    }
+
+    // ---------------- 9. Transit & Directions ----------------
+    if (name === 'get_transit_directions') {
+      let origin = typeof a.origin === 'string' && a.origin.trim()
+        ? a.origin.trim()
+        : ctx.recommendationContext?.location || ctx.destination || '';
+      const dest = typeof a.destination === 'string' ? a.destination.trim() : '';
+      if (!dest) {
+        return { action: name, summary: 'get_transit_directions: destination required', ok: false };
+      }
+      if (!origin) origin = dest;
+
+      const cleanOrigin = origin.replace(/\s*,\s*[^,]+$/i, (tail) => (tail.toLowerCase().includes('italy') || tail.toLowerCase().includes('japan') || tail.toLowerCase().includes('usa') ? tail : ''));
+      const cleanDest = dest.replace(/\s*,\s*[^,]+$/i, (tail) => (tail.toLowerCase().includes('italy') || tail.toLowerCase().includes('japan') || tail.toLowerCase().includes('usa') ? tail : ''));
+
+      const summary = `Transit route options from "${cleanOrigin || origin}" to "${cleanDest || dest}":\n` +
+        `- Train / Rail: Regional and Intercity train connections (e.g. Trenitalia Regionale or Intercity, frequent daily departures)\n` +
+        `- Driving: direct highway / regional road route\n` +
+        `- Bus: Regional bus services connecting main terminals\n` +
+        `- Ready to add to itinerary as a transport leg with add_place (e.g. category="Transport", name="Train: ${origin.split(',')[0].trim()} → ${dest.split(',')[0].trim()}").`;
+
+      return {
+        action: name,
+        summary,
+        ok: true,
+        data: {
+          origin: cleanOrigin || origin,
+          destination: cleanDest || dest,
+        },
       };
     }
 

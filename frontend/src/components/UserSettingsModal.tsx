@@ -3,7 +3,7 @@ import { Upload, KeyRound, User, Check, Sparkles } from 'lucide-react';
 import { Modal } from './Modal';
 import { Avatar, PRESET_AVATARS } from './Avatar';
 import { useAuth } from '../lib/auth';
-import { apiPatch, apiPost } from '../lib/api';
+import { apiPatch, apiPost, uploadAvatar } from '../lib/api';
 
 export interface UserSettingsModalProps {
   onClose: () => void;
@@ -36,23 +36,8 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
     setUploadingAvatar(true);
     setProfileError('');
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/auth/avatar', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to upload avatar');
-      }
-
-      const json = await res.json();
-      setSelectedAvatar(json.avatarUrl);
+      const data = await uploadAvatar(file);
+      setSelectedAvatar(data.avatarUrl);
       await refreshUser();
       setProfileSuccess('Avatar photo uploaded successfully!');
       setTimeout(() => setProfileSuccess(''), 3000);
@@ -60,6 +45,7 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
       setProfileError((err as Error).message);
     } finally {
       setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 

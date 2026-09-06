@@ -63,3 +63,9 @@ export function uploadAiDocument(tripId: string, file: File) {
   fd.append('file', file);
   return api<{ ok: boolean; document: import('./types').ParsedDocument }>('POST', `/trips/${tripId}/ai/upload-file`, fd);
 }
+
+export function uploadAvatar(file: File) {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api<{ avatarUrl: string; user: import('./types').User }>('POST', '/auth/avatar', fd);
+}

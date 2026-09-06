@@ -111,10 +111,21 @@ function extractCityFromLocation(raw?: string | null): string | null {
   return null;
 }
 
-function getLastCityForDay(day?: { places?: { name?: string; address?: string | null }[] }): string | null {
+function isAccommodationPlace(p?: { category?: string | null; name?: string }): boolean {
+  if (!p) return false;
+  const cat = (p.category || '').toLowerCase();
+  if (cat === 'accommodation' || cat === 'hotel' || cat === 'lodging' || cat === 'stay') return true;
+  if (/\b(hotel|resort|hostel|inn|motel|b&b|bed & breakfast|albergo|apartment|villa|guesthouse|guest house)\b/i.test(p.name || '')) {
+    return true;
+  }
+  return false;
+}
+
+function getLastCityForDay(day?: { places?: { name?: string; address?: string | null; category?: string | null }[] }): string | null {
   if (!day?.places || day.places.length === 0) return null;
   for (let i = day.places.length - 1; i >= 0; i--) {
     const p = day.places[i];
+    if (!isAccommodationPlace(p)) continue;
     const fromAddr = extractCityFromLocation(p.address);
     if (fromAddr && fromAddr.length >= 2 && fromAddr.length <= 30) return fromAddr;
 
@@ -497,14 +508,14 @@ export function Layout() {
                                   deduped.push(day);
                                 }
                               }
-                              let currentCity: string | null = null;
+                                let currentCity: string | null = null;
                               return deduped.map((day, index) => {
                                 const dateStr = formatSidebarDate(day.date);
                                 const explicitCity = getLastCityForDay(day);
                                 if (explicitCity) {
                                   currentCity = explicitCity;
                                 }
-                                const displayCity = explicitCity || currentCity || t.destination || null;
+                                const displayCity = explicitCity || currentCity || null;
                                 return (
                                   <Link
                                     key={day.id}
@@ -514,8 +525,8 @@ export function Layout() {
                                   >
                                     <span className="side-tab-dot" />
                                     <span className="side-day-num">{index + 1}</span>
-                                    <span className="side-day-date">{dateStr}</span>
                                     {displayCity && <span className="side-day-city">{displayCity}</span>}
+                                    <span className="side-day-date">{dateStr}</span>
                                   </Link>
                                 );
                               });
@@ -619,8 +630,10 @@ export function Layout() {
             <div className="side-user-role">{user?.isAdmin ? 'Admin' : 'Member'}</div>
           </div>
           <button
-            className="btn ghost icon-only sm"
+            type="button"
+            className="side-logout-btn"
             title="Log out"
+            aria-label="Log out"
             onClick={() => {
               logout();
               navigate('/login');

@@ -1189,18 +1189,13 @@ tbody tr.total-row td {
   padding: 5px 8px;
   font-size: 0.8rem;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .side-day-num {
   font-weight: 700;
-  color: var(--text);
+  color: var(--side-text, var(--text));
   min-width: 14px;
-}
-.side-day-date {
-  color: var(--muted);
-  font-size: 0.78rem;
-  white-space: nowrap;
+  flex-shrink: 0;
 }
 .side-day-city {
   color: var(--accent);
@@ -1209,7 +1204,17 @@ tbody tr.total-row td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-left: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.side-day-date {
+  color: var(--side-muted, var(--muted));
+  font-size: 0.75rem;
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .trip-empty {
   padding: 6px 10px;
@@ -1495,6 +1500,26 @@ tbody tr.total-row td {
 .side-user-role {
   font-size: 0.72rem;
   color: var(--side-muted, var(--muted));
+}
+.side-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius, 6px);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--side-muted, var(--muted));
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+.side-logout-btn:hover {
+  color: var(--danger, #f87171);
+  background: color-mix(in srgb, var(--danger, #f87171) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger, #f87171) 30%, transparent);
 }
 .side-content {
   flex: 1;

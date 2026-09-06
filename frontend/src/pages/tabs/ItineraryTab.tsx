@@ -1846,28 +1846,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             />
           </div>
 
-          {editingId && editingPlaceItem && (() => {
-            const siblingPlaces = findSpannedPlaces(editingPlaceItem, allPlaces, days);
-            if (siblingPlaces.length > 1) {
-              return (
-                <div className="field-hint-ai" style={{ marginTop: '-0.2rem', marginBottom: '0.6rem', padding: '8px 10px', background: 'var(--surface-hover)', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                  <label className="row items-center gap-2" style={{ margin: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px' }}>
-                    <input
-                      type="checkbox"
-                      checked={updateAllInSeries}
-                      onChange={(e) => setUpdateAllInSeries(e.target.checked)}
-                    />
-                    <span>Apply updates to all {siblingPlaces.length} occurrences in this series</span>
-                  </label>
-                  <div className="small muted" style={{ marginTop: 2, paddingLeft: '22px' }}>
-                    This item appears on {siblingPlaces.length} days. Uncheck to update only this single instance.
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
-
           <div className="field" style={{ marginBottom: '0.6rem' }}>
             <label style={{ marginBottom: 4 }}>
               Full Description{' '}
@@ -2015,11 +1993,54 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <label style={{ marginBottom: 4 }}>Notes</label>
             <textarea rows={2} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
           </div>
-          <div className="modal-actions">
-            <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>
-              {busy ? 'Saving…' : 'Save'}
-            </button>
-            <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              marginTop: '18px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {editingId && editingPlaceItem && (() => {
+                const siblingPlaces = findSpannedPlaces(editingPlaceItem, allPlaces, days);
+                if (siblingPlaces.length > 1) {
+                  return (
+                    <label
+                      className="row items-center gap-2"
+                      style={{
+                        margin: 0,
+                        cursor: 'pointer',
+                        fontWeight: 500,
+                        fontSize: '13px',
+                        userSelect: 'none',
+                      }}
+                      title={`This item appears on ${siblingPlaces.length} days. Uncheck to update only this single instance.`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={updateAllInSeries}
+                        onChange={(e) => setUpdateAllInSeries(e.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span>Apply to all {siblingPlaces.length} occurrences</span>
+                    </label>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+              <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" className="btn" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+            </div>
           </div>
         </Modal>
       )}

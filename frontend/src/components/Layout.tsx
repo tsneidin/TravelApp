@@ -185,12 +185,6 @@ export function Layout() {
     }
   });
 
-  // Transit & router live status from TripMap
-  const [mapTransitState, setMapTransitState] = useState<{ showTransitLayer: boolean; showRouter: boolean }>({
-    showTransitLayer: false,
-    showRouter: false,
-  });
-
   const toggleItineraryCollapse = (tripId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -213,34 +207,6 @@ export function Layout() {
       } catch {}
       return next;
     });
-  };
-
-  // Sync transit state from active map
-  useEffect(() => {
-    const onTransitState = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail) {
-        setMapTransitState({
-          showTransitLayer: Boolean(detail.showTransitLayer),
-          showRouter: Boolean(detail.showRouter),
-        });
-      }
-    };
-    window.addEventListener('travelapp:transit_state', onTransitState);
-    return () => window.removeEventListener('travelapp:transit_state', onTransitState);
-  }, []);
-
-  // Actions for map sub-items
-
-  const toggleRouterFromSidebar = (tripId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (activeTab !== 'map' && activeTab !== 'itinerary') {
-      navigate(`/trips/${tripId}?tab=map`);
-    }
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('travelapp:open_transit_router', { detail: { tripId } }));
-    }, 50);
   };
 
   const jumpToMapView = (tripId: string, view: any, e: React.MouseEvent) => {
@@ -454,7 +420,7 @@ export function Layout() {
                             })()}
                           </div>
                         ) : tb.key === 'map' ? (
-                          /* Map Dropdown Sub-menu */
+                          /* Map Dropdown Sub-menu for Saved Views */
                           <div className="side-tab-group side-map-group">
                             <div className={`side-tab side-tab-parent ${activeTab === tb.key ? 'active' : ''}`}>
                               <Link
@@ -464,66 +430,51 @@ export function Layout() {
                                 <span className="side-tab-dot" />
                                 {tb.label}
                               </Link>
-                              <button
-                                type="button"
-                                className="side-tab-collapse-btn"
-                                onClick={(e) => toggleMapCollapse(t.id, e)}
-                                title={collapsedMaps[t.id] ? 'Expand map tools & saved views' : 'Collapse map tools'}
-                                aria-label={collapsedMaps[t.id] ? 'Expand map tools & saved views' : 'Collapse map tools'}
-                              >
-                                {collapsedMaps[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                              </button>
-                            </div>
-
-                            {!collapsedMaps[t.id] && (
-                              <div className="side-map-submenu">
-                                {/* Directions & Transit Router */}
+                              {(t.mapViews ?? []).length > 0 && (
                                 <button
                                   type="button"
-                                  className={`side-map-subitem ${mapTransitState.showRouter ? 'active-router' : ''}`}
-                                  onClick={(e) => toggleRouterFromSidebar(t.id, e)}
-                                  title="Open Directions and Transit Route Planner"
+                                  className="side-tab-collapse-btn"
+                                  onClick={(e) => toggleMapCollapse(t.id, e)}
+                                  title={collapsedMaps[t.id] ? 'Expand saved map views' : 'Collapse saved map views'}
+                                  aria-label={collapsedMaps[t.id] ? 'Expand saved map views' : 'Collapse saved map views'}
                                 >
-                                  <Route size={13} className="side-map-icon" />
-                                  <span className="side-map-label">Directions & Transit</span>
-                                  {mapTransitState.showRouter && (
-                                    <span className="side-map-pill pill-on">Open</span>
-                                  )}
+                                  {collapsedMaps[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                                 </button>
+                              )}
+                            </div>
 
-                                {/* Saved Map Views Section */}
-                                {(t.mapViews ?? []).length > 0 && (
-                                  <div className="side-map-views-section">
-                                    <div className="side-map-section-label">
-                                      Saved Views ({(t.mapViews ?? []).length})
-                                    </div>
-                                    {(t.mapViews ?? []).map((view) => (
-                                      <div key={view.id} className="side-map-view-row">
-                                        <button
-                                          type="button"
-                                          className="side-map-view-btn"
-                                          onClick={(e) => jumpToMapView(t.id, view, e)}
-                                          title={view.origin && view.destination ? `Route: ${view.origin} → ${view.destination}` : `Zoom ${view.zoom}`}
-                                        >
-                                          {view.origin && view.destination ? (
-                                            <Route size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />
-                                          ) : (
-                                            <Bookmark size={12} style={{ color: '#cbd5e1', flexShrink: 0 }} />
-                                          )}
-                                          <span className="side-map-view-name">{view.name}</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="side-map-del-btn"
-                                          onClick={(e) => void deleteMapView(t.id, view.id, e)}
-                                          title="Delete saved view"
-                                        >
-                                          <X size={11} />
-                                        </button>
-                                      </div>
-                                    ))}
+                            {(t.mapViews ?? []).length > 0 && !collapsedMaps[t.id] && (
+                              <div className="side-map-submenu">
+                                <div className="side-map-views-section">
+                                  <div className="side-map-section-label">
+                                    Saved Views ({(t.mapViews ?? []).length})
                                   </div>
-                                )}
+                                  {(t.mapViews ?? []).map((view) => (
+                                    <div key={view.id} className="side-map-view-row">
+                                      <button
+                                        type="button"
+                                        className="side-map-view-btn"
+                                        onClick={(e) => jumpToMapView(t.id, view, e)}
+                                        title={view.origin && view.destination ? `Route: ${view.origin} → ${view.destination}` : `Zoom ${view.zoom}`}
+                                      >
+                                        {view.origin && view.destination ? (
+                                          <Route size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                                        ) : (
+                                          <Bookmark size={12} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+                                        )}
+                                        <span className="side-map-view-name">{view.name}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="side-map-del-btn"
+                                        onClick={(e) => void deleteMapView(t.id, view.id, e)}
+                                        title="Delete saved view"
+                                      >
+                                        <X size={11} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
 
                                 {/* Save current view quick-action */}
                                 <button

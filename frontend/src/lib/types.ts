@@ -27,6 +27,7 @@ export interface Trip {
   journal?: JournalEntry[];
   photos?: Photo[];
   mapViews?: MapView[];
+  todos?: TodoItem[];
   _count?: { places: number; expenses: number };
 }
 
@@ -113,6 +114,19 @@ export interface PackingItem {
   sortOrder: number;
 }
 
+export interface TodoItem {
+  id: string;
+  tripId: string;
+  title: string;
+  notes?: string | null;
+  dueDate?: string | null;
+  category?: string | null;
+  done: boolean;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface JournalEntry {
   id: string;
   tripId: string;
@@ -160,7 +174,7 @@ export interface EmailImport {
 
 export interface CalendarEvent {
   id: string;
-  type: 'place' | 'booking';
+  type: 'place' | 'booking' | 'todo';
   tripId: string;
   title: string;
   date: string;
@@ -171,6 +185,7 @@ export interface CalendarEvent {
   bookingType?: string;
   category?: string | null;
   dayId?: string;
+  done?: boolean;
 }
 
 export interface ChatMessage {

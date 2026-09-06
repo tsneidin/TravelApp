@@ -11,6 +11,7 @@ import { MapTab } from './tabs/MapTab';
 import { BudgetTab } from './tabs/BudgetTab';
 import { PhotosJournalTab } from './tabs/PhotosJournalTab';
 import { PackingTab } from './tabs/PackingTab';
+import { TodoTab } from './tabs/TodoTab';
 import { BookingsTab } from './tabs/BookingsTab';
 
 type Tab =
@@ -18,6 +19,7 @@ type Tab =
   | 'map'
   | 'budget'
   | 'photos'
+  | 'todos'
   | 'packing'
   | 'bookings';
 
@@ -26,6 +28,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'map', label: 'Map' },
   { key: 'budget', label: 'Budget' },
   { key: 'photos', label: 'Photos & journal' },
+  { key: 'todos', label: "To-Do's" },
   { key: 'packing', label: 'Packing' },
   { key: 'bookings', label: 'Bookings' },
 ];
@@ -129,6 +132,7 @@ export function TripDetail() {
       {tab === 'map' && <MapTab trip={trip} reload={load} />}
       {tab === 'budget' && <BudgetTab trip={trip} reload={load} />}
       {tab === 'photos' && <PhotosJournalTab trip={trip} reload={load} />}
+      {tab === 'todos' && <TodoTab trip={trip} reload={load} />}
       {tab === 'packing' && <PackingTab trip={trip} reload={load} />}
       {tab === 'bookings' && <BookingsTab trip={trip} reload={load} />}
 

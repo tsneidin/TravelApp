@@ -27,6 +27,7 @@ async function loadTrip(tripId: string) {
       photos: true,
       imports: { orderBy: { createdAt: 'desc' } },
       mapViews: { orderBy: { createdAt: 'asc' } },
+      todos: { orderBy: [{ done: 'asc' }, { dueDate: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
     },
   });
   if (!trip) throw notFound('Trip not found');
@@ -442,6 +443,79 @@ tripsRouter.delete(
     const { tripId, viewId } = req.params;
     await requireTripAccess(req, tripId, 'editor');
     await prisma.mapView.delete({ where: { id: viewId } });
+    res.status(204).send();
+  }),
+);
+
+// ---------- to-dos / tasks ----------
+tripsRouter.get(
+  '/:tripId/todos',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'viewer');
+    const todos = await prisma.todoItem.findMany({
+      where: { tripId },
+      orderBy: [{ done: 'asc' }, { dueDate: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    res.json({ todos });
+  }),
+);
+
+tripsRouter.post(
+  '/:tripId/todos',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    requireFields(req, ['title']);
+    const title = String(req.body.title).trim();
+    if (!title) throw badRequest('Todo title is required');
+
+    const count = await prisma.todoItem.count({ where: { tripId } });
+    const todo = await prisma.todoItem.create({
+      data: {
+        tripId,
+        title,
+        notes: req.body.notes ? String(req.body.notes).trim() : null,
+        dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
+        category: req.body.category ? String(req.body.category).trim() : 'Pre-Trip',
+        sortOrder: count,
+      },
+    });
+    res.status(201).json({ todo });
+  }),
+);
+
+tripsRouter.patch(
+  '/:tripId/todos/:todoId',
+  asyncHandler(async (req, res) => {
+    const { tripId, todoId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    const data: Record<string, unknown> = {};
+    if (typeof req.body.title === 'string') data.title = req.body.title.trim();
+    if (typeof req.body.notes === 'string') data.notes = req.body.notes.trim();
+    if (req.body.notes === null) data.notes = null;
+    if (typeof req.body.category === 'string') data.category = req.body.category.trim();
+    if (req.body.category === null) data.category = 'Pre-Trip';
+    if (typeof req.body.done === 'boolean') data.done = req.body.done;
+    if (typeof req.body.sortOrder === 'number') data.sortOrder = req.body.sortOrder;
+    if (req.body.dueDate !== undefined) {
+      data.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
+    }
+
+    const todo = await prisma.todoItem.update({
+      where: { id: todoId },
+      data,
+    });
+    res.json({ todo });
+  }),
+);
+
+tripsRouter.delete(
+  '/:tripId/todos/:todoId',
+  asyncHandler(async (req, res) => {
+    const { tripId, todoId } = req.params;
+    await requireTripAccess(req, tripId, 'editor');
+    await prisma.todoItem.delete({ where: { id: todoId } });
     res.status(204).send();
   }),
 );

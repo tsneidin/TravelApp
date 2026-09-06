@@ -82,6 +82,7 @@ model Trip {
   imports  EmailImport[]
   chat     ChatMessage[]
   mapViews MapView[]
+  todos    TodoItem[]
 
   @@index([ownerId])
 }
@@ -289,6 +290,22 @@ model MapView {
   trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
+model TodoItem {
+  id        String    @id @default(cuid())
+  tripId    String
+  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  title     String
+  notes     String?
+  dueDate   DateTime?
+  category  String?   @default("Pre-Trip")
+  done      Boolean   @default(false)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([tripId])
 }

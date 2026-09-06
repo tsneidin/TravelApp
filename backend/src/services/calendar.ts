@@ -3,7 +3,7 @@ import type { Booking, Day, Place } from '@prisma/client';
 
 export interface CalendarEvent {
   id: string;
-  type: 'place' | 'booking';
+  type: 'place' | 'booking' | 'todo';
   tripId: string;
   title: string;
   date: string; // YYYY-MM-DD
@@ -14,6 +14,7 @@ export interface CalendarEvent {
   bookingType?: string;
   category?: string;
   dayId?: string;
+  done?: boolean;
 }
 
 function isoDate(d: Date): string {
@@ -28,7 +29,7 @@ export async function buildEvents(opts: { userId?: string; tripId?: string } = {
   const where = opts.tripId ? { id: opts.tripId } : { ownerId: opts.userId };
   const trips = await prisma.trip.findMany({
     where,
-    include: { days: true, places: true, bookings: true },
+    include: { days: true, places: true, bookings: true, todos: true },
   });
 
   const events: CalendarEvent[] = [];
@@ -43,6 +44,19 @@ export async function buildEvents(opts: { userId?: string; tripId?: string } = {
       const bDate = b.startAt ? isoDate(b.startAt) : undefined;
       const matchingDay = bDate ? trip.days.find((d) => isoDate(d.date) === bDate) : undefined;
       events.push(bookingEvent(trip.id, b, matchingDay));
+    }
+    for (const t of trip.todos) {
+      if (!t.dueDate) continue;
+      events.push({
+        id: `t-${t.id}`,
+        type: 'todo',
+        tripId: trip.id,
+        title: `[To-Do] ${t.title}`,
+        date: isoDate(t.dueDate),
+        sortOrder: t.sortOrder,
+        category: t.category || 'To-Do',
+        done: t.done,
+      });
     }
   }
   events.sort((a, b) => (a.date === b.date ? a.sortOrder - b.sortOrder : a.date.localeCompare(b.date)));

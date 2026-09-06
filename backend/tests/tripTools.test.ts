@@ -47,6 +47,12 @@ describe('TRIP_TOOLS definitions', () => {
     expect(names).toContain('update_packing_item');
     expect(names).toContain('delete_packing_item');
 
+    // To-Do
+    expect(names).toContain('list_todos');
+    expect(names).toContain('add_todo');
+    expect(names).toContain('update_todo');
+    expect(names).toContain('delete_todo');
+
     // Journal
     expect(names).toContain('list_journal_entries');
     expect(names).toContain('add_journal_entry');

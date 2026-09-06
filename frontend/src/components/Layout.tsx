@@ -15,6 +15,7 @@ const TRIP_TABS: { key: string; label: string }[] = [
   { key: 'map', label: 'Map' },
   { key: 'budget', label: 'Budget' },
   { key: 'photos', label: 'Photos & journal' },
+  { key: 'todos', label: "To-Do's" },
   { key: 'packing', label: 'Packing' },
   { key: 'bookings', label: 'Bookings' },
 ];

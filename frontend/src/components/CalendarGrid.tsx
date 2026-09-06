@@ -11,9 +11,9 @@ function iso(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function formatCalendarTitle(rawTitle: string, type?: 'place' | 'booking', bookingType?: string): string {
+export function formatCalendarTitle(rawTitle: string, type?: 'place' | 'booking' | 'todo' | string, bookingType?: string): string {
   let title = (rawTitle || '').trim();
-  if (!title) return type === 'booking' ? 'Reservation' : 'Place';
+  if (!title) return type === 'booking' ? 'Reservation' : type === 'todo' ? 'To-Do' : 'Place';
 
   // 1. Remove leading unicode symbols/emojis
   title = title.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FAFF}\s]+/u, '').trim();
@@ -95,7 +95,9 @@ export function CalendarGrid({
 
   const handleEventClick = (ev: React.MouseEvent, e: CalendarEvent) => {
     ev.stopPropagation();
-    if (e.type === 'place' && e.placeId) {
+    if (e.type === 'todo') {
+      navigate(`/trips/${e.tripId}?tab=todos`);
+    } else if (e.type === 'place' && e.placeId) {
       navigate(`/trips/${e.tripId}?tab=itinerary#place-${e.placeId}`);
     } else if (e.type === 'booking') {
       if (e.dayId) {

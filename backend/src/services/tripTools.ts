@@ -513,6 +513,66 @@ export const TRIP_TOOLS: ToolDef[] = [
     },
   },
 
+  // 6b. To-Do Items / Pre-Trip Tasks
+  {
+    type: 'function',
+    function: {
+      name: 'list_todos',
+      description: 'List all to-do tasks and pre-trip checklist items (e.g. mail hold, prescriptions, passport check).',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_todo',
+      description: 'Add a to-do item or pre-trip task with optional due date, category, and notes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Task title (e.g., "Place USPS mail hold", "Refill prescriptions")' },
+          dueDate: { type: 'string', description: 'Due date in YYYY-MM-DD format (optional)' },
+          category: { type: 'string', description: 'Category (e.g. "Pre-Trip", "Home & Mail", "Health", "Documents", "Finance")' },
+          notes: { type: 'string', description: 'Additional notes or instructions' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_todo',
+      description: 'Update a to-do task (mark done, change due date, category, or title). Identify by current title.',
+      parameters: {
+        type: 'object',
+        properties: {
+          currentTitle: { type: 'string', description: 'Current task title to find it' },
+          title: { type: 'string', description: 'New title if renaming' },
+          dueDate: { type: 'string', description: 'New due date in YYYY-MM-DD format (or "clear" to remove)' },
+          category: { type: 'string', description: 'New category' },
+          notes: { type: 'string', description: 'New notes' },
+          done: { type: 'boolean', description: 'Completed status' },
+        },
+        required: ['currentTitle'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_todo',
+      description: 'Delete a to-do item by task title.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Task title to delete' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+
   // 7. Journal Entries
   {
     type: 'function',
@@ -612,6 +672,7 @@ export async function executeTripTool(
           bookings: { select: { id: true, type: true, title: true, reference: true, startAt: true } },
           expenses: { select: { id: true, description: true, amount: true, currency: true, category: true } },
           packing: { select: { id: true, item: true, category: true, done: true } },
+          todos: { select: { id: true, title: true, done: true, dueDate: true, category: true } },
           journal: { select: { id: true, title: true, date: true } },
           places: { where: { dayId: null }, select: { id: true, name: true } },
         },
@@ -620,10 +681,11 @@ export async function executeTripTool(
 
       const totalSpent = trip.expenses.reduce((sum, e) => sum + e.amount, 0);
       const packedCount = trip.packing.filter((p) => p.done).length;
+      const todosDoneCount = trip.todos.filter((t) => t.done).length;
 
       const summary = `Trip "${trip.name}" (${trip.destination}): ${trip.days.length} days, ` +
         `${trip.bookings.length} bookings, ${trip.expenses.length} expenses ($${totalSpent.toFixed(2)} ${trip.currency}), ` +
-        `packing: ${packedCount}/${trip.packing.length} items.`;
+        `packing: ${packedCount}/${trip.packing.length} items, todos: ${todosDoneCount}/${trip.todos.length} done.`;
 
       return {
         action: name,
@@ -643,6 +705,8 @@ export async function executeTripTool(
           expensesTotal: totalSpent,
           packingTotal: trip.packing.length,
           packingDone: packedCount,
+          todosTotal: trip.todos.length,
+          todosDone: todosDoneCount,
         },
       };
     }
@@ -1210,6 +1274,72 @@ export async function executeTripTool(
 
       await prisma.packingItem.delete({ where: { id: row.id } });
       return { action: name, summary: `Deleted packing item "${row.item}"`, ok: true };
+    }
+
+    // ---------------- 6b. To-Do Items / Pre-Trip Tasks ----------------
+    if (name === 'list_todos') {
+      const items = await prisma.todoItem.findMany({
+        where: { tripId },
+        orderBy: [{ done: 'asc' }, { dueDate: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+      const doneCount = items.filter((t) => t.done).length;
+      const summary = `To-Do list (${doneCount}/${items.length} completed):\n` +
+        items.map((t) => `- [${t.done ? 'x' : ' '}] "${t.title}" (${t.category || 'Pre-Trip'}${t.dueDate ? `, due ${toDayKey(t.dueDate)}` : ''})`).join('\n');
+      return { action: name, summary, ok: true, data: items };
+    }
+
+    if (name === 'add_todo') {
+      const title = String(a.title ?? '').trim();
+      if (!title) return { action: name, summary: 'To-do item title required', ok: false };
+      const count = await prisma.todoItem.count({ where: { tripId } });
+      const row = await prisma.todoItem.create({
+        data: {
+          tripId,
+          title,
+          category: typeof a.category === 'string' && a.category.trim() ? a.category.trim() : 'Pre-Trip',
+          notes: typeof a.notes === 'string' && a.notes.trim() ? a.notes.trim() : null,
+          dueDate: a.dueDate ? toDate(a.dueDate) : null,
+          sortOrder: count,
+        },
+      });
+      return { action: name, summary: `Added to-do "${row.title}"`, ok: true };
+    }
+
+    if (name === 'update_todo') {
+      const currentTitle = String(a.currentTitle ?? '').trim();
+      const row = await prisma.todoItem.findFirst({
+        where: { tripId, title: { contains: currentTitle, mode: 'insensitive' } },
+      });
+      if (!row) return { action: name, summary: `To-do item "${currentTitle}" not found`, ok: false };
+
+      const data: Record<string, unknown> = {};
+      if (typeof a.title === 'string' && a.title.trim()) data.title = a.title.trim();
+      if (typeof a.category === 'string' && a.category.trim()) data.category = a.category.trim();
+      if (typeof a.notes === 'string') data.notes = a.notes.trim() || null;
+      if (typeof a.done === 'boolean') data.done = a.done;
+      if (a.dueDate === 'clear') data.dueDate = null;
+      else if (a.dueDate) data.dueDate = toDate(a.dueDate);
+
+      const updated = await prisma.todoItem.update({
+        where: { id: row.id },
+        data,
+      });
+      return {
+        action: name,
+        summary: `Updated to-do "${updated.title}" (${updated.done ? 'completed' : 'pending'})`,
+        ok: true,
+      };
+    }
+
+    if (name === 'delete_todo') {
+      const title = String(a.title ?? '').trim();
+      const row = await prisma.todoItem.findFirst({
+        where: { tripId, title: { contains: title, mode: 'insensitive' } },
+      });
+      if (!row) return { action: name, summary: `To-do item "${title}" not found`, ok: false };
+
+      await prisma.todoItem.delete({ where: { id: row.id } });
+      return { action: name, summary: `Deleted to-do item "${row.title}"`, ok: true };
     }
 
     // ---------------- 7. Journal Entries ----------------

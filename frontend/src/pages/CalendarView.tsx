@@ -59,6 +59,11 @@ export function CalendarView() {
         await apiPatch(`/trips/${ev.tripId}/bookings/${bookingId}`, {
           startAt: new Date(date + 'T12:00:00Z').toISOString(),
         });
+      } else if (ev.type === 'todo') {
+        const todoId = ev.id.replace(/^t-/, '');
+        await apiPatch(`/trips/${ev.tripId}/todos/${todoId}`, {
+          dueDate: new Date(date + 'T12:00:00Z').toISOString(),
+        });
       }
       await load();
     } catch (e) {

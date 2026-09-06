@@ -757,7 +757,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           <div className="place-expanded-card">
             {p.description?.trim() ? (
               <div className="place-expanded-section">
-                <div className="place-expanded-label">Full Description</div>
+                <div className="place-expanded-label">
+                  {p.category?.toLowerCase() === 'transport' || p.description.includes('Step-by-Step Directions')
+                    ? '🧭 Route & Step-by-Step Directions (Offline Ready)'
+                    : 'Full Description'}
+                </div>
                 <div className="place-expanded-text">{p.description}</div>
               </div>
             ) : null}

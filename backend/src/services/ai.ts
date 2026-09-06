@@ -191,7 +191,7 @@ async function buildSystemPrompt(tripId: string, focusedDayId?: string): Promise
     `  2. Call get_transit_directions (or provide concrete train lines, operators like Trenitalia/Italo, typical travel time, frequency, road routes, and bus options).`,
     `  3. Do NOT call get_suggestions for transit/route inquiries (get_suggestions is strictly for sights/restaurants/activities).`,
     `  4. Never combine the origin/destination with unrelated trip destinations (e.g. do not inject "Naples" when traveling from Brindisi to Lecce).`,
-    `  5. Offer to add the transit leg to the itinerary on the appropriate day via add_place (e.g. category="Transport", name="Train: Brindisi → Lecce").`,
+    `  5. Offer or add the transit leg to the itinerary on the appropriate day via add_place (e.g. category="Transport", name="Train: Brindisi → Lecce", address="Brindisi Station to Lecce Station", notes="35 mins · Trenitalia Regionale", description="📍 Step-by-Step Directions:\\n1. Board Trenitalia Regionale at Brindisi Station towards Lecce (28 mins)\\n2. Arrive at Lecce Station").`,
     `- You can change the user's active focus in the UI and on the live map by calling the focus_day tool (e.g. when the user asks "switch to Day 2", "show Day 3", "focus on Tokyo arrival day", "show unassigned", or "show all days").`,
     `- When the user instructs you to add, edit, move, or delete any place, day, booking, expense, packing item, or journal entry, execute the appropriate tool IMMEDIATELY and report what was changed clearly and concisely.`,
     `- When updating or deleting, identify the item by its ID (preferred if known) or by its matching title/name.`,

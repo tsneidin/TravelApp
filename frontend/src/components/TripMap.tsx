@@ -1218,11 +1218,31 @@ export function TripMap({
 
       const notes = notesParts.join(' · ');
 
+      // Format complete step-by-step directions for offline reading
+      const formattedSteps = (routeResult.steps || [])
+        .map((step: any, idx: number) => {
+          const distDur = [step.distance, step.duration].filter(Boolean).join(', ');
+          const extra = distDur ? ` (${distDur})` : '';
+          const legPrefix = step.legTitle ? `[${step.legTitle}] ` : '';
+          return `${idx + 1}. ${legPrefix}${step.instruction}${extra}`;
+        })
+        .join('\n');
+
+      const descriptionParts = [
+        `🗺️ Route: ${originInput} → ${destInput}`,
+        `⏱️ Travel Time: ${routeResult.durationText} · Distance: ${routeResult.distanceText}`,
+        routeResult.transitLines?.length ? `🚆 Transit Lines: ${routeResult.transitLines.join(', ')}` : null,
+        formattedSteps ? `\n📍 Step-by-Step Directions:\n${formattedSteps}` : null,
+      ].filter(Boolean);
+
+      const description = descriptionParts.join('\n');
+
       await apiPost(`/trips/${tripId}/places`, {
         name: title,
         category: 'Transport',
         address: `${routeResult.startAddress} to ${routeResult.endAddress}`,
         notes,
+        description,
         dayId: targetDayId || undefined,
       });
 

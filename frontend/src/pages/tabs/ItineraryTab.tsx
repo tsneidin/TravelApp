@@ -617,8 +617,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   };
 
   const isItemNote = (p: Place) => {
-    const cat = (p.category || '').toLowerCase();
-    return cat === 'note' || cat === 'notes' || Boolean(p.notes?.trim());
+    const cat = (p.category || '').toLowerCase().trim();
+    return cat === 'note' || cat === 'notes';
   };
 
   const openDayNotes = (day: Day, dayIndex: number) => {

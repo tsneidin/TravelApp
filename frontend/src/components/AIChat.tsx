@@ -7,6 +7,7 @@ import { apiGet, apiPost, apiDelete, uploadAiDocument } from '../lib/api';
 import type { ChatMessage, AiStatus, AiAction, Suggestion, ParsedDocument } from '../lib/types';
 import { Spinner } from './Spinner';
 import { AISettingsModal } from './AISettingsModal';
+import { ConfirmModal } from './Modal';
 
 /** Format byte size to readable B/KB/MB */
 function formatFileSize(bytes: number): string {
@@ -171,6 +172,7 @@ function SuggestionCard({
 export function AIChat({ tripId }: { tripId: string | null }) {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [input, setInput] = useState('');
@@ -415,14 +417,19 @@ export function AIChat({ tripId }: { tripId: string | null }) {
     }
   };
 
-  const clearChatHistory = async () => {
+  const clearChatHistory = () => {
     if (!tripId || (messages.length === 0 && actions.length === 0)) return;
-    if (!window.confirm('Clear AI conversation history for this trip?')) return;
+    setClearHistoryConfirmOpen(true);
+  };
+
+  const doClearChatHistory = async () => {
+    if (!tripId) return;
     try {
       await apiDelete(`/trips/${tripId}/ai/messages`);
       setMessages([]);
       setActions([]);
       setError('');
+      setClearHistoryConfirmOpen(false);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -708,6 +715,17 @@ export function AIChat({ tripId }: { tripId: string | null }) {
               onSaved={() => {
                 void loadStatus();
               }}
+            />
+          )}
+
+          {clearHistoryConfirmOpen && (
+            <ConfirmModal
+              title="Clear conversation"
+              message="Clear AI conversation history for this trip?"
+              confirmLabel="Clear"
+              danger
+              onConfirm={() => void doClearChatHistory()}
+              onCancel={() => setClearHistoryConfirmOpen(false)}
             />
           )}
         </aside>

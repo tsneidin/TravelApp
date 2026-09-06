@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, StickyNote } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Expense } from '../../lib/types';
-import { Modal } from '../../components/Modal';
+import { Modal, ConfirmModal } from '../../components/Modal';
 
 interface ExpenseForm {
   description: string;
@@ -19,6 +19,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
 
   const [noteExpense, setNoteExpense] = useState<Expense | null>(null);
   const [expenseNotes, setExpenseNotes] = useState('');
+  const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
 
   const expenses = trip.expenses ?? [];
   const currency = trip.currency;
@@ -58,10 +59,8 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
     await reload();
   };
 
-  const remove = async (e: Expense) => {
-    if (!confirm(`Delete expense "${e.description}"?`)) return;
-    await apiDelete(`/trips/${trip.id}/expenses/${e.id}`);
-    await reload();
+  const remove = (e: Expense) => {
+    setDeletingExpense(e);
   };
 
   const fmt = (v: number) => Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -186,6 +185,21 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
             <button className="btn primary" onClick={() => void saveExpenseNotes()}>Save notes</button>
           </div>
         </Modal>
+      )}
+
+      {deletingExpense && (
+        <ConfirmModal
+          title="Delete expense"
+          message={`Delete expense "${deletingExpense.description}"?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${trip.id}/expenses/${deletingExpense.id}`);
+            setDeletingExpense(null);
+            await reload();
+          }}
+          onCancel={() => setDeletingExpense(null)}
+        />
       )}
     </div>
   );

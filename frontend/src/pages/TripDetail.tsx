@@ -5,7 +5,7 @@ import { endForStart } from '../lib/dateRange';
 import { useAuth } from '../lib/auth';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
-import { Modal } from '../components/Modal';
+import { Modal, ConfirmModal } from '../components/Modal';
 import { ItineraryTab } from './tabs/ItineraryTab';
 import { MapTab } from './tabs/MapTab';
 import { BudgetTab } from './tabs/BudgetTab';
@@ -43,6 +43,7 @@ export function TripDetail() {
   const requestedTab = (searchParams.get('tab') as Tab | null) ?? 'itinerary';
   const tab = TABS.some((t) => t.key === requestedTab) ? requestedTab : 'itinerary';
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [form, setForm] = useState({ name: '', destination: '', currency: 'USD', startDate: '', endDate: '', description: '' });
 
   const load = useCallback(async () => {
@@ -85,10 +86,8 @@ export function TripDetail() {
     await load();
   };
 
-  const remove = async () => {
-    if (!confirm('Delete this trip and all its data? This cannot be undone.')) return;
-    await apiDelete(`/trips/${tripId}`);
-    window.location.href = '/';
+  const remove = () => {
+    setDeleteConfirmOpen(true);
   };
 
   if (loading) return <div className="app-shell"><Spinner label="Loading trip…" /></div>;
@@ -173,6 +172,20 @@ export function TripDetail() {
             <button className="btn primary" onClick={save}>Save</button>
           </div>
         </Modal>
+      )}
+
+      {deleteConfirmOpen && (
+        <ConfirmModal
+          title="Delete trip"
+          message="Delete this trip and all its data? This cannot be undone."
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${tripId}`);
+            window.location.href = '/';
+          }}
+          onCancel={() => setDeleteConfirmOpen(false)}
+        />
       )}
     </div>
   );

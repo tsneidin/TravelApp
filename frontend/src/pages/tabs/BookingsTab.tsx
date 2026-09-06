@@ -3,7 +3,7 @@ import { Plus, Trash2, FileText, StickyNote } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
 import type { Trip, Booking, BookingType } from '../../lib/types';
-import { Modal } from '../../components/Modal';
+import { Modal, ConfirmModal } from '../../components/Modal';
 
 const TYPES: { value: BookingType; label: string; hint: string }[] = [
   { value: 'flight', label: 'Flight', hint: 'Airline, flight number, times' },
@@ -27,6 +27,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   const [busy, setBusy] = useState(false);
   const [rawBooking, setRawBooking] = useState<Booking | null>(null);
   const [noteBooking, setNoteBooking] = useState<Booking | null>(null);
+  const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
   const [form, setForm] = useState<BookingForm>({ type: 'hotel', title: '', provider: '', reference: '', startAt: '', endAt: '' });
@@ -48,10 +49,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
     }
   };
 
-  const remove = async (b: Booking) => {
-    if (!confirm(`Remove booking "${b.title}"?`)) return;
-    await apiDelete(`/trips/${trip.id}/bookings/${b.id}`);
-    await reload();
+  const remove = (b: Booking) => {
+    setDeletingBooking(b);
   };
 
   const bookingNotes = (booking: Booking): string[] => {
@@ -235,6 +234,21 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
             <button className="btn" onClick={() => setRawBooking(null)}>Close</button>
           </div>
         </Modal>
+      )}
+
+      {deletingBooking && (
+        <ConfirmModal
+          title="Remove booking"
+          message={`Remove booking "${deletingBooking.title}"?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${trip.id}/bookings/${deletingBooking.id}`);
+            setDeletingBooking(null);
+            await reload();
+          }}
+          onCancel={() => setDeletingBooking(null)}
+        />
       )}
     </div>
   );

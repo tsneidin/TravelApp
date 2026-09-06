@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place } from '../../lib/types';
-import { Modal } from '../../components/Modal';
+import { Modal, ConfirmModal } from '../../components/Modal';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
@@ -121,6 +121,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string; dayNumber?: number } | null>(null);
   const [journalDay, setJournalDay] = useState<{ date: string; label: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ title: '', body: '' });
+  const [deletingPlace, setDeletingPlace] = useState<Place | null>(null);
+  const [deletingDayId, setDeletingDayId] = useState<string | null>(null);
 
   const toggleExpand = (placeId: string) => {
     setExpandedPlaceIds((prev) => {
@@ -507,16 +509,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     if (placeId) void reorder(placeId, dayId, index);
   };
 
-  const removePlace = async (p: Place) => {
-    if (!confirm(`Remove "${p.name}" from the trip?`)) return;
-    await apiDelete(`/trips/${trip.id}/places/${p.id}`);
-    await reload();
+  const removePlace = (p: Place) => {
+    setDeletingPlace(p);
   };
 
-  const removeDay = async (dayId: string) => {
-    if (!confirm('Delete this day? Places will be kept but unassigned.')) return;
-    await apiDelete(`/trips/${trip.id}/days/${dayId}`);
-    await reload();
+  const removeDay = (dayId: string) => {
+    setDeletingDayId(dayId);
   };
 
   const saveDayNotes = async () => {
@@ -1413,6 +1411,36 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <button type="button" className="btn primary" onClick={() => setSourcePlace(null)}>Close</button>
           </div>
         </Modal>
+      )}
+
+      {deletingPlace && (
+        <ConfirmModal
+          title="Remove place"
+          message={`Are you sure you want to remove "${deletingPlace.name}" from the trip?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${trip.id}/places/${deletingPlace.id}`);
+            setDeletingPlace(null);
+            await reload();
+          }}
+          onCancel={() => setDeletingPlace(null)}
+        />
+      )}
+
+      {deletingDayId && (
+        <ConfirmModal
+          title="Delete day"
+          message="Delete this day? Places will be kept but unassigned."
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${trip.id}/days/${deletingDayId}`);
+            setDeletingDayId(null);
+            await reload();
+          }}
+          onCancel={() => setDeletingDayId(null)}
+        />
       )}
 
       {/* Add / Edit Place Modal with Search Autocomplete */}

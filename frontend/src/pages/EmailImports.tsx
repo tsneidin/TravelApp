@@ -3,7 +3,7 @@ import { RefreshCw, Check, X, Trash2, Inbox } from 'lucide-react';
 import { apiGet, apiPost, apiDelete } from '../lib/api';
 import type { EmailImport, Trip, ImportStatus } from '../lib/types';
 import { Spinner } from '../components/Spinner';
-import { Modal } from '../components/Modal';
+import { Modal, ConfirmModal } from '../components/Modal';
 
 const STATUSES: (ImportStatus | '')[] = ['', 'pending', 'parsed', 'needs_review', 'imported', 'ignored'];
 
@@ -35,6 +35,7 @@ export function EmailImports() {
   const [selTrip, setSelTrip] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [s, i, t] = await Promise.all([
@@ -98,10 +99,8 @@ export function EmailImports() {
     await load();
   };
 
-  const remove = async (id: string) => {
-    if (!confirm('Delete this import?')) return;
-    await apiDelete(`/email/imports/${id}`);
-    await load();
+  const remove = (id: string) => {
+    setDeletingImportId(id);
   };
 
   if (loading) return <div className="app-shell"><Spinner label="Loading imports…" /></div>;
@@ -226,6 +225,7 @@ export function EmailImports() {
           </div>
 
           <div className="modal-actions">
+            <button className="btn" onClick={() => setDetail(null)}>Close</button>
             <button className="btn" onClick={() => void reparse(detail.id)}>Reparse</button>
             {detail.trip ? (
               <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
@@ -243,6 +243,21 @@ export function EmailImports() {
             </pre>
           </details>
         </Modal>
+      )}
+
+      {deletingImportId && (
+        <ConfirmModal
+          title="Delete import"
+          message="Delete this import?"
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/email/imports/${deletingImportId}`);
+            setDeletingImportId(null);
+            await load();
+          }}
+          onCancel={() => setDeletingImportId(null)}
+        />
       )}
     </div>
   );

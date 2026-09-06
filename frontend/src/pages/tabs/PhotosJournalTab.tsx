@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Plus, Trash2, Image as ImageIcon, PenSquare, Pencil } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete, uploadPhotos } from '../../lib/api';
 import type { Trip, JournalEntry, Photo } from '../../lib/types';
-import { Modal } from '../../components/Modal';
+import { Modal, ConfirmModal } from '../../components/Modal';
 
 interface JournalForm {
   title: string;
@@ -20,6 +20,8 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
   const [jForm, setJForm] = useState<JournalForm>({ title: '', body: '', date: '' });
   const [busy, setBusy] = useState(false);
   const [viewingPhoto, setViewingPhoto] = useState<Photo | null>(null);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
+  const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
 
   const photoUrl = (photo: Photo) => `/api/uploads/${encodeURIComponent(photo.filename)}`;
 
@@ -34,10 +36,8 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
     }
   };
 
-  const removePhoto = async (id: string) => {
-    if (!confirm('Delete this photo?')) return;
-    await apiDelete(`/trips/${trip.id}/photos/${id}`);
-    await reload();
+  const removePhoto = (id: string) => {
+    setDeletingPhotoId(id);
   };
 
   const openNewJournal = () => {
@@ -69,10 +69,8 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
     }
   };
 
-  const removeJournal = async (id: string) => {
-    if (!confirm('Delete this journal entry?')) return;
-    await apiDelete(`/trips/${trip.id}/journal/${id}`);
-    await reload();
+  const removeJournal = (id: string) => {
+    setDeletingJournalId(id);
   };
 
   return (
@@ -179,6 +177,36 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
             <button className="btn primary" onClick={saveJournal} disabled={busy || !jForm.title}>Save</button>
           </div>
         </Modal>
+      )}
+
+      {deletingPhotoId && (
+        <ConfirmModal
+          title="Delete photo"
+          message="Delete this photo?"
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${trip.id}/photos/${deletingPhotoId}`);
+            setDeletingPhotoId(null);
+            await reload();
+          }}
+          onCancel={() => setDeletingPhotoId(null)}
+        />
+      )}
+
+      {deletingJournalId && (
+        <ConfirmModal
+          title="Delete journal entry"
+          message="Delete this journal entry?"
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await apiDelete(`/trips/${trip.id}/journal/${deletingJournalId}`);
+            setDeletingJournalId(null);
+            await reload();
+          }}
+          onCancel={() => setDeletingJournalId(null)}
+        />
       )}
     </div>
   );

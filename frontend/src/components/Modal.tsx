@@ -36,3 +36,44 @@ export function Modal({
     </div>
   );
 }
+
+export function ConfirmModal({
+  title = 'Confirm',
+  message,
+  confirmLabel = 'Delete',
+  cancelLabel = 'Cancel',
+  danger = true,
+  onConfirm,
+  onCancel,
+}: {
+  title?: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <p style={{ margin: '6px 0 18px', lineHeight: 1.5, color: 'var(--text)', fontSize: '0.92rem' }}>
+        {message}
+      </p>
+      <div className="modal-actions">
+        <button type="button" className="btn" onClick={onCancel}>
+          {cancelLabel}
+        </button>
+        <button
+          type="button"
+          className={`btn ${danger ? 'danger' : 'primary'}`}
+          onClick={() => {
+            void onConfirm();
+          }}
+          autoFocus
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  );
+}

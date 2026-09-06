@@ -87,7 +87,14 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
                     {photo ? <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={22} className="muted" />}
                   </div>
                   <div className="grow">
-                    <div className="title">{day > 0 ? `Day ${day} · ` : ''}{place.name}</div>
+                    <div className="title">
+                      {place.stopNumber != null && (
+                        <span className="stop-number-badge" style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 6, fontSize: '0.72rem', padding: '1px 6px', borderRadius: 4, background: 'var(--accent)', color: '#fff' }}>
+                          {place.stopNumber}
+                        </span>
+                      )}
+                      {day > 0 ? `Day ${day} · ` : ''}{place.name}
+                    </div>
                     <div className="sub"><MapPin size={11} /> {place.address || 'Location resolved from item name'}</div>
                     <div className="small muted">{[place.category, place.startTime ? new Date(place.startTime).toLocaleString() : null, place.notes].filter(Boolean).join(' · ').slice(0, 220)}</div>
                     <div className="row mt" style={{ gap: 6 }}>

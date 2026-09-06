@@ -446,28 +446,42 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
+  // Pre-calculate sequential trip-wide numbers so every itinerary item and its corresponding map pin match.
+  const placeStopNumberMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let num = 1;
+    for (const day of days) {
+      for (const place of day.places) {
+        map.set(place.id, num);
+        num += 1;
+      }
+    }
+    for (const place of orphanPlaces) {
+      map.set(place.id, num);
+      num += 1;
+    }
+    return map;
+  }, [days, orphanPlaces]);
+
   // Use one trip-wide sequence so every map marker has a unique number.
   const displayedMapPlaces = useMemo<PlaceWithStop[]>(() => {
     const result: PlaceWithStop[] = [];
-    let stopNumber = 1;
     for (const day of days) {
       day.places.forEach((place) => {
-        result.push({ ...place, stopNumber });
-        stopNumber += 1;
+        result.push({ ...place, stopNumber: placeStopNumberMap.get(place.id) });
       });
     }
     orphanPlaces.forEach((place) => {
-      result.push({ ...place, stopNumber });
-      stopNumber += 1;
+      result.push({ ...place, stopNumber: placeStopNumberMap.get(place.id) });
     });
     return selectedDayId
       ? selectedDayId === 'unassigned'
         ? result.filter((place) => !place.dayId)
         : result.filter((place) => place.dayId === selectedDayId)
       : result;
-  }, [days, selectedDayId, orphanPlaces]);
+  }, [days, selectedDayId, orphanPlaces, placeStopNumberMap]);
 
-  const renderPlaceRow = (p: Place, stopNumber?: number) => {
+  const renderPlaceRow = (p: Place, stopNumber?: number, placeIndex?: number) => {
     const hasDetails = Boolean(p.description?.trim() || p.notes?.trim());
     const isExpanded = expandedPlaceIds.has(p.id);
 
@@ -496,8 +510,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           e.preventDefault();
           e.stopPropagation();
           const movingId = dragId || e.dataTransfer.getData('text/plain');
-          if (movingId && p.dayId) {
-            void reorder(movingId, p.dayId, Math.max(0, (stopNumber ?? 1) - 1));
+          if (movingId) {
+            void reorder(movingId, p.dayId || '', Math.max(0, placeIndex ?? 0));
           }
         }}
       >
@@ -904,7 +918,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
                     return (
                       <div key={p.id}>
-                        {renderPlaceRow(p, pIdx + 1)}
+                        {renderPlaceRow(p, placeStopNumberMap.get(p.id), pIdx)}
                         {nextPlace && hasCoords && nextHasCoords && (
                           <TravelEstimate
                             origin={{ lat: p.lat!, lng: p.lng!, name: p.name }}
@@ -1026,7 +1040,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       if (movingId) void reorder(movingId, '', idx);
                     }}
                   >
-                    {renderPlaceRow(p)}
+                    {renderPlaceRow(p, placeStopNumberMap.get(p.id), idx)}
                   </div>
                 ))}
               </div>

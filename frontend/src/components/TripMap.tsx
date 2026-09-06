@@ -9,6 +9,8 @@ import {
   Copy,
   Crosshair,
   Footprints,
+  Maximize2,
+  Minimize2,
   Navigation,
   Plus,
   Train,
@@ -152,6 +154,7 @@ export function TripMap({
   const [savingRoute, setSavingRoute] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
+  const [isFullWindow, setIsFullWindow] = useState(false);
 
   // Right click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lat: number; lng: number; address?: string } | null>(null);
@@ -170,10 +173,21 @@ export function TripMap({
   useEffect(() => { mapClickRef.current = onMapClick; }, [onMapClick]);
 
   useEffect(() => {
+    if (mapRef.current && window.google?.maps) {
+      const timer = setTimeout(() => {
+        window.google.maps.event.trigger(mapRef.current, 'resize');
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [isFullWindow]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setContextMenu(null);
         setPickingTarget(null);
+        setIsSavingView(false);
+        setIsFullWindow(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -200,6 +214,7 @@ export function TripMap({
           zoom: 2,
           mapTypeControl: true,
           streetViewControl: false,
+          fullscreenControl: false,
         });
 
         mapRef.current.addListener('contextmenu', async (event: any) => {
@@ -1130,7 +1145,26 @@ export function TripMap({
   }, [tripId, showTransitLayer, showRouter, originInput, destInput, travelMode, localViews]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: typeof height === 'number' ? `${height}px` : height }}>
+    <div
+      className={`map-wrapper-container ${isFullWindow ? 'map-container-fullwindow' : ''}`}
+      style={{
+        position: isFullWindow ? undefined : 'relative',
+        width: '100%',
+        height: isFullWindow ? undefined : (typeof height === 'number' ? `${height}px` : height),
+      }}
+    >
+      {/* Full Browser Window Toggle Button */}
+      <button
+        type="button"
+        className="map-fullwindow-toggle-btn"
+        onClick={() => setIsFullWindow((prev) => !prev)}
+        title={isFullWindow ? 'Exit full browser window (Esc)' : 'Full browser window'}
+        aria-label={isFullWindow ? 'Exit full browser window' : 'Full browser window'}
+      >
+        {isFullWindow ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        <span>{isFullWindow ? 'Exit Full Window' : 'Full Window'}</span>
+      </button>
+
       {/* Floating Save View Dialog (triggered from sidebar or context menu) */}
       {isSavingView && (
         <div
@@ -1634,7 +1668,7 @@ export function TripMap({
         </div>
       )}
 
-      <div ref={elementRef} style={{ width: '100%', height: '100%', borderRadius: 10 }} />
+      <div ref={elementRef} style={{ width: '100%', height: '100%', borderRadius: isFullWindow ? 0 : 10 }} />
       {error && <div className="empty-state" style={{ position: 'absolute', inset: 12 }}><b>Google Map unavailable</b><div className="small muted">{error}</div></div>}
     </div>
   );

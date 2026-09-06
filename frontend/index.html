@@ -12,6 +12,14 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
     />
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('travelapp_theme') || 'default';
+          document.documentElement.setAttribute('data-theme', t);
+        } catch(e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

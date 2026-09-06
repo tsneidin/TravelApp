@@ -6,6 +6,7 @@ import { endForStart } from '../lib/dateRange';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
 import { Modal } from '../components/Modal';
+import { ThemeSelector } from '../components/ThemeSelector';
 
 export function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,9 +75,12 @@ export function Dashboard() {
           <h1 className="page-title">Your trips</h1>
           <p className="page-sub">Plan upcoming journeys or relive past ones.</p>
         </div>
-        <button className="btn primary" onClick={() => setShowCreate(true)}>
-          <Plus size={16} /> New trip
-        </button>
+        <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+          <ThemeSelector />
+          <button className="btn primary" onClick={() => setShowCreate(true)}>
+            <Plus size={16} /> New trip
+          </button>
+        </div>
       </div>
 
       {trips.length === 0 ? (

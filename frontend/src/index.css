@@ -2,9 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root,
+[data-theme="default"] {
   --bg: #0b1220;
+  --bg-glow: #132244;
   --panel: #101a2e;
+  --panel-2: #0e1729;
   --card: #16213a;
   --card-2: #1b2946;
   --line: #253356;
@@ -22,6 +25,114 @@
   --sar: env(safe-area-inset-right, 0px);
 }
 
+/* Home Depot Theme: Signature Orange, Charcoal & Slate Tooling */
+[data-theme="homedepot"] {
+  --bg: #111518;
+  --bg-glow: #2e180d;
+  --panel: #181f25;
+  --panel-2: #13191e;
+  --card: #1f2832;
+  --card-2: #283441;
+  --line: #374657;
+  --text: #ffffff;
+  --muted: #9faec0;
+  --accent: #f96302;
+  --accent-2: #ff8533;
+  --danger: #ef4444;
+  --ok: #10b981;
+  --warn: #f59e0b;
+}
+
+/* Lowe's Theme: Royal Navy Blue & Golden Yellow */
+[data-theme="lowes"] {
+  --bg: #091322;
+  --bg-glow: #072c5a;
+  --panel: #0d1e38;
+  --panel-2: #09172c;
+  --card: #132849;
+  --card-2: #1a355f;
+  --line: #274b83;
+  --text: #f1f6fd;
+  --muted: #8fa6ca;
+  --accent: #1976d2;
+  --accent-2: #ffc220;
+  --danger: #f87171;
+  --ok: #22c55e;
+  --warn: #ffc220;
+}
+
+/* Milwaukee Tool Theme: Heavy-Duty Crimson Red & Carbon Black */
+[data-theme="milwaukee"] {
+  --bg: #101114;
+  --bg-glow: #38080c;
+  --panel: #17181d;
+  --panel-2: #131417;
+  --card: #1f2127;
+  --card-2: #282a33;
+  --line: #3d414e;
+  --text: #ffffff;
+  --muted: #9da3b4;
+  --accent: #db0010;
+  --accent-2: #ff3344;
+  --danger: #ff4d4f;
+  --ok: #22c55e;
+  --warn: #eab308;
+}
+
+/* Amazon Theme: Squid Ink Navy & Smile Orange */
+[data-theme="amazon"] {
+  --bg: #11171f;
+  --bg-glow: #1e2c3f;
+  --panel: #19222e;
+  --panel-2: #141b24;
+  --card: #222e3e;
+  --card-2: #2b3a4e;
+  --line: #394d67;
+  --text: #f3f5f8;
+  --muted: #9ba9bc;
+  --accent: #ff9900;
+  --accent-2: #00a8e1;
+  --danger: #ef4444;
+  --ok: #10b981;
+  --warn: #febd69;
+}
+
+/* Facebook Theme: Meta Blue & Midnight Slate */
+[data-theme="facebook"] {
+  --bg: #141517;
+  --bg-glow: #0d2242;
+  --panel: #1e1f23;
+  --panel-2: #18191c;
+  --card: #282a2f;
+  --card-2: #34373d;
+  --line: #42464e;
+  --text: #e4e6eb;
+  --muted: #b0b3b8;
+  --accent: #0866ff;
+  --accent-2: #45bd62;
+  --danger: #fa383e;
+  --ok: #45bd62;
+  --warn: #f7b125;
+}
+
+/* American Airlines Theme: Aviation Sky Blue, Flag Red & Platinum */
+[data-theme="americanairlines"] {
+  --bg: #0c1420;
+  --bg-glow: #102646;
+  --panel: #132032;
+  --panel-2: #0e1826;
+  --card: #1a2a42;
+  --card-2: #233755;
+  --line: #324e77;
+  --text: #f0f4f9;
+  --muted: #8fa5c4;
+  --accent: #0078d2;
+  --accent-2: #c30019;
+  --danger: #c30019;
+  --ok: #10b981;
+  --warn: #f59e0b;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -32,7 +143,7 @@ body {
 }
 body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background: radial-gradient(1100px 700px at 75% -10%, #132244 0%, var(--bg) 55%) fixed;
+  background: radial-gradient(1100px 700px at 75% -10%, var(--bg-glow, #132244) 0%, var(--bg) 55%) fixed;
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -3893,5 +4004,160 @@ a.link:hover {
   color: var(--accent, #22d3ee);
   border: 1px solid rgba(34, 211, 238, 0.4);
 }
+
+/* ---------- Theme Selector Dropdown ---------- */
+.theme-selector-container {
+  position: relative;
+  display: inline-block;
+  z-index: 50;
+}
+
+.theme-selector-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.theme-selector-btn:hover {
+  background: var(--card-2);
+  border-color: var(--accent);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+  transform: translateY(-1px);
+}
+
+.theme-selector-btn.compact {
+  padding: 4px 9px;
+  font-size: 0.76rem;
+  gap: 5px;
+}
+
+.theme-current-name {
+  white-space: nowrap;
+}
+
+.theme-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 270px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  z-index: 1000;
+  backdrop-filter: blur(16px);
+  animation: themeFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes themeFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.theme-dropdown-header {
+  padding: 6px 10px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+
+.theme-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.theme-option-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.14s ease;
+}
+
+.theme-option-item:hover {
+  background: var(--card);
+  border-color: var(--line);
+}
+
+.theme-option-item.active {
+  background: var(--card-2);
+  border-color: var(--accent);
+}
+
+.theme-option-swatch {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.theme-option-swatch span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: block;
+}
+
+.theme-option-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-option-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-option-tagline {
+  font-size: 0.71rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-option-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 
 

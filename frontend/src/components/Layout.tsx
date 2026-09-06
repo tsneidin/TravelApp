@@ -10,6 +10,7 @@ import { APP_VERSION } from '../lib/version';
 import { apiDelete, apiGet } from '../lib/api';
 import { AIChat } from './AIChat';
 import { MobileBottomNav } from './MobileBottomNav';
+import { ThemeSelector } from './ThemeSelector';
 import type { Trip } from '../lib/types';
 
 const TRIP_TABS: { key: string; label: string }[] = [
@@ -317,6 +318,7 @@ export function Layout() {
           )}
         </div>
         <div className="mobile-top-actions">
+          <ThemeSelector compact />
           {activeTripId ? (
             <button
               type="button"
@@ -590,7 +592,10 @@ export function Layout() {
         </div>
 
         <div className="side-spacer" />
-        <div className="side-version" title={`Build ${APP_VERSION}`}>v{APP_VERSION}</div>
+        <div className="row between" style={{ padding: '0 4px 6px', alignItems: 'center' }}>
+          <div className="side-version" title={`Build ${APP_VERSION}`}>v{APP_VERSION}</div>
+          <ThemeSelector compact />
+        </div>
 
         <div className="side-user">
           <div className="side-avatar">{user?.name?.charAt(0)?.toUpperCase() ?? <User size={16} />}</div>

@@ -3,12 +3,13 @@ import { NavLink, Outlet, Link, useLocation, useNavigate } from 'react-router-do
 import {
   Plane, CalendarDays, Inbox, LogOut, User, Plus,
   ChevronRight, ChevronDown, Route, Bookmark,
-  X, PanelLeftClose, PanelLeft, Menu,
+  X, PanelLeftClose, PanelLeft, Menu, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { APP_VERSION } from '../lib/version';
 import { apiDelete, apiGet } from '../lib/api';
 import { AIChat } from './AIChat';
+import { MobileBottomNav } from './MobileBottomNav';
 import type { Trip } from '../lib/types';
 
 const TRIP_TABS: { key: string; label: string }[] = [
@@ -145,6 +146,15 @@ export function Layout() {
   const activeTripId = routeMatch?.[1];
   const activeTab = new URLSearchParams(location.search).get('tab') ?? 'itinerary';
   const activeDayId = location.hash.startsWith('#day-') ? location.hash.slice(5) : null;
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Current trip if inside /trips/:tripId
+  const currentTrip = activeTripId ? trips.find((t) => t.id === activeTripId) : null;
+
+  // Auto-close mobile drawer whenever route/tab/hash changes
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [location.pathname, location.search, location.hash]);
 
   // Auto-hide sidebar mode state
   const [autoHideSidebar, setAutoHideSidebar] = useState<boolean>(() => {
@@ -277,6 +287,70 @@ export function Layout() {
 
   return (
     <div className={`app-frame ${autoHideSidebar ? 'app-frame-autohide' : ''}`}>
+      {/* ---------- Mobile Top Bar (visible on <= 820px) ---------- */}
+      <header className="mobile-top-bar">
+        <button
+          type="button"
+          className="mobile-top-btn"
+          onClick={() => setMobileDrawerOpen(true)}
+          aria-label="Open navigation menu"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="mobile-top-title-wrap">
+          {currentTrip ? (
+            <>
+              <span className="mobile-top-title">{currentTrip.name}</span>
+              {currentTrip.destination && (
+                <span className="mobile-top-sub">{currentTrip.destination}</span>
+              )}
+            </>
+          ) : location.pathname === '/calendar' ? (
+            <span className="mobile-top-title">Calendar</span>
+          ) : location.pathname === '/email' ? (
+            <span className="mobile-top-title">Email Imports</span>
+          ) : (
+            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <Plane size={18} style={{ color: 'var(--accent)' }} />
+              <span className="mobile-top-title">TravelApp</span>
+            </div>
+          )}
+        </div>
+        <div className="mobile-top-actions">
+          {activeTripId ? (
+            <button
+              type="button"
+              className="mobile-top-ai-btn"
+              onClick={() => window.dispatchEvent(new CustomEvent('travelapp:toggle_ai_chat'))}
+              title="AI Assistant"
+              aria-label="Toggle AI Assistant"
+            >
+              <Sparkles size={16} />
+              <span>AI</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="mobile-top-btn"
+              onClick={() => navigate('/?new=1')}
+              title="New trip"
+              aria-label="Create new trip"
+            >
+              <Plus size={20} />
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Mobile Drawer Backdrop */}
+      {mobileDrawerOpen && (
+        <div
+          className="mobile-drawer-backdrop"
+          onClick={() => setMobileDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Edge hover zone & floating toggle for auto-hidden sidebar */}
       {autoHideSidebar && (
         <>
@@ -305,7 +379,7 @@ export function Layout() {
 
       {/* ---------- Left folder tree (Wanderlog-style) ---------- */}
       <aside
-        className={`side-nav ${autoHideSidebar ? 'side-nav-autohide' : ''} ${sidebarPeeking ? 'side-nav-peeking' : ''}`}
+        className={`side-nav ${autoHideSidebar ? 'side-nav-autohide' : ''} ${sidebarPeeking ? 'side-nav-peeking' : ''} ${mobileDrawerOpen ? 'mobile-drawer-open' : ''}`}
         onMouseEnter={() => autoHideSidebar && setSidebarPeeking(true)}
         onMouseLeave={() => autoHideSidebar && setSidebarPeeking(false)}
       >
@@ -316,12 +390,20 @@ export function Layout() {
           </div>
           <button
             type="button"
-            className="side-pin-btn"
+            className="side-pin-btn hide-on-mobile"
             onClick={toggleAutoHide}
             title={autoHideSidebar ? 'Pin sidebar open' : 'Auto-hide sidebar'}
             aria-label={autoHideSidebar ? 'Pin sidebar open' : 'Auto-hide sidebar'}
           >
             {autoHideSidebar ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+          </button>
+          <button
+            type="button"
+            className="mobile-drawer-close-btn show-on-mobile"
+            onClick={() => setMobileDrawerOpen(false)}
+            aria-label="Close navigation drawer"
+          >
+            <X size={18} />
           </button>
         </div>
 
@@ -536,6 +618,15 @@ export function Layout() {
 
       {/* ---------- Right-side AI assistant ---------- */}
       <AIChat tripId={activeTripId ?? null} />
+
+      {/* ---------- Mobile Bottom Navigation Bar (<= 820px) ---------- */}
+      {activeTripId && (
+        <MobileBottomNav
+          tripId={activeTripId}
+          activeTab={activeTab}
+          trip={currentTrip}
+        />
+      )}
     </div>
   );
 }

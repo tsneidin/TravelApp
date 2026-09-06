@@ -159,6 +159,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [viewMode, setViewMode] = useState<'split' | 'full'>(() => {
     return window.innerWidth >= 1024 ? 'split' : 'full';
   });
+  const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
   const [activePlaceId, setActivePlaceId] = useState<string | null>(null);
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
 
@@ -793,9 +794,76 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   };
 
   return (
-    <div className="itinerary-page-root">
+    <div className={`itinerary-page-root ${mobileTab === 'map' ? 'mobile-showing-map' : 'mobile-showing-list'}`}>
+      {/* Mobile Sticky Day Carousel Strip (<= 820px) */}
+      <div className="mobile-day-strip-wrap">
+        <div className="mobile-day-strip">
+          <button
+            type="button"
+            className={`mobile-day-chip ${!selectedDayId ? 'active' : ''}`}
+            onClick={() => {
+              setSelectedDayId(null);
+              setActivePlaceId(null);
+            }}
+          >
+            <span>All Days</span>
+            <span className="mobile-day-chip-count">{totalPlacesCount}</span>
+          </button>
+          {days.map((day, idx) => {
+            const isSel = selectedDayId === day.id;
+            const dateStr = day.date
+              ? new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })
+              : '';
+            return (
+              <button
+                key={day.id}
+                type="button"
+                className={`mobile-day-chip ${isSel ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedDayId(day.id);
+                  setActivePlaceId(null);
+                  if (mobileTab === 'list') {
+                    const el = document.getElementById(`day-${day.id}`);
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+              >
+                <span>Day {idx + 1}</span>
+                {dateStr && <span className="mobile-day-chip-sub">{dateStr}</span>}
+                <span className="mobile-day-chip-count">{day.places.length}</span>
+              </button>
+            );
+          })}
+          {orphanPlaces.length > 0 && (
+            <button
+              type="button"
+              className={`mobile-day-chip ${selectedDayId === 'unassigned' ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedDayId('unassigned');
+                setActivePlaceId(null);
+                if (mobileTab === 'list') {
+                  const el = document.getElementById('places-unassigned');
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }}
+            >
+              <span>Ideas</span>
+              <span className="mobile-day-chip-count">{orphanPlaces.length}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="mobile-day-chip mobile-day-chip-add"
+            onClick={() => void addDay()}
+            title="Add next day"
+          >
+            <Plus size={14} /> Day
+          </button>
+        </div>
+      </div>
+
       {/* Wanderlog top action bar */}
-      <div className="row between mb-2" style={{ marginBottom: 16 }}>
+      <div className="row between mb-2 desktop-action-bar" style={{ marginBottom: 16 }}>
         <div className="row">
           <h2 className="panel-title" style={{ margin: 0 }}>Day-by-day itinerary</h2>
           <span className="badge accent">{days.length} days</span>
@@ -1484,6 +1552,38 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           </div>
         </Modal>
       )}
+
+      {/* Mobile Floating Action Controls (<= 820px) */}
+      <div className="mobile-itinerary-fabs">
+        <button
+          type="button"
+          className="mobile-map-toggle-fab"
+          onClick={() => setMobileTab(mobileTab === 'list' ? 'map' : 'list')}
+          title={mobileTab === 'list' ? 'Switch to interactive map view' : 'Switch to itinerary list view'}
+        >
+          {mobileTab === 'list' ? (
+            <>
+              <MapIcon size={16} />
+              <span>Map ({displayedMapPlaces.length})</span>
+            </>
+          ) : (
+            <>
+              <List size={16} />
+              <span>List ({totalPlacesCount})</span>
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className="mobile-add-place-fab"
+          onClick={() => openNew(selectedDayId && selectedDayId !== 'unassigned' ? selectedDayId : '')}
+          title="Add place or stop"
+          aria-label="Add place"
+        >
+          <Plus size={22} />
+        </button>
+      </div>
     </div>
   );
 }

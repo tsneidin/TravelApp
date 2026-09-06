@@ -201,6 +201,17 @@ export function AIChat({ tripId }: { tripId: string | null }) {
     return () => window.removeEventListener('travelapp:day_focused', handleDayFocused);
   }, []);
 
+  useEffect(() => {
+    const handleToggle = () => setOpen((prev) => !prev);
+    const handleOpen = () => setOpen(true);
+    window.addEventListener('travelapp:toggle_ai_chat', handleToggle);
+    window.addEventListener('travelapp:open_ai_chat', handleOpen);
+    return () => {
+      window.removeEventListener('travelapp:toggle_ai_chat', handleToggle);
+      window.removeEventListener('travelapp:open_ai_chat', handleOpen);
+    };
+  }, []);
+
   const loadStatus = useCallback(async () => {
     if (!tripId) return;
     try {
@@ -424,24 +435,27 @@ export function AIChat({ tripId }: { tripId: string | null }) {
       </button>
 
       {open && (
-        <aside
-          ref={panelRef}
-          className="ai-chat"
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {isDragging && (
-            <div className="ai-dropzone-overlay">
-              <UploadCloud size={44} className="ai-dropzone-icon" />
-              <div className="ai-dropzone-title">Drop travel documents here</div>
-              <div className="small muted">PDFs, booking emails (.eml), itineraries, tickets</div>
-            </div>
-          )}
+        <>
+          <div className="ai-chat-mobile-backdrop" onClick={() => setOpen(false)} />
+          <aside
+            ref={panelRef}
+            className="ai-chat"
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="ai-chat-mobile-handle" />
+            {isDragging && (
+              <div className="ai-dropzone-overlay">
+                <UploadCloud size={44} className="ai-dropzone-icon" />
+                <div className="ai-dropzone-title">Drop travel documents here</div>
+                <div className="small muted">PDFs, booking emails (.eml), itineraries, tickets</div>
+              </div>
+            )}
 
-          <div className="ai-chat-head">
-            <span className="row" style={{ gap: 8 }}>
+            <div className="ai-chat-head">
+              <span className="row" style={{ gap: 8 }}>
               <Sparkles size={15} style={{ color: 'var(--accent)' }} />
               AI Assistant
             </span>
@@ -697,7 +711,8 @@ export function AIChat({ tripId }: { tripId: string | null }) {
             />
           )}
         </aside>
-      )}
-    </>
-  );
+      </>
+    )}
+  </>
+);
 }

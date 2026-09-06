@@ -67,7 +67,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
             <span className="badge">Google Maps · {places.length} itinerary items</span>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(300px,.9fr)', gap: 14 }}>
+        <div className="map-tab-layout">
           <TripMap
             places={places}
             destination={trip.destination}
@@ -83,7 +83,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
             }}
             height="70vh"
           />
-          <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'grid', gap: 8 }}>
+          <div className="map-tab-list">
             {places.map((place) => {
               const photo = (trip.photos ?? []).find((item) => item.placeId === place.id);
               const day = sortedDays.findIndex((item) => item.id === place.dayId) + 1;

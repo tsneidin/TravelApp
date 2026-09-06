@@ -84,7 +84,7 @@ async function callLlm(
 
 // ---------------- context / prompt ----------------
 
-async function buildSystemPrompt(tripId: string): Promise<string> {
+async function buildSystemPrompt(tripId: string, focusedDayId?: string): Promise<string> {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
@@ -147,9 +147,21 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     .map((j) => `- [id=${j.id}] "${j.title}"${j.date ? ` (${toDayKey(j.date)})` : ''}`)
     .join('\n');
 
+  let focusDesc = 'All Days (no single day filtered)';
+  if (focusedDayId === 'unassigned') {
+    focusDesc = 'Unassigned Places / Ideas (no day assigned)';
+  } else if (focusedDayId) {
+    const d = trip.days.find((item) => item.id === focusedDayId);
+    if (d) {
+      const idx = trip.days.findIndex((item) => item.id === focusedDayId) + 1;
+      focusDesc = `Day ${idx} (${toDayKey(d.date)}) [id=${d.id}]${d.label ? ` — ${d.label}` : ''}`;
+    }
+  }
+
   return [
     `You are the AI travel assistant embedded in TravelApp, a self-hosted trip planner.`,
     `CURRENT TRIP: "${trip.name}" [id=${trip.id}] (destination: ${trip.destination || 'unknown'}, currency: ${trip.currency}${trip.startDate ? `, from ${toDayKey(trip.startDate)}` : ''}${trip.endDate ? ` to ${toDayKey(trip.endDate)}` : ''}).`,
+    `CURRENT FOCUSED DAY: ${focusDesc}`,
     ``,
     `ITINERARY:`,
     daysDesc || '  (no days yet)',
@@ -166,6 +178,8 @@ async function buildSystemPrompt(tripId: string): Promise<string> {
     ``,
     `RULES & CAPABILITIES:`,
     `- You have FULL authority and capability to READ, WRITE, UPDATE, and DELETE everything about this trip using your tools.`,
+    `- You are fully aware of the CURRENT FOCUSED DAY above. If the user asks you to add an activity, meal, or place without specifying a day/date, and a specific day is in focus, default to that focused day!`,
+    `- You can change the user's active focus in the UI and on the live map by calling the focus_day tool (e.g. when the user asks "switch to Day 2", "show Day 3", "focus on Tokyo arrival day", "show unassigned", or "show all days").`,
     `- When the user instructs you to add, edit, move, or delete any place, day, booking, expense, packing item, or journal entry, execute the appropriate tool IMMEDIATELY and report what was changed clearly and concisely.`,
     `- When updating or deleting, identify the item by its ID (preferred if known) or by its matching title/name.`,
     `- When the user uploads, pastes, or references a reservation confirmation (flight, hotel, rental car, activity):`,
@@ -278,6 +292,7 @@ export async function processTripChat(
   userId: string,
   userMessage: string,
   history: ChatTurn[],
+  focusedDayId?: string,
 ): Promise<{ reply: string; actions: ToolResult[] }> {
   const activeConfig = await getAiConfig();
   debugLog('ai', 'chat_start', { tripId, historyTurns: history.length, messageLength: userMessage.length });
@@ -306,7 +321,7 @@ export async function processTripChat(
     };
   }
 
-  const system = await buildSystemPrompt(tripId);
+  const system = await buildSystemPrompt(tripId, focusedDayId);
   const userContent = userMessage;
 
   const messages: LlmMessage[] = [{ role: 'system', content: system }];
@@ -319,6 +334,7 @@ export async function processTripChat(
     sourceText: userMessage,
     destination,
     recommendationContext,
+    focusedDayId,
   };
 
   for (; loop < 8; loop++) {

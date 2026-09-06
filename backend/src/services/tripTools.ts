@@ -44,6 +44,7 @@ export interface ToolDef {
 export interface ToolContext {
   sourceText?: string;
   destination?: string;
+  focusedDayId?: string;
   recommendationContext?: {
     location: string;
     dayId?: string;
@@ -218,6 +219,21 @@ export const TRIP_TOOLS: ToolDef[] = [
           dayId: { type: 'string', description: 'Day ID if known' },
           date: { type: 'string', description: 'Day date in YYYY-MM-DD format' },
           deletePlaces: { type: 'boolean', description: 'Whether to delete places on this day (default false: unassigns them)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'focus_day',
+      description: 'Focus or select a specific day in the user interface and on the live map, or switch focus to view all days or unassigned places.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dayIndex: { type: 'number', description: '1-based day number, e.g. 1 for Day 1, 2 for Day 2.' },
+          date: { type: 'string', description: 'Date string (YYYY-MM-DD), or "all" to show all days, or "unassigned" to focus unassigned places.' },
+          dayId: { type: 'string', description: 'The exact ID of the day to focus.' },
         },
       },
     },
@@ -822,6 +838,55 @@ export async function executeTripTool(
       return { action: name, summary: `Deleted day ${toDayKey(target.date)}${a.deletePlaces ? ' and its places' : ' (places unassigned)'}`, ok: true };
     }
 
+    if (name === 'focus_day') {
+      const days = await prisma.day.findMany({ where: { tripId }, orderBy: { date: 'asc' } });
+      const dateVal = typeof a.date === 'string' ? a.date.trim().toLowerCase() : '';
+      if (dateVal === 'all' || dateVal === 'none' || dateVal === 'clear') {
+        return {
+          action: name,
+          summary: 'Switched focus to view all itinerary days.',
+          ok: true,
+          dayId: '',
+          data: { dayId: null, mode: 'all' },
+        };
+      }
+      if (dateVal === 'unassigned' || dateVal === 'orphan') {
+        return {
+          action: name,
+          summary: 'Focused unassigned places on the itinerary and map.',
+          ok: true,
+          dayId: 'unassigned',
+          data: { dayId: 'unassigned', mode: 'unassigned' },
+        };
+      }
+
+      let targetDay = typeof a.dayId === 'string' ? days.find((d) => d.id === a.dayId) : undefined;
+      if (!targetDay && typeof a.dayIndex === 'number' && a.dayIndex >= 1 && a.dayIndex <= days.length) {
+        targetDay = days[Math.floor(a.dayIndex) - 1];
+      }
+      if (!targetDay && dateVal) {
+        targetDay = days.find((d) => toDayKey(d.date) === dateVal);
+      }
+
+      if (!targetDay) {
+        return {
+          action: name,
+          summary: `Could not find day matching ${a.dayIndex ? `Day ${a.dayIndex}` : a.date || a.dayId}. Available days: 1 to ${days.length}.`,
+          ok: false,
+        };
+      }
+
+      const dayIdx = days.findIndex((d) => d.id === targetDay.id) + 1;
+      const customTitle = targetDay.label && !isGenericDayLabel(targetDay.label) ? ` (${targetDay.label})` : '';
+      return {
+        action: name,
+        summary: `Focused Day ${dayIdx}${customTitle} on the map and itinerary.`,
+        ok: true,
+        dayId: targetDay.id,
+        data: { dayId: targetDay.id, dayIndex: dayIdx, date: toDayKey(targetDay.date), label: targetDay.label },
+      };
+    }
+
     // ---------------- 3. Places / Itinerary Stops ----------------
     if (name === 'get_places') {
       const query = typeof a.query === 'string' ? a.query.trim().toLowerCase() : '';
@@ -894,6 +959,13 @@ export async function executeTripTool(
           });
           dayId = created.id;
           await reconcileTripDays(tripId);
+        }
+      } else if (typeof a.dayId === 'string' && a.dayId) {
+        dayId = a.dayId;
+      } else if (ctx.focusedDayId && ctx.focusedDayId !== 'unassigned') {
+        const matchingDay = await prisma.day.findFirst({ where: { id: ctx.focusedDayId, tripId } });
+        if (matchingDay) {
+          dayId = matchingDay.id;
         }
       }
 

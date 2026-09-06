@@ -205,7 +205,8 @@ aiRouter.post(
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    const { reply, actions } = await processTripChat(tripId, user.id, llmPrompt, history);
+    const focusedDayId = typeof req.body.focusedDayId === 'string' ? req.body.focusedDayId.trim() : undefined;
+    const { reply, actions } = await processTripChat(tripId, user.id, llmPrompt, history, focusedDayId);
 
     await prisma.chatMessage.createMany({
       data: [

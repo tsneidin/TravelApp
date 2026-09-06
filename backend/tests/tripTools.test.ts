@@ -59,8 +59,9 @@ describe('TRIP_TOOLS definitions', () => {
     expect(names).toContain('update_journal_entry');
     expect(names).toContain('delete_journal_entry');
 
-    // Suggestions
+    // Suggestions & Focus
     expect(names).toContain('get_suggestions');
+    expect(names).toContain('focus_day');
   });
 
   it('all tools have valid names, descriptions, and parameter objects', () => {

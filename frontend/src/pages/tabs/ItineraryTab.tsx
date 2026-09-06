@@ -123,6 +123,64 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
+  // Sync active focused day across the app and to AI assist
+  useEffect(() => {
+    let detail: { dayId: string | null; dayIndex?: number; label?: string; date?: string; mode?: string } = {
+      dayId: selectedDayId,
+    };
+    if (selectedDayId === 'unassigned') {
+      detail = { dayId: 'unassigned', label: 'Unassigned Places', mode: 'unassigned' };
+    } else if (selectedDayId) {
+      const day = days.find((d) => d.id === selectedDayId);
+      const idx = days.findIndex((d) => d.id === selectedDayId) + 1;
+      if (day) {
+        detail = {
+          dayId: day.id,
+          dayIndex: idx,
+          label: day.label && !isGenericDayLabel(day.label) ? day.label : undefined,
+          date: day.date,
+          mode: 'day',
+        };
+      }
+    } else {
+      detail = { dayId: null, mode: 'all' };
+    }
+    window.dispatchEvent(new CustomEvent('travelapp:day_focused', { detail }));
+  }, [selectedDayId, days]);
+
+  // Listen for AI or external commands to change focused day
+  useEffect(() => {
+    const handleSetFocus = (e: Event) => {
+      const customEvent = e as CustomEvent<{ dayId?: string | null; dayIndex?: number; mode?: string }>;
+      const detail = customEvent.detail;
+      if (!detail) return;
+      if (detail.dayId === '' || detail.dayId === null || detail.mode === 'all') {
+        setSelectedDayId(null);
+        setActivePlaceId(null);
+        return;
+      }
+      if (detail.dayId === 'unassigned' || detail.mode === 'unassigned') {
+        setSelectedDayId('unassigned');
+        setActivePlaceId(null);
+        setTimeout(() => {
+          const el = document.getElementById('places-unassigned');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+        return;
+      }
+      if (detail.dayId) {
+        setSelectedDayId(detail.dayId);
+        setActivePlaceId(null);
+        setTimeout(() => {
+          const el = document.getElementById(`day-${detail.dayId}`);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+      }
+    };
+    window.addEventListener('travelapp:set_focus_day', handleSetFocus);
+    return () => window.removeEventListener('travelapp:set_focus_day', handleSetFocus);
+  }, []);
+
   // When a day has no locations, find the most recent prior day that has a location.
   const fallbackLocation = useMemo(() => {
     if (!selectedDayId || selectedDayId === 'unassigned') {
@@ -677,6 +735,40 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       <div className={`itinerary-layout-container ${viewMode === 'split' ? 'split-mode' : 'full-mode'}`}>
         {/* Left Itinerary Column */}
         <div className="itinerary-left-pane">
+          {/* Active Focus Header Banner */}
+          {selectedDayId && (
+            <div className="itinerary-focus-banner">
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="focus-indicator-badge">🎯 In Focus</span>
+                <span>
+                  {selectedDayId === 'unassigned' ? (
+                    <b>Viewing Unassigned Places & Ideas only</b>
+                  ) : (
+                    (() => {
+                      const d = days.find((item) => item.id === selectedDayId);
+                      const idx = days.findIndex((item) => item.id === selectedDayId) + 1;
+                      const customTitle = d?.label && !isGenericDayLabel(d.label) ? `: ${d.label}` : '';
+                      return (
+                        <b>
+                          Viewing Day {idx} ({d ? new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : ''}{customTitle})
+                        </b>
+                      );
+                    })()
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn sm ghost"
+                style={{ padding: '2px 8px', fontSize: '0.78rem' }}
+                onClick={() => setSelectedDayId(null)}
+                title="Clear focus and view all days"
+              >
+                Show All Days ✕
+              </button>
+            </div>
+          )}
+
           {days.length === 0 && (
             <div className="empty-state">
               <div className="big">No days yet</div>
@@ -687,77 +779,87 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             </div>
           )}
 
-          {days.map((day, dayIndex) => (
-            <div className="panel day-panel" key={day.id} id={`day-${day.id}`} style={{ scrollMarginTop: 16, marginBottom: 18 }}>
-              <div className="row between day-header">
-                <div className="row">
-                  <span className="badge accent">
-                    {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </span>
-                  <b>Day {dayIndex + 1}</b>
-                  {!isGenericDayLabel(day.label) && (
-                    <span className="day-custom-label" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                      : {day.label}
+          {days.map((day, dayIndex) => {
+            const isFocused = selectedDayId === day.id;
+            return (
+              <div
+                className={`panel day-panel ${isFocused ? 'day-panel-focused' : ''}`}
+                key={day.id}
+                id={`day-${day.id}`}
+                style={{ scrollMarginTop: 16, marginBottom: 18 }}
+              >
+                <div className="row between day-header">
+                  <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                    <span className="badge accent">
+                      {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                     </span>
-                  )}
-                  <button
-                    type="button"
-                    className="btn xs ghost muted-hover"
-                    title="Rename day or edit notes"
-                    onClick={() => {
-                      const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
-                      setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
-                    }}
-                    style={{ padding: '2px 4px' }}
-                  >
-                    <Pencil size={12} />
-                  </button>
-                  <span className="day-stop-count small muted">({day.places.length} stops)</span>
+                    <b>Day {dayIndex + 1}</b>
+                    {!isGenericDayLabel(day.label) && (
+                      <span className="day-custom-label" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                        : {day.label}
+                      </span>
+                    )}
+                    {isFocused && (
+                      <span className="focus-indicator-badge">🎯 In Focus</span>
+                    )}
+                    <button
+                      type="button"
+                      className="btn xs ghost muted-hover"
+                      title="Rename day or edit notes"
+                      onClick={() => {
+                        const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
+                        setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
+                      }}
+                      style={{ padding: '2px 4px' }}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <span className="day-stop-count small muted">({day.places.length} stops)</span>
+                  </div>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      title="Edit day notes"
+                      onClick={() => {
+                        const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
+                        setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
+                      }}
+                    >
+                      <NotebookPen size={13} /> Notes
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      title="Add journal entry for this day"
+                      onClick={() => {
+                        const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
+                        setJournalDay({ date: day.date, label: `Day ${dayIndex + 1}${customTitle}` });
+                        setJournalForm({ title: '', body: '' });
+                      }}
+                    >
+                      <BookOpen size={13} /> Journal
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn sm ${isFocused ? 'primary' : 'ghost'}`}
+                      title="Focus this day on the map"
+                      onClick={() => {
+                        setActivePlaceId(null);
+                        setSelectedDayId(isFocused ? null : day.id);
+                      }}
+                    >
+                      <Navigation size={13} />
+                      <span>{isFocused ? '🎯 Focused' : 'Focus day'}</span>
+                    </button>
+                    <button type="button" className="btn sm ghost" onClick={() => openNew(day.id)}>
+                      <Plus size={14} /> Add
+                    </button>
+                    <button type="button" className="btn sm ghost danger" onClick={() => removeDay(day.id)} title="Delete day">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div className="row">
-                  <button
-                    type="button"
-                    className="btn sm ghost"
-                    title="Edit day notes"
-                    onClick={() => {
-                      const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
-                      setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
-                    }}
-                  >
-                    <NotebookPen size={13} /> Notes
-                  </button>
-                  <button
-                    type="button"
-                    className="btn sm ghost"
-                    title="Add journal entry for this day"
-                    onClick={() => {
-                      const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
-                      setJournalDay({ date: day.date, label: `Day ${dayIndex + 1}${customTitle}` });
-                      setJournalForm({ title: '', body: '' });
-                    }}
-                  >
-                    <BookOpen size={13} /> Journal
-                  </button>
-                  <button
-                    type="button"
-                    className="btn sm ghost"
-                    title="Focus this day on the map"
-                    onClick={() => {
-                      setActivePlaceId(null);
-                      setSelectedDayId(selectedDayId === day.id ? null : day.id);
-                    }}
-                  >
-                    <Navigation size={13} />
-                    <span>{selectedDayId === day.id ? 'Showing all' : 'Focus day'}</span>
-                  </button>
-                  <button type="button" className="btn sm ghost" onClick={() => openNew(day.id)}>
-                    <Plus size={14} /> Add
-                  </button>
-                  <button type="button" className="btn sm ghost danger" onClick={() => removeDay(day.id)} title="Delete day">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
 
               {day.notes && <div className="small mt mb" style={{ whiteSpace: 'pre-wrap' }}><NotebookPen size={12} style={{ verticalAlign: -2 }} /> {day.notes}</div>}
 
@@ -836,11 +938,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 />
               </div>
             </div>
-          ))}
+          );
+        })}
 
           {/* Unassigned Places / Ideas Section - Always displayed below the last day */}
           <div
-            className="panel orphan-panel"
+            className={`panel orphan-panel ${selectedDayId === 'unassigned' ? 'orphan-panel-focused' : ''}`}
             id="places-unassigned"
             style={{ scrollMarginTop: 16, marginBottom: 18 }}
             onDragOver={(e) => {
@@ -854,15 +957,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             }}
           >
             <div className="row between day-header">
-              <div className="row">
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
                 <span className="badge muted">Unassigned</span>
                 <b>Places not assigned to a day</b>
+                {selectedDayId === 'unassigned' && (
+                  <span className="focus-indicator-badge">🎯 In Focus</span>
+                )}
                 <span className="small muted">({orphanPlaces.length} {orphanPlaces.length === 1 ? 'place' : 'places'})</span>
               </div>
               <div className="row">
                 <button
                   type="button"
-                  className="btn sm ghost"
+                  className={`btn sm ${selectedDayId === 'unassigned' ? 'primary' : 'ghost'}`}
                   title="Focus unassigned places on the map"
                   onClick={() => {
                     setActivePlaceId(null);
@@ -870,7 +976,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   }}
                 >
                   <Navigation size={13} />
-                  <span>{selectedDayId === 'unassigned' ? 'Showing all' : 'Focus unassigned'}</span>
+                  <span>{selectedDayId === 'unassigned' ? '🎯 Focused' : 'Focus unassigned'}</span>
                 </button>
                 <button type="button" className="btn sm ghost" onClick={() => openNew('')}>
                   <Plus size={14} /> Add

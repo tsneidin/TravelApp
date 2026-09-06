@@ -182,12 +182,24 @@ export function AIChat({ tripId }: { tripId: string | null }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [suggestionLimit, setSuggestionLimit] = useState(4);
+  const [focusedDay, setFocusedDay] = useState<{ dayId: string | null; dayIndex?: number; label?: string; date?: string } | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
+
+  useEffect(() => {
+    const handleDayFocused = (e: Event) => {
+      const customEvent = e as CustomEvent<{ dayId: string | null; dayIndex?: number; label?: string; date?: string; mode?: string }>;
+      if (customEvent.detail) {
+        setFocusedDay(customEvent.detail.dayId ? customEvent.detail : null);
+      }
+    };
+    window.addEventListener('travelapp:day_focused', handleDayFocused);
+    return () => window.removeEventListener('travelapp:day_focused', handleDayFocused);
+  }, []);
 
   const loadStatus = useCallback(async () => {
     if (!tripId) return;
@@ -364,17 +376,26 @@ export function AIChat({ tripId }: { tripId: string | null }) {
     };
     setMessages((m) => [...m, optimistic]);
 
-    // 3. Send message + parsed attachments to AI chat endpoint
+    // 3. Send message + parsed attachments + focused day to AI chat endpoint
     try {
       const r = await apiPost<{ reply: string; actions: AiAction[] }>(`/trips/${tripId}/ai/chat`, {
         message: text,
         attachments: parsedDocs,
+        focusedDayId: focusedDay?.dayId || undefined,
       });
       setActions(r.actions ?? []);
       setMessages((m) => [
         ...m,
         { id: `a-${Date.now()}`, role: 'assistant', content: r.reply, createdAt: new Date().toISOString() },
       ]);
+
+      // If AI executed a focus_day tool call, sync to UI
+      for (const act of r.actions || []) {
+        if (act.action === 'focus_day' && (act as any).data) {
+          window.dispatchEvent(new CustomEvent('travelapp:set_focus_day', { detail: (act as any).data }));
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('travelapp:mutated', { detail: { tripId } }));
     } catch (e) {
       setError((e as Error).message);
@@ -597,6 +618,25 @@ export function AIChat({ tripId }: { tripId: string | null }) {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {focusedDay && focusedDay.dayId && (
+            <div style={{ padding: '0 12px 6px 12px' }}>
+              <div className="ai-focused-day-pill" style={{ margin: 0 }}>
+                <span>
+                  🎯 Focusing: {focusedDay.dayId === 'unassigned' ? 'Unassigned Places' : `Day ${focusedDay.dayIndex ?? ''}${focusedDay.label ? ` (${focusedDay.label})` : ''}`}
+                </span>
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  style={{ padding: '0 4px', color: '#94a3b8', marginLeft: 4 }}
+                  onClick={() => window.dispatchEvent(new CustomEvent('travelapp:set_focus_day', { detail: { mode: 'all', dayId: null } }))}
+                  title="Clear day focus"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           )}
 

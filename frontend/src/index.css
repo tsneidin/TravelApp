@@ -20,124 +20,179 @@
   --ok: #34d399;
   --warn: #fbbf24;
   --radius: 14px;
+  --side-bg: linear-gradient(180deg, #101a2e, #0d1526);
+  --side-brand-bg: transparent;
+  --side-brand-color: #22d3ee;
+  --side-text: #e6edf7;
+  --side-muted: #8ea0bc;
+  --side-hover: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
 }
 
-/* Home Depot Theme: The Home Depot Official Safety Orange, Charcoal & Slate Tooling */
+/* Home Depot Theme: The Home Depot Official Safety Orange, Clean Workshop White & Charcoal */
 [data-theme="homedepot"] {
-  --bg: #14171a;
-  --bg-glow: #381a07;
-  --panel: #1c2127;
-  --panel-2: #14181d;
-  --card: #232a32;
-  --card-2: #2d3640;
-  --line: #3f4c5a;
-  --text: #ffffff;
-  --muted: #a3b2c2;
+  --bg: #f4f5f8;
+  --bg-glow: #fff2e8;
+  --panel: #ffffff;
+  --panel-2: #fafbfc;
+  --card: #ffffff;
+  --card-2: #f0f2f5;
+  --line: #dcdfe4;
+  --text: #1a1e24;
+  --muted: #5c6878;
   --accent: #f96302;
-  --accent-2: #ff7824;
+  --accent-2: #e05500;
   --accent-text: #ffffff;
-  --danger: #ef4444;
-  --ok: #10b981;
+  --danger: #dc2626;
+  --ok: #16a34a;
   --warn: #f59e0b;
+  --radius: 6px;
+  --side-bg: #ffffff;
+  --side-brand-bg: #f96302;
+  --side-brand-color: #ffffff;
+  --side-text: #1a1e24;
+  --side-muted: #5c6878;
+  --side-hover: rgba(0, 0, 0, 0.05);
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
 }
 
-/* Lowe's Theme: Lowe's Official Royal Navy Blue & Value Gold */
+/* Lowe's Theme: Lowe's Official Royal Navy Blue, Value Gold & Clean Cool Slate */
 [data-theme="lowes"] {
-  --bg: #07152b;
-  --bg-glow: #002d62;
-  --panel: #0b1f3d;
-  --panel-2: #07162b;
-  --card: #102b54;
-  --card-2: #163a70;
-  --line: #1f4f96;
-  --text: #ffffff;
-  --muted: #95b3db;
+  --bg: #f2f5fa;
+  --bg-glow: #e2ecfa;
+  --panel: #ffffff;
+  --panel-2: #f7f9fc;
+  --card: #ffffff;
+  --card-2: #ebf1f9;
+  --line: #cdd9e8;
+  --text: #0d1e38;
+  --muted: #526b8b;
   --accent: #004990;
   --accent-2: #ffc220;
   --accent-text: #ffffff;
-  --danger: #f87171;
-  --ok: #22c55e;
+  --danger: #dc2626;
+  --ok: #16a34a;
   --warn: #ffc220;
+  --radius: 8px;
+  --side-bg: #ffffff;
+  --side-brand-bg: #004990;
+  --side-brand-color: #ffffff;
+  --side-text: #0d1e38;
+  --side-muted: #526b8b;
+  --side-hover: rgba(0, 73, 144, 0.06);
+  --card-shadow: 0 2px 12px rgba(0, 73, 144, 0.08);
 }
 
 /* Milwaukee Tool Theme: Heavy-Duty Crimson Red & Carbon Matte Black */
 [data-theme="milwaukee"] {
-  --bg: #0c0d10;
-  --bg-glow: #4a060a;
-  --panel: #14161b;
-  --panel-2: #0e0f13;
-  --card: #1c1e26;
-  --card-2: #262933;
-  --line: #3d4150;
+  --bg: #0a0b0d;
+  --bg-glow: #380407;
+  --panel: #131418;
+  --panel-2: #0e0f12;
+  --card: #181a22;
+  --card-2: #222530;
+  --line: #383c4d;
   --text: #ffffff;
-  --muted: #a8aebb;
+  --muted: #9ba1b4;
   --accent: #db0010;
   --accent-2: #ff2a3a;
   --accent-text: #ffffff;
-  --danger: #ff3b30;
+  --danger: #ff3344;
   --ok: #22c55e;
   --warn: #eab308;
+  --radius: 4px;
+  --side-bg: linear-gradient(180deg, #131418, #0a0b0d);
+  --side-brand-bg: #db0010;
+  --side-brand-color: #ffffff;
+  --side-text: #ffffff;
+  --side-muted: #9ba1b4;
+  --side-hover: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
 }
 
 /* Amazon Theme: Amazon Prime Squid Ink Navy, Subnav Navy & Smile Amber */
 [data-theme="amazon"] {
-  --bg: #0e131a;
-  --bg-glow: #1a2536;
-  --panel: #131921;
-  --panel-2: #0c1016;
-  --card: #1d2633;
-  --card-2: #232f3e;
-  --line: #32445b;
-  --text: #ffffff;
-  --muted: #a2b0c3;
+  --bg: #eaeded;
+  --bg-glow: #e0e6ec;
+  --panel: #ffffff;
+  --panel-2: #f7f9fa;
+  --card: #ffffff;
+  --card-2: #f0f2f2;
+  --line: #d5d9d9;
+  --text: #0f1111;
+  --muted: #565959;
   --accent: #ff9900;
-  --accent-2: #00a8e1;
-  --accent-text: #111827;
-  --danger: #ef4444;
-  --ok: #10b981;
-  --warn: #febd69;
+  --accent-2: #007185;
+  --accent-text: #0f1111;
+  --danger: #c40000;
+  --ok: #067d62;
+  --warn: #ffa41c;
+  --radius: 8px;
+  --side-bg: #131921;
+  --side-brand-bg: #131921;
+  --side-brand-color: #ff9900;
+  --side-text: #ffffff;
+  --side-muted: #a2b0c3;
+  --side-hover: rgba(255, 255, 255, 0.09);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-/* Facebook Theme: Meta / Facebook Brand Blue & Dark Mode Slate */
+/* Facebook Theme: Meta / Facebook Brand Blue & Modern Clean White Canvas */
 [data-theme="facebook"] {
-  --bg: #18191a;
-  --bg-glow: #0a1f3d;
-  --panel: #242526;
-  --panel-2: #1c1d1e;
-  --card: #242526;
-  --card-2: #3a3b3c;
-  --line: #3e4042;
-  --text: #e4e6eb;
-  --muted: #b0b3b8;
+  --bg: #f0f2f5;
+  --bg-glow: #e4eaf5;
+  --panel: #ffffff;
+  --panel-2: #f7f8fa;
+  --card: #ffffff;
+  --card-2: #e4e6eb;
+  --line: #ced0d4;
+  --text: #050505;
+  --muted: #65676b;
   --accent: #0866ff;
-  --accent-2: #45bd62;
+  --accent-2: #31a24c;
   --accent-text: #ffffff;
-  --danger: #fa383e;
-  --ok: #45bd62;
+  --danger: #e41e3f;
+  --ok: #31a24c;
   --warn: #f7b125;
+  --radius: 10px;
+  --side-bg: #ffffff;
+  --side-brand-bg: #0866ff;
+  --side-brand-color: #ffffff;
+  --side-text: #050505;
+  --side-muted: #65676b;
+  --side-hover: rgba(0, 0, 0, 0.05);
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* American Airlines Theme: Aviation Admirals Blue, Flag Red & Fuselage Platinum */
 [data-theme="americanairlines"] {
-  --bg: #081322;
-  --bg-glow: #002244;
-  --panel: #0d1e35;
-  --panel-2: #081322;
-  --card: #142a4a;
-  --card-2: #1b3863;
-  --line: #294e85;
-  --text: #f8fafc;
-  --muted: #95acc9;
+  --bg: #edf1f7;
+  --bg-glow: #dfe6f2;
+  --panel: #ffffff;
+  --panel-2: #f6f8fb;
+  --card: #ffffff;
+  --card-2: #e6edf7;
+  --line: #c8d3e2;
+  --text: #08172c;
+  --muted: #4e637e;
   --accent: #0078d2;
   --accent-2: #c30019;
   --accent-text: #ffffff;
   --danger: #c30019;
-  --ok: #10b981;
-  --warn: #f59e0b;
+  --ok: #059669;
+  --warn: #d97706;
+  --radius: 8px;
+  --side-bg: #002244;
+  --side-brand-bg: #002244;
+  --side-brand-color: #ffffff;
+  --side-text: #f8fafc;
+  --side-muted: #95acc9;
+  --side-hover: rgba(255, 255, 255, 0.09);
+  --card-shadow: 0 2px 12px rgba(0, 34, 68, 0.09);
 }
 
 * {
@@ -519,19 +574,23 @@ input[type='range']::-webkit-slider-thumb:active {
 }
 .badge.accent {
   color: var(--accent);
-  border-color: rgba(34, 211, 238, 0.5);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .badge.ok {
   color: var(--ok);
-  border-color: rgba(52, 211, 153, 0.5);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
 }
 .badge.warn {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.5);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
 }
 .badge.danger {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.5);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 .chip {
   display: inline-flex;
@@ -838,10 +897,10 @@ tbody tr.total-row td {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 18px 12px;
-  background: linear-gradient(180deg, var(--panel), #0d1526);
+  padding: 14px 10px;
+  background: var(--side-bg, linear-gradient(180deg, var(--panel), #0d1526));
   border-right: 1px solid var(--line);
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.28);
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.18);
   z-index: 60;
   overflow: hidden;
 }
@@ -854,7 +913,7 @@ tbody tr.total-row td {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--side-muted, var(--muted));
 }
 .side-add-btn {
   display: inline-flex;
@@ -862,7 +921,7 @@ tbody tr.total-row td {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--card);
   border: 1px solid var(--line);
   color: var(--accent);
@@ -871,21 +930,24 @@ tbody tr.total-row td {
 }
 .side-add-btn:hover {
   border-color: var(--accent);
-  background: rgba(34, 211, 238, 0.1);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .side-brand {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 6px 10px 18px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
   font-weight: 800;
   font-size: 1.1rem;
   letter-spacing: -0.02em;
-  color: var(--accent);
+  background: var(--side-brand-bg, transparent);
+  color: var(--side-brand-color, var(--accent));
+  margin-bottom: 6px;
 }
 .side-brand span {
-  color: var(--text);
+  color: var(--side-brand-color, var(--text));
 }
 .side-pin-btn {
   display: inline-flex;
@@ -893,17 +955,17 @@ tbody tr.total-row td {
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   border: 1px solid transparent;
-  color: var(--muted);
+  color: var(--side-muted, var(--muted));
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .side-pin-btn:hover {
   color: var(--accent);
-  background: rgba(34, 211, 238, 0.1);
-  border-color: rgba(34, 211, 238, 0.25);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .side-links {
   display: flex;
@@ -915,21 +977,21 @@ tbody tr.total-row td {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
-  color: var(--muted);
+  border-radius: var(--radius);
+  color: var(--side-muted, var(--muted));
   font-weight: 700;
   font-size: 0.92rem;
   text-decoration: none;
   transition: all 0.15s;
 }
 .side-link:hover {
-  color: var(--text);
-  background: var(--card);
+  color: var(--side-text, var(--text));
+  background: var(--side-hover, var(--card));
 }
 .side-link.active {
   color: var(--accent);
-  background: rgba(34, 211, 238, 0.1);
-  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* trip folder tree */
@@ -949,20 +1011,20 @@ tbody tr.total-row td {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 9px;
-  color: var(--muted);
+  border-radius: var(--radius);
+  color: var(--side-muted, var(--muted));
   font-weight: 700;
   font-size: 0.9rem;
   text-decoration: none;
   transition: all 0.12s;
 }
 .trip-row:hover {
-  color: var(--text);
-  background: var(--card);
+  color: var(--side-text, var(--text));
+  background: var(--side-hover, var(--card));
 }
 .trip-row.active {
   color: var(--accent);
-  background: rgba(34, 211, 238, 0.1);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .trip-dot {
   width: 8px;
@@ -989,19 +1051,20 @@ tbody tr.total-row td {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
-  color: var(--muted);
+  border-radius: var(--radius);
+  color: var(--side-muted, var(--muted));
   font-size: 0.84rem;
   font-weight: 600;
   text-decoration: none;
   transition: all 0.12s;
 }
 .side-tab:hover {
-  color: var(--text);
+  color: var(--side-text, var(--text));
+  background: var(--side-hover, var(--card));
 }
 .side-tab.active {
   color: var(--accent);
-  background: rgba(34, 211, 238, 0.08);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .side-tab-parent {
   display: flex;

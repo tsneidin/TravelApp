@@ -1369,7 +1369,8 @@ export function TripMap({
           setOriginInput(endpoints.origin);
           setDestInput(endpoints.destination);
           setTravelMode(mode);
-          setShowRouter(true);
+          // Do not open the transit dialog drawer over the map, just render the route on the map
+          setShowRouter(false);
           autoOpenedRouterRef.current = true;
 
           void calculateRoute(endpoints.origin, endpoints.destination, mode, []);
@@ -1505,6 +1506,24 @@ export function TripMap({
         {isFullWindow ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         <span>{isFullWindow ? 'Exit Full Window' : 'Full Window'}</span>
       </button>
+
+      {/* Floating Route Options & Directions Button (shown when route is active and drawer is closed) */}
+      {!showRouter && (originInput || destInput || routeResult || availableRoutes.length > 0) && (
+        <button
+          type="button"
+          className="map-floating-route-btn"
+          onClick={() => setShowRouter(true)}
+          title="Open route options & step-by-step transit details"
+        >
+          <Navigation size={14} style={{ color: 'var(--accent)' }} />
+          <span>{travelMode === 'TRANSIT' ? 'Transit Details & Options' : 'Route Details'}</span>
+          {(availableRoutes[selectedRouteIndex]?.durationText || routeResult?.durationText) && (
+            <span className="map-floating-route-pill">
+              {availableRoutes[selectedRouteIndex]?.durationText || routeResult?.durationText}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Floating Save View Dialog (triggered from sidebar or context menu) */}
       {isSavingView && (

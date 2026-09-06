@@ -440,7 +440,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         website: editing.website || undefined,
         description: editing.description || undefined,
         notes: editing.notes || undefined,
-        dayId: editing.dayId || undefined,
+        dayId: editing.dayId ? editing.dayId : null,
         startTime: finalStartTime,
         endTime: finalEndTime,
       };
@@ -474,23 +474,25 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
     if (!sourcePlace) return;
 
-    const targetDay = days.find((d) => d.id === targetDayId);
-    const targetPlaces = [...(targetDay?.places ?? [])].filter((p) => p.id !== placeId);
+    const targetIsUnassigned = !targetDayId || targetDayId === 'unassigned';
+    const targetPlaces = targetIsUnassigned
+      ? [...orphanPlaces].filter((p) => p.id !== placeId)
+      : [...(days.find((d) => d.id === targetDayId)?.places ?? [])].filter((p) => p.id !== placeId);
     const clampedIndex = Math.max(0, Math.min(targetIndex, targetPlaces.length));
 
-    const updatedPlace = { ...sourcePlace, dayId: targetDayId || null };
+    const updatedPlace = { ...sourcePlace, dayId: targetIsUnassigned ? null : targetDayId };
     targetPlaces.splice(clampedIndex, 0, updatedPlace);
 
-    const entries: { placeId: string; dayId?: string; sortOrder: number }[] = targetPlaces.map(
-      (p, i) => ({ placeId: p.id, dayId: targetDayId || undefined, sortOrder: i }),
+    const entries: { placeId: string; dayId: string | null; sortOrder: number }[] = targetPlaces.map(
+      (p, i) => ({ placeId: p.id, dayId: targetIsUnassigned ? null : targetDayId, sortOrder: i }),
     );
 
     // If moved from a different day, also re-index remaining places in source day
-    if (sourceDayId && sourceDayId !== targetDayId) {
+    if (sourceDayId && sourceDayId !== (targetIsUnassigned ? null : targetDayId)) {
       const sourceDay = days.find((d) => d.id === sourceDayId);
       const sourceRemaining = (sourceDay?.places ?? []).filter((p) => p.id !== placeId);
       sourceRemaining.forEach((p, i) => {
-        entries.push({ placeId: p.id, dayId: sourceDayId!, sortOrder: i });
+        entries.push({ placeId: p.id, dayId: sourceDayId, sortOrder: i });
       });
     }
 

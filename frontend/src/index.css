@@ -3591,6 +3591,44 @@ a.link:hover {
   color: var(--accent, #22d3ee) !important;
 }
 
+/* Map Floating Route & Transit Button */
+.map-floating-route-btn {
+  position: absolute;
+  top: 48px;
+  left: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel, rgba(15, 23, 42, 0.94));
+  color: var(--text, #fff);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+  pointer-events: auto;
+}
+
+.map-floating-route-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.map-floating-route-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--accent-text, #fff);
+}
+
 /* Map Transit & Route Planner Drawer */
 .map-transit-drawer {
   position: absolute;

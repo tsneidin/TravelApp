@@ -3,10 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
-  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar
+  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
-import type { Trip, Place } from '../../lib/types';
+import type { Trip, Place, JournalEntry } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
@@ -14,6 +14,8 @@ import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
 import { computePlaceStopNumberMap } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
+import { JournalContent } from '../../components/JournalContent';
+import { JournalEntryModal } from '../../components/JournalEntryModal';
 import {
   generateSpanId,
   extractSpanId,
@@ -131,8 +133,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
   const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string; dayNumber?: number; spanDays?: number } | null>(null);
-  const [journalDay, setJournalDay] = useState<{ date: string; label: string } | null>(null);
-  const [journalForm, setJournalForm] = useState({ title: '', body: '' });
+  const [journalModalState, setJournalModalState] = useState<{
+    open: boolean;
+    entry?: { id?: string; title: string; body: string; date?: string };
+    dayLabel?: string;
+  }>({ open: false });
+  const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
   const [deletingPlace, setDeletingPlace] = useState<Place | null>(null);
   const [deletingDayId, setDeletingDayId] = useState<string | null>(null);
 
@@ -628,15 +634,27 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     await reload();
   };
 
-  const saveDayJournal = async () => {
-    if (!journalDay || !journalForm.title.trim()) return;
-    await apiPost(`/trips/${trip.id}/journal`, {
-      title: journalForm.title.trim(),
-      body: journalForm.body,
-      date: journalDay.date.slice(0, 10),
-    });
-    setJournalDay(null);
-    setJournalForm({ title: '', body: '' });
+  const handleSaveJournalEntry = async (data: { title: string; body: string; date?: string }) => {
+    if (journalModalState.entry?.id) {
+      await apiPatch(`/trips/${trip.id}/journal/${journalModalState.entry.id}`, {
+        title: data.title,
+        body: data.body,
+        date: data.date || undefined,
+      });
+    } else {
+      await apiPost(`/trips/${trip.id}/journal`, {
+        title: data.title,
+        body: data.body,
+        date: data.date || undefined,
+      });
+    }
+    setJournalModalState({ open: false });
+    await reload();
+  };
+
+  const handleRemoveJournal = async (id: string) => {
+    await apiDelete(`/trips/${trip.id}/journal/${id}`);
+    setDeletingJournalId(null);
     await reload();
   };
 
@@ -780,14 +798,14 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <span className="place-title">{p.name}</span>
                 {p.website && (
                   <a
-                    href={p.website}
+                    href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="website-ext-link"
                     onClick={(e) => e.stopPropagation()}
-                    title="Open official website"
+                    title={`Open ${p.website} in new tab`}
                   >
-                    ↗
+                    <ExternalLink size={12} />
                   </a>
                 )}
                 {hasDetails && (
@@ -846,7 +864,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </div>
             </div>
 
-            {/* Meta tags: Time, Category, Location */}
+            {/* Meta tags: Time, Category, Location, Website, Multi-day */}
             {hasMeta && (
               <div className="place-card-meta">
                 {formattedTime && (
@@ -865,6 +883,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     <MapPin size={11} />
                     <span className="place-location-text">{locationText}</span>
                   </span>
+                )}
+                {p.website && (
+                  <a
+                    href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="place-meta-pill location"
+                    title={`Open ${p.website} in new tab`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ textDecoration: 'none', color: 'var(--accent)' }}
+                  >
+                    <ExternalLink size={11} />
+                    <span>Website</span>
+                  </a>
                 )}
                 {isSpanned && (
                   <span className="place-meta-pill span-badge" title={`Spans across ${siblingPlaces.length} days in this itinerary`}>
@@ -890,6 +922,21 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <div className="place-expanded-text">{p.description}</div>
               </div>
             ) : null}
+            {p.website && (
+              <div style={{ marginTop: 8 }}>
+                <a
+                  href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--accent)', textDecoration: 'none' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink size={12} />
+                  <span>Visit website ({p.website})</span>
+                </a>
+              </div>
+            )}
             {p.notes?.trim() ? (
               <div className="place-expanded-section">
                 <div className="place-expanded-label">Notes</div>
@@ -1078,6 +1125,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
           {days.map((day, dayIndex) => {
             const isFocused = selectedDayId === day.id;
+            const dayJournalEntries = (trip.journal ?? []).filter((j: JournalEntry) => {
+              if (!j.date) return false;
+              return j.date.slice(0, 10) === day.date.slice(0, 10);
+            });
+
             return (
               <div
                 className={`panel day-panel ${isFocused ? 'day-panel-focused' : ''}`}
@@ -1096,6 +1148,38 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       )}
                       {isFocused && (
                         <span className="focus-indicator-badge">🎯 In Focus</span>
+                      )}
+                      {dayJournalEntries.length > 0 && (
+                        <span
+                          className="badge"
+                          style={{
+                            background: 'rgba(34, 211, 238, 0.12)',
+                            color: 'var(--accent)',
+                            border: '1px solid rgba(34, 211, 238, 0.35)',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                          title={`${dayJournalEntries.length} journal ${dayJournalEntries.length === 1 ? 'entry' : 'entries'} recorded for this day`}
+                          onClick={() => {
+                            const first = dayJournalEntries[0];
+                            setJournalModalState({
+                              open: true,
+                              entry: {
+                                id: first.id,
+                                title: first.title,
+                                body: first.body,
+                                date: first.date ? first.date.slice(0, 10) : day.date.slice(0, 10),
+                              },
+                              dayLabel: `Day ${dayIndex + 1}`,
+                            });
+                          }}
+                        >
+                          <BookOpen size={11} />
+                          <span>{dayJournalEntries.length} {dayJournalEntries.length === 1 ? 'Journal' : 'Journals'}</span>
+                        </span>
                       )}
                       <button
                         type="button"
@@ -1136,14 +1220,22 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       <button
                         type="button"
                         className="btn sm ghost"
-                        title="Add journal entry for this day"
+                        style={dayJournalEntries.length > 0 ? { color: 'var(--accent)' } : undefined}
+                        title={dayJournalEntries.length > 0 ? 'Add or view journal entries for this day' : 'Add journal entry for this day'}
                         onClick={() => {
                           const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
-                          setJournalDay({ date: day.date, label: `Day ${dayIndex + 1}${customTitle}` });
-                          setJournalForm({ title: '', body: '' });
+                          setJournalModalState({
+                            open: true,
+                            entry: {
+                              title: '',
+                              body: '',
+                              date: day.date.slice(0, 10),
+                            },
+                            dayLabel: `Day ${dayIndex + 1}${customTitle}`,
+                          });
                         }}
                       >
-                        <BookOpen size={13} /> Journal
+                        <BookOpen size={13} /> Journal{dayJournalEntries.length > 0 ? ` (${dayJournalEntries.length})` : ''}
                       </button>
                       <button
                         type="button"
@@ -1173,6 +1265,67 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 <div className="day-notes-box mt mb">
                   <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
                   <span>{day.notes}</span>
+                </div>
+              )}
+
+              {/* Day's Journal Entries preview */}
+              {dayJournalEntries.length > 0 && (
+                <div style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+                  {dayJournalEntries.map((j) => (
+                    <div
+                      key={j.id}
+                      style={{
+                        padding: '10px 12px',
+                        background: 'var(--surface-hover)',
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div className="row between" style={{ alignItems: 'center', marginBottom: 6 }}>
+                        <div className="row" style={{ alignItems: 'center', gap: 6 }}>
+                          <BookOpen size={14} style={{ color: 'var(--accent)' }} />
+                          <strong style={{ fontSize: '0.95rem' }}>{j.title}</strong>
+                        </div>
+                        <div className="row" style={{ gap: 4 }}>
+                          <button
+                            type="button"
+                            className="btn xs ghost"
+                            title="Edit journal entry"
+                            onClick={() => {
+                              setJournalModalState({
+                                open: true,
+                                entry: {
+                                  id: j.id,
+                                  title: j.title,
+                                  body: j.body,
+                                  date: j.date ? j.date.slice(0, 10) : day.date.slice(0, 10),
+                                },
+                              });
+                            }}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn xs ghost danger"
+                            title="Delete journal entry"
+                            onClick={() => setDeletingJournalId(j.id)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.88rem', lineHeight: 1.5, color: 'var(--text)' }}>
+                        <JournalContent content={j.body} />
+                      </div>
+                      {(j.createdBy || j.updatedBy) && (
+                        <div style={{ marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+                          <AuditBadge createdBy={j.createdBy} createdAt={j.createdAt} updatedBy={j.updatedBy} updatedAt={j.updatedAt} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -1547,21 +1700,27 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         );
       })()}
 
-      {journalDay && (
-        <Modal title={`Journal entry — ${journalDay.label}`} onClose={() => setJournalDay(null)}>
-          <div className="field">
-            <label>Title</label>
-            <input value={journalForm.title} onChange={(event) => setJournalForm({ ...journalForm, title: event.target.value })} autoFocus />
-          </div>
-          <div className="field">
-            <label>Entry</label>
-            <textarea rows={7} value={journalForm.body} onChange={(event) => setJournalForm({ ...journalForm, body: event.target.value })} />
-          </div>
-          <div className="modal-actions">
-            <button className="btn primary" disabled={!journalForm.title.trim()} onClick={() => void saveDayJournal()}>Save journal entry</button>
-            <button className="btn" onClick={() => setJournalDay(null)}>Cancel</button>
-          </div>
-        </Modal>
+      {journalModalState.open && (
+        <JournalEntryModal
+          tripId={trip.id}
+          isOpen={journalModalState.open}
+          onClose={() => setJournalModalState({ open: false })}
+          onSave={handleSaveJournalEntry}
+          initialData={journalModalState.entry}
+          tripPhotos={trip.photos}
+          onPhotosUploaded={reload}
+        />
+      )}
+
+      {deletingJournalId && (
+        <ConfirmModal
+          title="Delete journal entry"
+          message="Delete this journal entry?"
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => void handleRemoveJournal(deletingJournalId)}
+          onCancel={() => setDeletingJournalId(null)}
+        />
       )}
 
       {sourcePlace && (
@@ -1740,7 +1899,22 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           </div>
 
           <div className="field" style={{ marginBottom: '0.6rem' }}>
-            <label style={{ marginBottom: 4 }}>Website</label>
+            <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ margin: 0 }}>Website</label>
+              {editing.website.trim() && (
+                <a
+                  href={editing.website.trim().startsWith('http://') || editing.website.trim().startsWith('https://') ? editing.website.trim() : `https://${editing.website.trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', color: 'var(--accent)', textDecoration: 'none' }}
+                  title="Open website in new tab"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open site</span>
+                </a>
+              )}
+            </div>
             <input
               type="url"
               value={editing.website}
@@ -1749,20 +1923,60 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             />
           </div>
 
-          <div className="field small" style={{ marginBottom: '0.6rem' }}>
-            <label style={{ marginBottom: 4 }}>Category</label>
-            <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
-              <option value="">Auto-infer with AI / keywords</option>
-              <option value="Sightseeing">🏛 Sightseeing</option>
-              <option value="Restaurant">🍽 Restaurant / Dining</option>
-              <option value="Activity">🎟 Activity / Tour</option>
-              <option value="Flight">✈ Flight</option>
-              <option value="Train">🚆 Train / Rail</option>
-              <option value="Transport">🚗 Transport / Rental</option>
-              <option value="Accommodation">🛏 Accommodation / Hotel</option>
-              <option value="Shopping">🛍 Shopping</option>
-              <option value="Nature">🌲 Nature / Beach / Park</option>
-            </select>
+          {/* Category, Day, and Span across days on the same horizontal row */}
+          <div className={!editingId && days.length > 0 ? 'grid grid-3' : days.length > 0 ? 'grid grid-2' : ''} style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
+            <div className="field small" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: 4 }}>Category</label>
+              <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
+                <option value="">Auto-infer with AI</option>
+                <option value="Sightseeing">🏛 Sightseeing</option>
+                <option value="Restaurant">🍽 Restaurant / Dining</option>
+                <option value="Activity">🎟 Activity / Tour</option>
+                <option value="Flight">✈ Flight</option>
+                <option value="Train">🚆 Train / Rail</option>
+                <option value="Transport">🚗 Transport / Rental</option>
+                <option value="Accommodation">🛏 Accommodation / Hotel</option>
+                <option value="Shopping">🛍 Shopping</option>
+                <option value="Nature">🌲 Nature / Beach / Park</option>
+              </select>
+            </div>
+
+            {days.length > 0 && (
+              <div className="field small" style={{ marginBottom: 0 }}>
+                <label style={{ marginBottom: 4 }}>Day</label>
+                <select value={editing.dayId ?? ''} onChange={(e) => setEditing({ ...editing, dayId: e.target.value })}>
+                  <option value="">No day (unassigned)</option>
+                  {days.map((d, i) => (
+                    <option key={d.id} value={d.id}>
+                      {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {!editingId && days.length > 0 && (
+              <div className="field small" style={{ marginBottom: 0 }}>
+                <label style={{ marginBottom: 4 }}>Span across days</label>
+                <div className="row items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={days.length}
+                    value={editing.spanDays ?? 1}
+                    disabled={!editing.dayId || editing.dayId === 'unassigned'}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(days.length, parseInt(e.target.value || '1', 10)));
+                      setEditing({ ...editing, spanDays: val });
+                    }}
+                    style={{ width: '65px' }}
+                  />
+                  <span className="small muted" style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    {(editing.spanDays ?? 1) > 1 ? 'consec. days' : 'day (single)'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-2" style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
@@ -1783,45 +1997,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               />
             </div>
           </div>
-
-          {days.length > 0 && (
-            <div className={!editingId ? 'grid grid-2' : ''} style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
-              <div className="field small" style={{ marginBottom: 0 }}>
-                <label style={{ marginBottom: 4 }}>Day</label>
-                <select value={editing.dayId ?? ''} onChange={(e) => setEditing({ ...editing, dayId: e.target.value })}>
-                  <option value="">No day (unassigned)</option>
-                  {days.map((d, i) => (
-                    <option key={d.id} value={d.id}>
-                      {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {!editingId && (
-                <div className="field small" style={{ marginBottom: 0 }}>
-                  <label style={{ marginBottom: 4 }}>Span across days</label>
-                  <div className="row items-center gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={days.length}
-                      value={editing.spanDays ?? 1}
-                      disabled={!editing.dayId || editing.dayId === 'unassigned'}
-                      onChange={(e) => {
-                        const val = Math.max(1, Math.min(days.length, parseInt(e.target.value || '1', 10)));
-                        setEditing({ ...editing, spanDays: val });
-                      }}
-                      style={{ width: '80px' }}
-                    />
-                    <span className="small muted">
-                      {(editing.spanDays ?? 1) > 1 ? 'consecutive days' : 'day (single)'}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {!editingId && (editing.spanDays ?? 1) > 1 && editing.dayId && editing.dayId !== 'unassigned' && (() => {
             const targetDays = getConsecutiveDays(editing.dayId, editing.spanDays ?? 1, days);

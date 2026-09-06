@@ -2,10 +2,13 @@ import { useRef, useState } from 'react';
 import { Plus, Trash2, Image as ImageIcon, PenSquare, Pencil } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete, uploadPhotos } from '../../lib/api';
 import type { Trip, JournalEntry, Photo } from '../../lib/types';
-import { Modal, ConfirmModal } from '../../components/Modal';
+import { ConfirmModal } from '../../components/Modal';
 import { AuditBadge } from '../../components/AuditBadge';
+import { JournalContent } from '../../components/JournalContent';
+import { JournalEntryModal } from '../../components/JournalEntryModal';
 
 interface JournalForm {
+  id?: string;
   title: string;
   body: string;
   date: string;
@@ -19,7 +22,6 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
   const [jOpen, setJOpen] = useState(false);
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
   const [jForm, setJForm] = useState<JournalForm>({ title: '', body: '', date: '' });
-  const [busy, setBusy] = useState(false);
   const [viewingPhoto, setViewingPhoto] = useState<Photo | null>(null);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
@@ -49,25 +51,20 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
 
   const openEditJournal = (entry: JournalEntry) => {
     setEditingJournalId(entry.id);
-    setJForm({ title: entry.title, body: entry.body, date: entry.date ? entry.date.slice(0, 10) : '' });
+    setJForm({ id: entry.id, title: entry.title, body: entry.body, date: entry.date ? entry.date.slice(0, 10) : '' });
     setJOpen(true);
   };
 
-  const saveJournal = async () => {
-    setBusy(true);
-    try {
-      const payload = { title: jForm.title, body: jForm.body, date: jForm.date || undefined };
-      if (editingJournalId) {
-        await apiPatch(`/trips/${trip.id}/journal/${editingJournalId}`, payload);
-      } else {
-        await apiPost(`/trips/${trip.id}/journal`, payload);
-      }
-      setJOpen(false);
-      setJForm({ title: '', body: '', date: '' });
-      await reload();
-    } finally {
-      setBusy(false);
+  const handleSaveJournal = async (data: { title: string; body: string; date?: string }) => {
+    const payload = { title: data.title, body: data.body, date: data.date || undefined };
+    if (editingJournalId) {
+      await apiPatch(`/trips/${trip.id}/journal/${editingJournalId}`, payload);
+    } else {
+      await apiPost(`/trips/${trip.id}/journal`, payload);
     }
+    setJOpen(false);
+    setJForm({ title: '', body: '', date: '' });
+    await reload();
   };
 
   const removeJournal = (id: string) => {
@@ -146,7 +143,9 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
                 </div>
               </div>
               <div className="small muted mb">{j.date ? new Date(j.date).toLocaleDateString() : ''}</div>
-              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.92rem' }}>{j.body}</div>
+              <div style={{ lineHeight: 1.6, fontSize: '0.92rem' }}>
+                <JournalContent content={j.body} />
+              </div>
               {(j.createdBy || j.updatedBy) && (
                 <div style={{ marginTop: 10, paddingTop: 6, borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
                   <AuditBadge createdBy={j.createdBy} createdAt={j.createdAt} updatedBy={j.updatedBy} updatedAt={j.updatedAt} />
@@ -172,24 +171,15 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
       )}
 
       {jOpen && (
-        <Modal title={editingJournalId ? "Edit journal entry" : "New journal entry"} onClose={() => setJOpen(false)}>
-          <div className="field">
-            <label>Title</label>
-            <input value={jForm.title} onChange={(e) => setJForm({ ...jForm, title: e.target.value })} placeholder="Day 2: Shibuya scramble" autoFocus />
-          </div>
-          <div className="field">
-            <label>Date</label>
-            <input type="date" value={jForm.date} onChange={(e) => setJForm({ ...jForm, date: e.target.value })} />
-          </div>
-          <div className="field">
-            <label>Entry</label>
-            <textarea rows={6} value={jForm.body} onChange={(e) => setJForm({ ...jForm, body: e.target.value })} placeholder="What happened today…" />
-          </div>
-          <div className="modal-actions">
-            <button className="btn primary" onClick={saveJournal} disabled={busy || !jForm.title}>Save</button>
-            <button className="btn" onClick={() => setJOpen(false)}>Cancel</button>
-          </div>
-        </Modal>
+        <JournalEntryModal
+          tripId={trip.id}
+          isOpen={jOpen}
+          onClose={() => setJOpen(false)}
+          onSave={handleSaveJournal}
+          initialData={jForm}
+          tripPhotos={trip.photos}
+          onPhotosUploaded={reload}
+        />
       )}
 
       {deletingPhotoId && (

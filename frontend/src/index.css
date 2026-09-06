@@ -29,6 +29,11 @@
   --side-hover: rgba(255, 255, 255, 0.08);
   --side-line: #253356;
   --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --panel-gradient: linear-gradient(180deg, #101a2e, #0e1729);
+  --day-bg: linear-gradient(180deg, rgba(34, 211, 238, 0.06) 0%, rgba(16, 26, 46, 0.95) 100%);
+  --day-header-border: rgba(34, 211, 238, 0.18);
+  --day-focused-bg: linear-gradient(180deg, rgba(34, 211, 238, 0.14) 0%, #101a2e 100%);
+  --day-focused-glow: rgba(34, 211, 238, 0.4);
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
@@ -62,6 +67,11 @@
   --side-hover: rgba(0, 0, 0, 0.05);
   --side-line: #e5e7eb;
   --card-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  --panel-gradient: linear-gradient(180deg, #ffffff, #fafbfc);
+  --day-bg: linear-gradient(180deg, rgba(249, 99, 2, 0.08) 0%, #ffffff 100%);
+  --day-header-border: rgba(249, 99, 2, 0.28);
+  --day-focused-bg: linear-gradient(180deg, rgba(249, 99, 2, 0.16) 0%, #ffffff 100%);
+  --day-focused-glow: rgba(249, 99, 2, 0.45);
 }
 
 /* Lowe's Theme: Lowe's Official Royal Navy Blue, Value Gold & Clean Cool Slate */
@@ -91,6 +101,11 @@
   --side-hover: rgba(0, 73, 144, 0.06);
   --side-line: #dce5f2;
   --card-shadow: 0 2px 12px rgba(0, 73, 144, 0.08);
+  --panel-gradient: linear-gradient(180deg, #ffffff, #f7f9fc);
+  --day-bg: linear-gradient(180deg, rgba(0, 73, 144, 0.08) 0%, #ffffff 100%);
+  --day-header-border: rgba(0, 73, 144, 0.24);
+  --day-focused-bg: linear-gradient(180deg, rgba(0, 73, 144, 0.15) 0%, #ffffff 100%);
+  --day-focused-glow: rgba(0, 73, 144, 0.4);
 }
 
 /* Milwaukee Tool Theme: Heavy-Duty Crimson Red & Carbon Matte Black */
@@ -120,6 +135,11 @@
   --side-hover: rgba(255, 255, 255, 0.08);
   --side-line: #2e313d;
   --card-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  --panel-gradient: linear-gradient(180deg, #131418, #0e0f12);
+  --day-bg: linear-gradient(180deg, rgba(219, 0, 16, 0.14) 0%, #131418 100%);
+  --day-header-border: rgba(219, 0, 16, 0.35);
+  --day-focused-bg: linear-gradient(180deg, rgba(219, 0, 16, 0.24) 0%, #131418 100%);
+  --day-focused-glow: rgba(219, 0, 16, 0.55);
 }
 
 /* Amazon Theme: Amazon Prime Squid Ink Navy, Subnav Navy & Smile Amber */
@@ -149,6 +169,11 @@
   --side-hover: rgba(255, 255, 255, 0.09);
   --side-line: #232f3e;
   --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --panel-gradient: linear-gradient(180deg, #ffffff, #f7f9fa);
+  --day-bg: linear-gradient(180deg, rgba(255, 153, 0, 0.09) 0%, #ffffff 100%);
+  --day-header-border: rgba(255, 153, 0, 0.3);
+  --day-focused-bg: linear-gradient(180deg, rgba(255, 153, 0, 0.18) 0%, #ffffff 100%);
+  --day-focused-glow: rgba(255, 153, 0, 0.45);
 }
 
 /* Facebook Theme: Meta / Facebook Brand Blue & Modern Clean White Canvas */
@@ -178,6 +203,11 @@
   --side-hover: rgba(0, 0, 0, 0.05);
   --side-line: #e4e6eb;
   --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  --panel-gradient: linear-gradient(180deg, #ffffff, #f7f8fa);
+  --day-bg: linear-gradient(180deg, rgba(8, 102, 255, 0.07) 0%, #ffffff 100%);
+  --day-header-border: rgba(8, 102, 255, 0.25);
+  --day-focused-bg: linear-gradient(180deg, rgba(8, 102, 255, 0.15) 0%, #ffffff 100%);
+  --day-focused-glow: rgba(8, 102, 255, 0.4);
 }
 
 /* American Airlines Theme: Aviation Admirals Blue, Flag Red & Fuselage Platinum */
@@ -207,6 +237,11 @@
   --side-hover: rgba(255, 255, 255, 0.09);
   --side-line: #123b6e;
   --card-shadow: 0 2px 12px rgba(0, 34, 68, 0.09);
+  --panel-gradient: linear-gradient(180deg, #ffffff, #f6f8fb);
+  --day-bg: linear-gradient(180deg, rgba(0, 120, 210, 0.08) 0%, #ffffff 100%);
+  --day-header-border: rgba(0, 120, 210, 0.25);
+  --day-focused-bg: linear-gradient(180deg, rgba(0, 120, 210, 0.16) 0%, #ffffff 100%);
+  --day-focused-glow: rgba(0, 120, 210, 0.4);
 }
 
 * {
@@ -289,11 +324,21 @@ h1.page-title {
 
 /* ---------- panels & cards ---------- */
 .panel {
-  background: linear-gradient(180deg, var(--panel), #0e1729);
+  background: var(--panel-gradient, linear-gradient(180deg, var(--panel), var(--panel-2)));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--card-shadow, 0 10px 30px rgba(0, 0, 0, 0.35));
+}
+.day-panel {
+  background: var(--day-bg, var(--panel-gradient, linear-gradient(180deg, var(--panel), var(--panel-2))));
+  border: 1px solid var(--line);
+  transition: all 0.2s ease;
+}
+.day-header {
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--day-header-border, var(--line));
 }
 .panel h2,
 .panel-title {
@@ -680,7 +725,7 @@ tbody tr.total-row td {
   overflow: auto;
 }
 .modal {
-  background: linear-gradient(180deg, var(--panel), #0e1729);
+  background: var(--panel-gradient, linear-gradient(180deg, var(--panel), var(--panel-2)));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
@@ -1878,10 +1923,18 @@ tbody tr.total-row td {
     -webkit-tap-highlight-color: transparent;
   }
   .mobile-day-chip.active {
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.25), rgba(45, 212, 191, 0.25));
-    border-color: var(--accent);
-    color: #fff;
-    box-shadow: 0 0 10px rgba(34, 211, 238, 0.25);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2, var(--accent))) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent-text, #fff) !important;
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent) !important;
+  }
+  .mobile-day-chip.active .mobile-day-chip-count {
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+  }
+  .mobile-day-chip.active .mobile-day-chip-sub {
+    color: inherit;
+    opacity: 0.9;
   }
   .mobile-day-chip-count {
     font-size: 0.7rem;
@@ -2487,7 +2540,7 @@ tbody tr.total-row td {
   z-index: 950;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, var(--panel), #0c1524);
+  background: var(--panel-gradient, linear-gradient(180deg, var(--panel), var(--panel-2)));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
@@ -3769,8 +3822,8 @@ a.link:hover {
 .day-panel-focused,
 .orphan-panel-focused {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.4), 0 10px 25px -5px rgba(0, 0, 0, 0.4) !important;
-  background: linear-gradient(180deg, rgba(34, 211, 238, 0.06) 0%, var(--panel) 100%) !important;
+  box-shadow: 0 0 0 2px var(--day-focused-glow, rgba(34, 211, 238, 0.4)), 0 10px 25px -5px rgba(0, 0, 0, 0.25) !important;
+  background: var(--day-focused-bg, linear-gradient(180deg, rgba(34, 211, 238, 0.06) 0%, var(--panel) 100%)) !important;
   position: relative;
   transition: all 0.2s ease;
 }
@@ -3779,8 +3832,8 @@ a.link:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #0891b2;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-text, #fff);
   font-size: 0.7rem;
   font-weight: 700;
   padding: 2px 7px;
@@ -3793,9 +3846,9 @@ a.link:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(8, 145, 178, 0.16);
-  border: 1px solid rgba(34, 211, 238, 0.4);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
   padding: 8px 14px;
   margin-bottom: 14px;
   color: var(--text);
@@ -3807,13 +3860,13 @@ a.link:hover {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: rgba(8, 145, 178, 0.25);
-  border: 1px solid rgba(34, 211, 238, 0.4);
-  color: #38bdf8;
-  font-size: 0.75rem;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+  border-radius: 9999px;
+  padding: 3px 9px;
+  font-size: 0.72rem;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
   margin-bottom: 8px;
 }
 

@@ -24,6 +24,7 @@ export function getCategoryIcon(
   const text = `${cat} ${title}`;
 
   if (/todo|task|mail\s*hold|prescription|passport/i.test(text)) return '☑️';
+  if (cat === 'note' || cat === 'notes' || /^\s*note\b/i.test(text)) return '📝';
   if (/flight|airport|✈|\bterminal\b|[a-z]{3}\s*(?:→|->)\s*[a-z]{3}/i.test(text)) return '✈';
   if (/train|rail|eurostar|italo|frecciarossa|amtrak|station|stazione|gare/i.test(text)) return '🚆';
   if (/ferry|boat|cruise|hydrofoil|port|traghetto|aliscafi/i.test(text)) return '⛴️';

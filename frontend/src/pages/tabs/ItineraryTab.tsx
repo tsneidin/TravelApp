@@ -616,11 +616,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     setDeletingDayId(dayId);
   };
 
+  const isItemNote = (p: Place) => {
+    const cat = (p.category || '').toLowerCase();
+    return cat === 'note' || cat === 'notes' || Boolean(p.notes?.trim());
+  };
+
   const openDayNotes = (day: Day, dayIndex: number) => {
     const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
     const pNotesMap: Record<string, string> = {};
-    (day.places ?? []).forEach((p: Place) => {
-      pNotesMap[p.id] = p.notes || '';
+    (day.places ?? []).filter(isItemNote).forEach((p: Place) => {
+      pNotesMap[p.id] = p.notes || p.description || '';
     });
     setDayEditor({
       id: day.id,
@@ -1242,7 +1247,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               if (!j.date) return false;
               return j.date.slice(0, 10) === day.date.slice(0, 10);
             });
-            const dayPlaceNotes = (day.places ?? []).filter((p) => Boolean(p.notes?.trim()));
+            const dayPlaceNotes = (day.places ?? []).filter(isItemNote);
             const hasDayNotes = Boolean(day.notes?.trim());
             const totalDayNotesCount = (hasDayNotes ? 1 : 0) + dayPlaceNotes.length;
 
@@ -1657,10 +1662,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             subtitle: 'Day-level general notes',
             type: 'day' as const,
           },
-          ...(currentDay?.places ?? []).map((p, idx) => ({
+          ...((currentDay?.places ?? []).filter(isItemNote)).map((p, idx) => ({
             key: p.id,
-            label: `Stop #${idx + 1}: ${p.name}`,
-            subtitle: p.address || p.category || 'Place notes',
+            label: p.name || `Note #${idx + 1}`,
+            subtitle: p.address || p.category || 'Note item',
             type: 'place' as const,
             place: p,
           })),
@@ -2038,6 +2043,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               <label style={{ marginBottom: 4 }}>Category</label>
               <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
                 <option value="">Auto-infer with AI</option>
+                <option value="Note">📝 Note / Reminder</option>
                 <option value="Sightseeing">🏛 Sightseeing</option>
                 <option value="Restaurant">🍽 Restaurant / Dining</option>
                 <option value="Activity">🎟 Activity / Tour</option>

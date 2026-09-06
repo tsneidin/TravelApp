@@ -446,9 +446,6 @@ export function Layout() {
                             {(t.mapViews ?? []).length > 0 && !collapsedMaps[t.id] && (
                               <div className="side-map-submenu">
                                 <div className="side-map-views-section">
-                                  <div className="side-map-section-label">
-                                    Saved Views ({(t.mapViews ?? []).length})
-                                  </div>
                                   {(t.mapViews ?? []).map((view) => (
                                     <div key={view.id} className="side-map-view-row">
                                       <button

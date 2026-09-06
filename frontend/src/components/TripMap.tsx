@@ -63,15 +63,53 @@ function categoryFromGoogleTypes(types: string[] = []): string {
   return 'Sightseeing';
 }
 
-function isFlight(place: PlaceWithStop): boolean {
-  const cat = (place.category || '').toLowerCase();
-  if (cat === 'flight' || cat === 'flights' || cat === 'airline') return true;
-  const text = [place.category, place.name, place.notes, place.address].filter(Boolean).join(' ').toLowerCase();
-  if (/train|subway|metro|bus|driving|rental car|ferry|walk/i.test(text) && !/flight|fly|airline|airways/i.test(text)) {
-    return false;
+function isTransitItineraryEntry(place: PlaceWithStop): boolean {
+  const cat = (place.category || '').toLowerCase().trim();
+  if (['transport', 'flight', 'flights', 'train', 'rail', 'transit', 'drive', 'driving', 'walk', 'walking', 'ferry', 'bus', 'car'].includes(cat)) {
+    return true;
   }
-  return /flight|fly to|flying|airline|airways|\bair\b|layover|boarding pass/i.test(text) ||
-    (/\bairport\b/i.test(text) && (/→|->|\bto\b/i.test(place.name) || /flight/i.test(text)));
+  const name = (place.name || '').trim();
+  if (/^(?:✈️|✈|🚆|🚗|⛴️|🚌|🚶)\s*/.test(name)) return true;
+  if (/^(?:flight|train|rail|transit|drive|walk|bus|ferry|shuttle|transfer|eurostar|italo|frecciarossa|amtrak|tgv|ice)\b/i.test(name)) return true;
+  if (/→|->|-->|–>|=>/.test(name) && (cat === 'transport' || /flight|fly|train|rail|transit|drive|walk|bus|ferry|airline|airport|station/i.test(name))) {
+    return true;
+  }
+  const addr = (place.address || '').toLowerCase();
+  if (/\bto\b/.test(addr) && cat === 'transport') return true;
+  return false;
+}
+
+function isFlightTransit(place: PlaceWithStop): boolean {
+  const cat = (place.category || '').toLowerCase().trim();
+  if (['flight', 'flights'].includes(cat)) return true;
+  const text = `${place.name} ${place.category || ''} ${place.notes || ''}`.toLowerCase();
+  return /✈|flight|fly\b|flying|airline|airways/i.test(text) && !/train|subway|metro|bus|ferry/i.test(text);
+}
+
+function extractTransitEndpoints(place: PlaceWithStop): { origin?: string; destination?: string } | null {
+  const name = place.name || '';
+  if (/→|->|-->|–>|=>/.test(name)) {
+    const parts = name.split(/→|->|-->|–>|=>/);
+    if (parts.length >= 2) {
+      const orig = parts[0]
+        .replace(/^(?:✈️|✈|🚆|🚗|⛴️|🚌|🚶)\s*/, '')
+        .replace(/^(?:flight|train|rail|transit|drive|walk|bus|ferry|shuttle|transfer)\s*[:\-]\s*/i, '')
+        .replace(/\b(?:operated by|flight|airline|aa|ua|dl)\b[^\n:]*[:\-]?/i, '')
+        .trim();
+      const dest = parts[1].split(/[·\n(]/)[0].trim();
+      if (orig && dest) return { origin: orig, destination: dest };
+    }
+  }
+
+  const addr = place.address || '';
+  if (/\bto\b/i.test(addr)) {
+    const parts = addr.split(/\bto\b/i);
+    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+      return { origin: parts[0].trim(), destination: parts[1].trim() };
+    }
+  }
+
+  return null;
 }
 
 function getGeocodeQueries(place: PlaceWithStop, destination?: string | null): string[] {
@@ -613,18 +651,105 @@ export function TripMap({
         markersMapRef.current.set(place.id, { marker, coord, place, infoContent });
       }
 
-      // Only show connections between places for flights (as curved geodesic flight paths).
-      // All other ground travel relies on actual turn-by-turn directions & transit layers.
-      for (let index = 1; index < resolved.length; index += 1) {
-        if (!isFlight(resolved[index].place) && !isFlight(resolved[index - 1].place)) continue;
-        overlaysRef.current.push(new maps.Polyline({
-          map: mapRef.current,
-          path: [resolved[index - 1].coord, resolved[index].coord],
-          geodesic: true,
-          strokeColor: '#38bdf8',
-          strokeOpacity: 0.85,
-          strokeWeight: 2.5,
-        }));
+      // Only connect itinerary items when there is an explicit transit itinerary entry connecting them
+      const placeCoordMap = new Map<string, Coord>();
+      for (const item of resolved) {
+        placeCoordMap.set(item.place.id, item.coord);
+      }
+
+      const resolveLocationCoord = async (locQuery: string): Promise<Coord | null> => {
+        const q = locQuery.trim();
+        if (!q) return null;
+        // Check if matching any resolved place first
+        for (const item of resolved) {
+          if (
+            item.place.name.toLowerCase().includes(q.toLowerCase()) ||
+            (item.place.address && item.place.address.toLowerCase().includes(q.toLowerCase()))
+          ) {
+            return item.coord;
+          }
+        }
+        let c = geocodeCache.get(q);
+        if (c) return c;
+        try {
+          const res = await geocoder.geocode({ address: q });
+          const pt = res.results?.[0]?.geometry?.location;
+          if (pt) {
+            c = { lat: pt.lat(), lng: pt.lng() };
+            geocodeCache.set(q, c);
+            return c;
+          }
+        } catch { /* ignore */ }
+        return null;
+      };
+
+      const drawnConnections = new Set<string>();
+
+      for (let i = 0; i < places.length; i++) {
+        const current = places[i];
+        if (!isTransitItineraryEntry(current)) continue;
+
+        let originCoord: Coord | null = null;
+        let destCoord: Coord | null = null;
+        const isFlight = isFlightTransit(current);
+
+        // 1. Check if the transit item itself specifies origin and destination endpoints (e.g. "A → B" or "A to B")
+        const endpoints = extractTransitEndpoints(current);
+        if (endpoints?.origin && endpoints?.destination) {
+          originCoord = await resolveLocationCoord(endpoints.origin);
+          destCoord = await resolveLocationCoord(endpoints.destination);
+        }
+
+        // 2. If not resolved from endpoints, find the adjacent itinerary items that this transit entry connects
+        if (!originCoord || !destCoord) {
+          let prevPlaceCoord: Coord | null = null;
+          for (let pIdx = i - 1; pIdx >= 0; pIdx--) {
+            const c = placeCoordMap.get(places[pIdx].id);
+            if (c) {
+              prevPlaceCoord = c;
+              break;
+            }
+          }
+
+          let nextPlaceCoord: Coord | null = null;
+          for (let nIdx = i + 1; nIdx < places.length; nIdx++) {
+            const c = placeCoordMap.get(places[nIdx].id);
+            if (c) {
+              nextPlaceCoord = c;
+              break;
+            }
+          }
+
+          if (!originCoord && prevPlaceCoord) {
+            originCoord = prevPlaceCoord;
+          } else if (!originCoord && placeCoordMap.has(current.id)) {
+            originCoord = placeCoordMap.get(current.id)!;
+          }
+
+          if (!destCoord && nextPlaceCoord) {
+            destCoord = nextPlaceCoord;
+          } else if (!destCoord && placeCoordMap.has(current.id)) {
+            destCoord = placeCoordMap.get(current.id)!;
+          }
+        }
+
+        if (cancelled) return;
+
+        if (originCoord && destCoord && (originCoord.lat !== destCoord.lat || originCoord.lng !== destCoord.lng)) {
+          const connKey = `${originCoord.lat.toFixed(4)},${originCoord.lng.toFixed(4)}->${destCoord.lat.toFixed(4)},${destCoord.lng.toFixed(4)}`;
+          const reverseKey = `${destCoord.lat.toFixed(4)},${destCoord.lng.toFixed(4)}->${originCoord.lat.toFixed(4)},${originCoord.lng.toFixed(4)}`;
+          if (!drawnConnections.has(connKey) && !drawnConnections.has(reverseKey)) {
+            drawnConnections.add(connKey);
+            overlaysRef.current.push(new maps.Polyline({
+              map: mapRef.current,
+              path: [originCoord, destCoord],
+              geodesic: true,
+              strokeColor: isFlight ? '#38bdf8' : '#0891b2',
+              strokeOpacity: 0.85,
+              strokeWeight: isFlight ? 2.5 : 3,
+            }));
+          }
+        }
       }
 
       // Handle focus and centering: center and zoom to pin without showing the popup dialog

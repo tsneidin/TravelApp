@@ -838,28 +838,73 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             </div>
           ))}
 
-          {orphanPlaces.length > 0 && (
-            <div
-              className="panel orphan-panel"
-              id="places-unassigned"
-              style={{ scrollMarginTop: 16, marginBottom: 18 }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                const movingId = dragId || e.dataTransfer.getData('text/plain');
-                if (movingId) void reorder(movingId, '', orphanPlaces.length);
-              }}
-            >
-              <div className="row between day-header">
-                <div className="row">
-                  <span className="badge">Unassigned</span>
-                  <b>Places not assigned to a day</b>
-                  <span className="small muted">({orphanPlaces.length} places)</span>
-                </div>
+          {/* Unassigned Places / Ideas Section - Always displayed below the last day */}
+          <div
+            className="panel orphan-panel"
+            id="places-unassigned"
+            style={{ scrollMarginTop: 16, marginBottom: 18 }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const movingId = dragId || e.dataTransfer.getData('text/plain');
+              if (movingId) void reorder(movingId, '', orphanPlaces.length);
+            }}
+          >
+            <div className="row between day-header">
+              <div className="row">
+                <span className="badge muted">Unassigned</span>
+                <b>Places not assigned to a day</b>
+                <span className="small muted">({orphanPlaces.length} {orphanPlaces.length === 1 ? 'place' : 'places'})</span>
               </div>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn sm ghost"
+                  title="Focus unassigned places on the map"
+                  onClick={() => {
+                    setActivePlaceId(null);
+                    setSelectedDayId(selectedDayId === 'unassigned' ? null : 'unassigned');
+                  }}
+                >
+                  <Navigation size={13} />
+                  <span>{selectedDayId === 'unassigned' ? 'Showing all' : 'Focus unassigned'}</span>
+                </button>
+                <button type="button" className="btn sm ghost" onClick={() => openNew('')}>
+                  <Plus size={14} /> Add
+                </button>
+              </div>
+            </div>
+
+            {orphanPlaces.length === 0 ? (
+              <div
+                className="small muted mt mb"
+                style={{
+                  minHeight: 48,
+                  border: '1px dashed var(--border)',
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '8px 12px',
+                  background: dragId ? 'rgba(34, 211, 238, 0.08)' : 'transparent',
+                  transition: 'background 0.15s ease',
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const movingId = dragId || e.dataTransfer.getData('text/plain');
+                  if (movingId) void reorder(movingId, '', 0);
+                }}
+              >
+                No unassigned places. Drag places here to unschedule, or use quick add below.
+              </div>
+            ) : (
               <div className="place-list">
                 {orphanPlaces.map((p, idx) => (
                   <div
@@ -879,8 +924,28 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Quick-add place search bar inside unassigned panel */}
+            <div className="day-quick-add mt">
+              <PlaceSearchInput
+                placeholder="+ Quick add unassigned place or idea…"
+                biasLat={tripCenter?.lat}
+                biasLng={tripCenter?.lng}
+                onSelect={async (pl) => {
+                  await apiPost(`/trips/${trip.id}/places`, {
+                    name: pl.name,
+                    address: pl.address,
+                    category: pl.category,
+                    lat: pl.lat,
+                    lng: pl.lng,
+                    website: pl.website,
+                  });
+                  await reload();
+                }}
+              />
             </div>
-          )}
+          </div>
         </div>
 
         {/* Right Sticky Map Column in Split View */}
@@ -932,11 +997,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                           </option>
                         );
                       })}
-                      {orphanPlaces.length > 0 && (
-                        <option value="unassigned">
-                          Unassigned ({orphanPlaces.length} stops)
-                        </option>
-                      )}
+                      <option value="unassigned">
+                        Unassigned ({orphanPlaces.length} stops)
+                      </option>
                     </select>
 
                     <button

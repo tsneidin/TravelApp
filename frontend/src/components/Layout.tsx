@@ -17,6 +17,7 @@ import type { Trip } from '../lib/types';
 const TRIP_TABS: { key: string; label: string }[] = [
   { key: 'itinerary', label: 'Itinerary' },
   { key: 'map', label: 'Map' },
+  { key: 'timeline', label: 'Timeline' },
   { key: 'budget', label: 'Budget' },
   { key: 'photos', label: 'Photos & journal' },
   { key: 'todos', label: "To-Do's" },

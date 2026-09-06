@@ -11,6 +11,7 @@ import { Avatar } from '../components/Avatar';
 import { TripMembersModal } from '../components/TripMembersModal';
 import { ItineraryTab } from './tabs/ItineraryTab';
 import { MapTab } from './tabs/MapTab';
+import { TimelineTab } from './tabs/TimelineTab';
 import { BudgetTab } from './tabs/BudgetTab';
 import { PhotosJournalTab } from './tabs/PhotosJournalTab';
 import { PackingTab } from './tabs/PackingTab';
@@ -20,6 +21,7 @@ import { BookingsTab } from './tabs/BookingsTab';
 type Tab =
   | 'itinerary'
   | 'map'
+  | 'timeline'
   | 'budget'
   | 'photos'
   | 'todos'
@@ -29,6 +31,7 @@ type Tab =
 const TABS: { key: Tab; label: string }[] = [
   { key: 'itinerary', label: 'Itinerary' },
   { key: 'map', label: 'Map' },
+  { key: 'timeline', label: 'Timeline' },
   { key: 'budget', label: 'Budget' },
   { key: 'photos', label: 'Photos & journal' },
   { key: 'todos', label: "To-Do's" },
@@ -176,6 +179,7 @@ export function TripDetail() {
 
       {tab === 'itinerary' && <ItineraryTab trip={trip} reload={load} />}
       {tab === 'map' && <MapTab trip={trip} reload={load} />}
+      {tab === 'timeline' && <TimelineTab trip={trip} reload={load} />}
       {tab === 'budget' && <BudgetTab trip={trip} reload={load} />}
       {tab === 'photos' && <PhotosJournalTab trip={trip} reload={load} />}
       {tab === 'todos' && <TodoTab trip={trip} reload={load} />}
@@ -215,8 +219,8 @@ export function TripDetail() {
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <div className="modal-actions">
-            <button className="btn" onClick={() => setEditOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={save}>Save</button>
+            <button className="btn" onClick={() => setEditOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}

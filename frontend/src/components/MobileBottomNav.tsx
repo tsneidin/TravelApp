@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Calendar, Map as MapIcon, DollarSign, Ticket, MoreHorizontal,
-  Camera, CheckSquare, Luggage, X, ChevronRight
+  Camera, CheckSquare, Luggage, X, ChevronRight, GanttChartSquare
 } from 'lucide-react';
 import type { Trip } from '../lib/types';
 
@@ -23,6 +23,7 @@ export function MobileBottomNav({ tripId, activeTab, trip }: MobileBottomNavProp
   ];
 
   const secondaryTabs = [
+    { key: 'timeline', label: 'Macro Timeline', icon: GanttChartSquare, desc: 'Gantt schedule of stays, flights & places' },
     { key: 'photos', label: 'Photos & Journal', icon: Camera, desc: 'Photos, notes, and memory log' },
     { key: 'todos', label: "To-Do's", icon: CheckSquare, desc: 'Tasks and pre-trip checklists', count: trip?.todos?.length },
     { key: 'packing', label: 'Packing List', icon: Luggage, desc: 'Gear, baggage, and clothing', count: trip?.packing?.length },

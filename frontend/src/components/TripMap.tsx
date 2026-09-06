@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { Day, GeocodedPlace, MapView, Place } from '../lib/types';
 import { apiPost } from '../lib/api';
+import { PlaceSearchInput } from './PlaceSearchInput';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
 export interface RouteOption {
@@ -195,12 +196,29 @@ export function TripMap({
   const directionsRenderersRef = useRef<any[]>([]);
   const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
+  const showPreviewRef = useRef<((place: GeocodedPlace, position: any) => void) | null>(null);
   const mapClickRef = useRef(onMapClick);
   const [error, setError] = useState('');
   const [localViews, setLocalViews] = useState<MapView[]>(mapViews || []);
   const [isSavingView, setIsSavingView] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [savingPending, setSavingPending] = useState(false);
+
+  const handleSearchPlaceSelect = (place: GeocodedPlace) => {
+    if (place.lat != null && place.lng != null && mapRef.current) {
+      const maps = window.google?.maps;
+      if (maps) {
+        const pos = new maps.LatLng(place.lat, place.lng);
+        mapRef.current.panTo(pos);
+        mapRef.current.setZoom(16);
+        if (showPreviewRef.current) {
+          showPreviewRef.current(place, pos);
+        }
+      }
+    } else if (onMapClick) {
+      onMapClick(place);
+    }
+  };
 
   // Layers & Map Type state (Transit defaults to ON)
   const [showTransitLayer, setShowTransitLayer] = useState(true);
@@ -326,6 +344,173 @@ export function TripMap({
 
         const clickedMarkerRef: { current: any } = { current: null };
 
+        const showPreview = (place: GeocodedPlace, position: any) => {
+          previewRef.current?.close();
+
+          if (!clickedMarkerRef.current) {
+            clickedMarkerRef.current = new maps.Marker({
+              map: mapRef.current,
+              position,
+              animation: maps.Animation?.DROP,
+            });
+          } else {
+            clickedMarkerRef.current.setPosition(position);
+            clickedMarkerRef.current.setMap(mapRef.current);
+          }
+
+          const card = document.createElement('div');
+          card.style.cssText = 'min-width:260px;max-width:320px;color:#111827;padding:2px;font-family:system-ui,-apple-system,sans-serif';
+
+          // If photo available, show photo banner
+          if (place.photoUrl) {
+            const imgContainer = document.createElement('div');
+            imgContainer.style.cssText = 'width:100%;height:130px;border-radius:6px;overflow:hidden;margin-bottom:8px;background:#e2e8f0;';
+            const img = document.createElement('img');
+            img.src = place.photoUrl;
+            img.alt = place.name;
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+            imgContainer.appendChild(img);
+            card.appendChild(imgContainer);
+          }
+
+          const title = document.createElement('strong');
+          title.textContent = place.name;
+          title.style.cssText = 'display:block;font-size:15px;font-weight:700;margin-bottom:4px;color:#0f172a;line-height:1.25';
+          card.appendChild(title);
+
+          // Rating & Status badge row
+          const metaRow = document.createElement('div');
+          metaRow.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:6px;color:#475569;';
+
+          if (place.rating) {
+            const ratingSpan = document.createElement('span');
+            ratingSpan.style.cssText = 'display:inline-flex;align-items:center;gap:3px;font-weight:600;color:#d97706;';
+            ratingSpan.innerHTML = `★ <span>${place.rating.toFixed(1)}</span>${place.userRatingsTotal ? `<span style="font-weight:400;color:#64748b;">(${place.userRatingsTotal.toLocaleString()})</span>` : ''}`;
+            metaRow.appendChild(ratingSpan);
+          }
+
+          if (place.openNow !== undefined) {
+            const openSpan = document.createElement('span');
+            openSpan.style.cssText = `font-size:11px;font-weight:600;padding:1px 6px;border-radius:9999px;background:${place.openNow ? '#dcfce7' : '#fee2e2'};color:${place.openNow ? '#166534' : '#991b1b'};`;
+            openSpan.textContent = place.openNow ? 'Open now' : 'Closed';
+            metaRow.appendChild(openSpan);
+          }
+
+          if (place.category) {
+            const catSpan = document.createElement('span');
+            catSpan.style.cssText = 'font-size:11px;padding:1px 6px;border-radius:9999px;background:#f1f5f9;color:#475569;font-weight:500;';
+            catSpan.textContent = place.category;
+            metaRow.appendChild(catSpan);
+          }
+
+          if (metaRow.childNodes.length > 0) {
+            card.appendChild(metaRow);
+          }
+
+          // Address
+          if (place.address) {
+            const address = document.createElement('div');
+            address.textContent = place.address;
+            address.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:6px;line-height:1.35';
+            card.appendChild(address);
+          }
+
+          // Phone
+          if (place.phone) {
+            const phone = document.createElement('div');
+            phone.innerHTML = `<span style="font-size:11px;color:#64748b;">📞 ${place.phone}</span>`;
+            phone.style.cssText = 'margin-bottom:6px;';
+            card.appendChild(phone);
+          }
+
+          // Links (View on Google Maps + Website)
+          const linksRow = document.createElement('div');
+          linksRow.style.cssText = 'display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:10px;margin-top:2px;';
+
+          if (place.mapUrl) {
+            const gmapsLink = document.createElement('a');
+            gmapsLink.href = place.mapUrl;
+            gmapsLink.target = '_blank';
+            gmapsLink.rel = 'noopener noreferrer';
+            gmapsLink.textContent = '🌐 View on Google Maps ↗';
+            gmapsLink.style.cssText = 'color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;';
+            linksRow.appendChild(gmapsLink);
+          }
+
+          if (place.website) {
+            const webLink = document.createElement('a');
+            webLink.href = place.website;
+            webLink.target = '_blank';
+            webLink.rel = 'noopener noreferrer';
+            webLink.textContent = '🔗 Website ↗';
+            webLink.style.cssText = 'color:#0284c7;text-decoration:none;font-weight:500;';
+            linksRow.appendChild(webLink);
+          }
+
+          if (linksRow.childNodes.length > 0) {
+            card.appendChild(linksRow);
+          }
+
+          // Action buttons
+          const actions = document.createElement('div');
+          actions.style.cssText = 'display:flex;gap:6px;align-items:center;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:4px';
+
+          const dirButton = document.createElement('button');
+          dirButton.type = 'button';
+          dirButton.textContent = '🧭 Directions';
+          dirButton.style.cssText = 'border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#0f172a;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer';
+          dirButton.addEventListener('click', () => {
+            previewRef.current?.close();
+            setShowRouter(true);
+            setDestInput(place.address || place.name);
+          });
+          actions.appendChild(dirButton);
+
+          const addButton = document.createElement('button');
+          addButton.type = 'button';
+          addButton.textContent = '+ Add to Itinerary';
+          addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer';
+          addButton.addEventListener('click', () => {
+            previewRef.current?.close();
+            const callback = mapClickRef.current;
+            callback?.(place);
+          });
+          actions.appendChild(addButton);
+          card.appendChild(actions);
+
+          previewRef.current = new maps.InfoWindow({ content: card, position });
+          previewRef.current.addListener('closeclick', () => {
+            clickedMarkerRef.current?.setMap(null);
+          });
+          previewRef.current.open({ map: mapRef.current, anchor: clickedMarkerRef.current });
+        };
+        showPreviewRef.current = showPreview;
+
+        const fetchPlaceDetails = async (placeId: string): Promise<any | null> => {
+          if (!maps.places?.PlacesService) return null;
+          const service = new maps.places.PlacesService(mapRef.current);
+          return new Promise<any | null>((resolve) => {
+            service.getDetails({
+              placeId,
+              fields: [
+                'name',
+                'formatted_address',
+                'geometry',
+                'website',
+                'url',
+                'types',
+                'rating',
+                'user_ratings_total',
+                'photos',
+                'opening_hours',
+                'formatted_phone_number',
+              ],
+            }, (place: any, status: any) => {
+              resolve(status === maps.places.PlacesServiceStatus.OK ? place : null);
+            });
+          });
+        };
+
         mapRef.current.addListener('click', async (event: any) => {
           setContextMenu(null);
           setShowLayersMenu(false);
@@ -348,172 +533,6 @@ export function TripMap({
             }
             return;
           }
-
-          const showPreview = (place: GeocodedPlace, position: any) => {
-            previewRef.current?.close();
-
-            if (!clickedMarkerRef.current) {
-              clickedMarkerRef.current = new maps.Marker({
-                map: mapRef.current,
-                position,
-                animation: maps.Animation?.DROP,
-              });
-            } else {
-              clickedMarkerRef.current.setPosition(position);
-              clickedMarkerRef.current.setMap(mapRef.current);
-            }
-
-            const card = document.createElement('div');
-            card.style.cssText = 'min-width:260px;max-width:320px;color:#111827;padding:2px;font-family:system-ui,-apple-system,sans-serif';
-
-            // If photo available, show photo banner
-            if (place.photoUrl) {
-              const imgContainer = document.createElement('div');
-              imgContainer.style.cssText = 'width:100%;height:130px;border-radius:6px;overflow:hidden;margin-bottom:8px;background:#e2e8f0;';
-              const img = document.createElement('img');
-              img.src = place.photoUrl;
-              img.alt = place.name;
-              img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-              imgContainer.appendChild(img);
-              card.appendChild(imgContainer);
-            }
-
-            const title = document.createElement('strong');
-            title.textContent = place.name;
-            title.style.cssText = 'display:block;font-size:15px;font-weight:700;margin-bottom:4px;color:#0f172a;line-height:1.25';
-            card.appendChild(title);
-
-            // Rating & Status badge row
-            const metaRow = document.createElement('div');
-            metaRow.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:6px;color:#475569;';
-
-            if (place.rating) {
-              const ratingSpan = document.createElement('span');
-              ratingSpan.style.cssText = 'display:inline-flex;align-items:center;gap:3px;font-weight:600;color:#d97706;';
-              ratingSpan.innerHTML = `★ <span>${place.rating.toFixed(1)}</span>${place.userRatingsTotal ? `<span style="font-weight:400;color:#64748b;">(${place.userRatingsTotal.toLocaleString()})</span>` : ''}`;
-              metaRow.appendChild(ratingSpan);
-            }
-
-            if (place.openNow !== undefined) {
-              const openSpan = document.createElement('span');
-              openSpan.style.cssText = `font-size:11px;font-weight:600;padding:1px 6px;border-radius:9999px;background:${place.openNow ? '#dcfce7' : '#fee2e2'};color:${place.openNow ? '#166534' : '#991b1b'};`;
-              openSpan.textContent = place.openNow ? 'Open now' : 'Closed';
-              metaRow.appendChild(openSpan);
-            }
-
-            if (place.category) {
-              const catSpan = document.createElement('span');
-              catSpan.style.cssText = 'font-size:11px;padding:1px 6px;border-radius:9999px;background:#f1f5f9;color:#475569;font-weight:500;';
-              catSpan.textContent = place.category;
-              metaRow.appendChild(catSpan);
-            }
-
-            if (metaRow.childNodes.length > 0) {
-              card.appendChild(metaRow);
-            }
-
-            // Address
-            if (place.address) {
-              const address = document.createElement('div');
-              address.textContent = place.address;
-              address.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:6px;line-height:1.35';
-              card.appendChild(address);
-            }
-
-            // Phone
-            if (place.phone) {
-              const phone = document.createElement('div');
-              phone.innerHTML = `<span style="font-size:11px;color:#64748b;">📞 ${place.phone}</span>`;
-              phone.style.cssText = 'margin-bottom:6px;';
-              card.appendChild(phone);
-            }
-
-            // Links (View on Google Maps + Website)
-            const linksRow = document.createElement('div');
-            linksRow.style.cssText = 'display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:10px;margin-top:2px;';
-
-            if (place.mapUrl) {
-              const gmapsLink = document.createElement('a');
-              gmapsLink.href = place.mapUrl;
-              gmapsLink.target = '_blank';
-              gmapsLink.rel = 'noopener noreferrer';
-              gmapsLink.textContent = '🌐 View on Google Maps ↗';
-              gmapsLink.style.cssText = 'color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;';
-              linksRow.appendChild(gmapsLink);
-            }
-
-            if (place.website) {
-              const webLink = document.createElement('a');
-              webLink.href = place.website;
-              webLink.target = '_blank';
-              webLink.rel = 'noopener noreferrer';
-              webLink.textContent = '🔗 Website ↗';
-              webLink.style.cssText = 'color:#0284c7;text-decoration:none;font-weight:500;';
-              linksRow.appendChild(webLink);
-            }
-
-            if (linksRow.childNodes.length > 0) {
-              card.appendChild(linksRow);
-            }
-
-            // Action buttons
-            const actions = document.createElement('div');
-            actions.style.cssText = 'display:flex;gap:6px;align-items:center;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:4px';
-
-            const dirButton = document.createElement('button');
-            dirButton.type = 'button';
-            dirButton.textContent = '🧭 Directions';
-            dirButton.style.cssText = 'border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#0f172a;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer';
-            dirButton.addEventListener('click', () => {
-              previewRef.current?.close();
-              setShowRouter(true);
-              setDestInput(place.address || place.name);
-            });
-            actions.appendChild(dirButton);
-
-            const addButton = document.createElement('button');
-            addButton.type = 'button';
-            addButton.textContent = '+ Add to Itinerary';
-            addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer';
-            addButton.addEventListener('click', () => {
-              previewRef.current?.close();
-              const callback = mapClickRef.current;
-              callback?.(place);
-            });
-            actions.appendChild(addButton);
-            card.appendChild(actions);
-
-            previewRef.current = new maps.InfoWindow({ content: card, position });
-            previewRef.current.addListener('closeclick', () => {
-              clickedMarkerRef.current?.setMap(null);
-            });
-            previewRef.current.open({ map: mapRef.current, anchor: clickedMarkerRef.current });
-          };
-
-          const fetchPlaceDetails = async (placeId: string): Promise<any | null> => {
-            if (!maps.places?.PlacesService) return null;
-            const service = new maps.places.PlacesService(mapRef.current);
-            return new Promise<any | null>((resolve) => {
-              service.getDetails({
-                placeId,
-                fields: [
-                  'name',
-                  'formatted_address',
-                  'geometry',
-                  'website',
-                  'url',
-                  'types',
-                  'rating',
-                  'user_ratings_total',
-                  'photos',
-                  'opening_hours',
-                  'formatted_phone_number',
-                ],
-              }, (place: any, status: any) => {
-                resolve(status === maps.places.PlacesServiceStatus.OK ? place : null);
-              });
-            });
-          };
 
           try {
             if (event.placeId) {
@@ -1495,17 +1514,47 @@ export function TripMap({
         height: isFullWindow ? undefined : (typeof height === 'number' ? `${height}px` : height),
       }}
     >
-      {/* Full Browser Window Toggle Button */}
-      <button
-        type="button"
-        className="map-fullwindow-toggle-btn"
-        onClick={() => setIsFullWindow((prev) => !prev)}
-        title={isFullWindow ? 'Exit full browser window (Esc)' : 'Full browser window'}
-        aria-label={isFullWindow ? 'Exit full browser window' : 'Full browser window'}
-      >
-        {isFullWindow ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-        <span>{isFullWindow ? 'Exit Full Window' : 'Full Window'}</span>
-      </button>
+      {/* Top Map Floating Toolbar (Search + Save View + Full Window) */}
+      <div className="map-top-floating-bar">
+        <div className="map-search-container">
+          <PlaceSearchInput
+            biasLat={resolvedCoordsRef.current[0]?.lat}
+            biasLng={resolvedCoordsRef.current[0]?.lng}
+            placeholder="Search map places, hotels, landmarks…"
+            onSelect={handleSearchPlaceSelect}
+          />
+        </div>
+        <div className="map-top-actions-group">
+          {tripId && (
+            <button
+              type="button"
+              className="map-top-action-btn map-save-view-top-btn"
+              onClick={() => {
+                const defaultName = originInput && destInput
+                  ? `Route: ${originInput.split(',')[0]} → ${destInput.split(',')[0]}`
+                  : destination ? `${destination} View` : 'Custom View';
+                setNewViewName(defaultName);
+                setIsSavingView(true);
+              }}
+              title="Save current camera position, zoom & route as a Saved View"
+              aria-label="Save current map view"
+            >
+              <Bookmark size={14} style={{ color: 'var(--accent)' }} />
+              <span>Save View</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="map-top-action-btn map-fullwindow-toggle-btn"
+            onClick={() => setIsFullWindow((prev) => !prev)}
+            title={isFullWindow ? 'Exit full browser window (Esc)' : 'Full browser window'}
+            aria-label={isFullWindow ? 'Exit full browser window' : 'Full browser window'}
+          >
+            {isFullWindow ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            <span>{isFullWindow ? 'Exit Full Window' : 'Full Window'}</span>
+          </button>
+        </div>
+      </div>
 
       {/* Floating Route Options & Directions Button (shown when route is active and drawer is closed) */}
       {!showRouter && (originInput || destInput || routeResult || availableRoutes.length > 0) && (
@@ -1620,12 +1669,12 @@ export function TripMap({
           <div className="row between mb" style={{ marginBottom: 10 }}>
             <div className="row" style={{ gap: 6 }}>
               <Navigation size={15} style={{ color: 'var(--accent)' }} />
-              <strong style={{ fontSize: '0.9rem', color: '#fff' }}>Route & Transit Planner</strong>
+              <strong style={{ fontSize: '0.9rem', color: 'var(--text)' }}>Route & Transit Planner</strong>
             </div>
             <button
               type="button"
               className="btn sm ghost"
-              style={{ padding: '2px 6px', color: '#94a3b8' }}
+              style={{ padding: '2px 6px', color: 'var(--muted)' }}
               onClick={() => {
                 setShowRouter(false);
                 setPickingTarget(null);
@@ -1721,7 +1770,7 @@ export function TripMap({
                 <button
                   type="button"
                   className="btn sm ghost icon-only"
-                  style={{ padding: '4px', color: '#94a3b8' }}
+                  style={{ padding: '4px', color: 'var(--muted)' }}
                   onClick={() => removeIntermediateStop(sIdx)}
                   title="Remove stop"
                 >
@@ -1743,7 +1792,7 @@ export function TripMap({
               <button
                 type="button"
                 className="btn sm ghost"
-                style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}
+                style={{ padding: '2px 8px', fontSize: '0.75rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}
                 onClick={swapOriginDest}
                 title="Swap origin and destination"
               >
@@ -1810,7 +1859,7 @@ export function TripMap({
               {availableRoutes.length > 1 && (
                 <div style={{ marginBottom: 12 }}>
                   <div className="small font-semibold muted mb" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Route size={13} style={{ color: 'var(--accent, #38bdf8)' }} />
+                    <Route size={13} style={{ color: 'var(--accent)' }} />
                     <span>{availableRoutes.length} Route Options Available:</span>
                   </div>
                   <div style={{ display: 'grid', gap: 6 }}>
@@ -1829,8 +1878,8 @@ export function TripMap({
                             width: '100%',
                             padding: '8px 10px',
                             borderRadius: 7,
-                            border: isSelected ? '1.5px solid var(--accent, #38bdf8)' : '1px solid rgba(255, 255, 255, 0.12)',
-                            background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.04)',
+                            border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--line)',
+                            background: isSelected ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'var(--card)',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                           }}
@@ -1847,22 +1896,22 @@ export function TripMap({
                                   borderRadius: '50%',
                                   fontSize: '0.72rem',
                                   fontWeight: 700,
-                                  background: isSelected ? 'var(--accent, #38bdf8)' : 'rgba(255,255,255,0.15)',
-                                  color: isSelected ? '#0f172a' : '#fff',
+                                  background: isSelected ? 'var(--accent)' : 'var(--card-2)',
+                                  color: isSelected ? 'var(--accent-text, #fff)' : 'var(--text)',
                                 }}
                               >
                                 {idx + 1}
                               </span>
-                              <span style={{ fontWeight: 600, fontSize: '0.84rem', color: isSelected ? 'var(--accent, #38bdf8)' : '#f8fafc' }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.84rem', color: isSelected ? 'var(--accent)' : 'var(--text)' }}>
                                 Option {idx + 1} {opt.summary ? `· ${opt.summary}` : ''}
                               </span>
                             </div>
-                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: isSelected ? 'var(--accent, #38bdf8)' : '#e2e8f0' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: isSelected ? 'var(--accent)' : 'var(--text)' }}>
                               {opt.durationText}
                             </span>
                           </div>
 
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', fontSize: '0.74rem', color: '#94a3b8' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', fontSize: '0.74rem', color: 'var(--muted)' }}>
                             <div>
                               {opt.departureTime && opt.arrivalTime ? (
                                 <span>🕒 {opt.departureTime} – {opt.arrivalTime} · </span>
@@ -1892,7 +1941,7 @@ export function TripMap({
                   <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent)' }}>
                     {routeResult.durationText}
                     {availableRoutes.length > 1 && (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8', marginLeft: 8 }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--muted)', marginLeft: 8 }}>
                         (Option {selectedRouteIndex + 1} of {availableRoutes.length})
                       </span>
                     )}
@@ -1916,13 +1965,13 @@ export function TripMap({
 
               {/* Quick Save as Map View & Save Transit Leg Actions */}
               {tripId && (
-                <div style={{ background: 'rgba(255, 255, 255, 0.06)', borderRadius: 7, padding: '8px 10px', marginTop: 8 }}>
+                <div style={{ background: 'var(--card-2)', border: '1px solid var(--line)', borderRadius: 7, padding: '8px 10px', marginTop: 8 }}>
                   <div className="row between mb" style={{ marginBottom: 6 }}>
-                    <span className="small font-semibold" style={{ color: '#e2e8f0' }}>Save Transit Leg to Itinerary:</span>
+                    <span className="small font-semibold" style={{ color: 'var(--text)' }}>Save Transit Leg to Itinerary:</span>
                     <button
                       type="button"
                       className="btn sm ghost"
-                      style={{ fontSize: '0.72rem', padding: '2px 6px', color: '#38bdf8' }}
+                      style={{ fontSize: '0.72rem', padding: '2px 6px', color: 'var(--accent)' }}
                       onClick={() => {
                         const modeLabel = travelMode === 'TRANSIT' ? 'Transit' : travelMode === 'DRIVING' ? 'Drive' : 'Route';
                         const validStops = intermediateStops.map((s) => s.split(',')[0].trim()).filter(Boolean);
@@ -1941,7 +1990,7 @@ export function TripMap({
                       className="grow"
                       value={targetDayId}
                       onChange={(e) => setTargetDayId(e.target.value)}
-                      style={{ fontSize: '0.78rem', padding: '4px 6px', background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 5 }}
+                      style={{ fontSize: '0.78rem', padding: '4px 6px', background: 'var(--card)', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 5 }}
                     >
                       <option value="">Unassigned (No Day)</option>
                       {sortedDays.map((d, idx) => (
@@ -1975,7 +2024,7 @@ export function TripMap({
                   <button
                     type="button"
                     className="btn sm ghost"
-                    style={{ width: '100%', justifyContent: 'space-between', padding: '4px 6px', fontSize: '0.78rem', color: '#94a3b8' }}
+                    style={{ width: '100%', justifyContent: 'space-between', padding: '4px 6px', fontSize: '0.78rem', color: 'var(--muted)' }}
                     onClick={() => setShowSteps(!showSteps)}
                   >
                     <span>{showSteps ? 'Hide' : 'Show'} step-by-step directions ({routeResult.steps.length})</span>
@@ -1986,7 +2035,7 @@ export function TripMap({
                     <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4, marginTop: 6 }}>
                       {routeResult.steps.map((st: any, sIdx: number) => (
                         <div key={sIdx} className="transit-step-row">
-                          <div style={{ color: '#e2e8f0', fontSize: '0.78rem', fontWeight: st.legTitle ? 600 : 400 }}>
+                          <div style={{ color: 'var(--text)', fontSize: '0.78rem', fontWeight: st.legTitle ? 600 : 400 }}>
                             {st.instruction}
                           </div>
                           {(st.duration || st.distance) && (
@@ -2187,7 +2236,7 @@ export function TripMap({
                     <Train size={14} />
                   </span>
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>Transit</div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)' }}>Transit</div>
                     <div className="small muted" style={{ fontSize: '0.7rem' }}>Train, subway & bus lines</div>
                   </div>
                 </div>
@@ -2207,7 +2256,7 @@ export function TripMap({
                     <Bike size={14} />
                   </span>
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>Biking (Bike View)</div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)' }}>Biking (Bike View)</div>
                     <div className="small muted" style={{ fontSize: '0.7rem' }}>Bike lanes, trails & paths</div>
                   </div>
                 </div>
@@ -2227,7 +2276,7 @@ export function TripMap({
                     <Activity size={14} />
                   </span>
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>Traffic</div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)' }}>Traffic</div>
                     <div className="small muted" style={{ fontSize: '0.7rem' }}>Live traffic flow</div>
                   </div>
                 </div>

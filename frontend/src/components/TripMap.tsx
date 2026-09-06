@@ -87,25 +87,25 @@ function isFlightTransit(place: PlaceWithStop): boolean {
 }
 
 function extractTransitEndpoints(place: PlaceWithStop): { origin?: string; destination?: string } | null {
-  const name = place.name || '';
+  const addr = (place.address || '').trim();
+  if (/\bto\b/i.test(addr)) {
+    const parts = addr.split(/\bto\b/i);
+    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+      return { origin: parts[0].trim(), destination: parts[1].trim() };
+    }
+  }
+
+  const name = (place.name || '').trim();
   if (/→|->|-->|–>|=>/.test(name)) {
     const parts = name.split(/→|->|-->|–>|=>/);
     if (parts.length >= 2) {
       const orig = parts[0]
         .replace(/^(?:✈️|✈|🚆|🚗|⛴️|🚌|🚶)\s*/, '')
-        .replace(/^(?:flight|train|rail|transit|drive|walk|bus|ferry|shuttle|transfer)\s*[:\-]\s*/i, '')
+        .replace(/^(?:flight|train|rail|transit|drive|walk|bus|ferry|shuttle|transfer)[^:]*[:\-]\s*/i, '')
         .replace(/\b(?:operated by|flight|airline|aa|ua|dl)\b[^\n:]*[:\-]?/i, '')
         .trim();
       const dest = parts[1].split(/[·\n(]/)[0].trim();
       if (orig && dest) return { origin: orig, destination: dest };
-    }
-  }
-
-  const addr = place.address || '';
-  if (/\bto\b/i.test(addr)) {
-    const parts = addr.split(/\bto\b/i);
-    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-      return { origin: parts[0].trim(), destination: parts[1].trim() };
     }
   }
 
@@ -1243,6 +1243,58 @@ export function TripMap({
     setRouteError('');
     setShowSteps(false);
   };
+
+  // Auto-restore / clear transit directions when clicking on/off a transit itinerary item
+  const autoOpenedRouterRef = useRef<boolean>(false);
+  const prevTransitTargetIdRef = useRef<string | null | undefined>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || !window.google?.maps) return;
+
+    const targetPlace = targetId ? places.find((p) => p.id === targetId) : undefined;
+    const isTransit = targetPlace ? isTransitItineraryEntry(targetPlace) : false;
+
+    if (isTransit && targetPlace) {
+      if (prevTransitTargetIdRef.current !== targetId) {
+        prevTransitTargetIdRef.current = targetId;
+        const endpoints = extractTransitEndpoints(targetPlace);
+        if (endpoints?.origin && endpoints?.destination) {
+          const mode: 'TRANSIT' | 'DRIVING' | 'WALKING' | 'BICYCLING' =
+            /walk/i.test(targetPlace.name) || /walk/i.test(targetPlace.category || '')
+              ? 'WALKING'
+              : /drive|car/i.test(targetPlace.name) || /drive|car/i.test(targetPlace.category || '')
+              ? 'DRIVING'
+              : /bike|bicycle/i.test(targetPlace.name)
+              ? 'BICYCLING'
+              : 'TRANSIT';
+
+          setOriginInput(endpoints.origin);
+          setDestInput(endpoints.destination);
+          setTravelMode(mode);
+          setShowRouter(true);
+          autoOpenedRouterRef.current = true;
+
+          void calculateRoute(endpoints.origin, endpoints.destination, mode, []);
+        }
+      }
+    } else {
+      prevTransitTargetIdRef.current = null;
+      if (autoOpenedRouterRef.current) {
+        autoOpenedRouterRef.current = false;
+        setShowRouter(false);
+        clearRoute();
+        // Restore day/places bounds if places exist
+        if (resolvedCoordsRef.current.length > 1) {
+          const bounds = new window.google.maps.LatLngBounds();
+          resolvedCoordsRef.current.forEach((c) => bounds.extend(c));
+          mapRef.current.fitBounds(bounds, 48);
+        } else if (resolvedCoordsRef.current.length === 1) {
+          mapRef.current.setCenter(resolvedCoordsRef.current[0]);
+          mapRef.current.setZoom(13);
+        }
+      }
+    }
+  }, [targetId, places]);
 
   const swapOriginDest = () => {
     const temp = originInput;

@@ -92,7 +92,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
                 : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([place.name, place.address, trip.destination].filter(Boolean).join(', '))}`;
               return (
                 <div key={place.id} className={`list-row ${selected === place.id ? 'active-highlight' : ''}`}
-                  style={{ alignItems: 'stretch', cursor: 'pointer' }} onClick={() => setSelected(place.id)}>
+                  style={{ alignItems: 'stretch', cursor: 'pointer' }} onClick={() => setSelected((prev) => prev === place.id ? undefined : place.id)}>
                   <div style={{ width: 82, minHeight: 68, borderRadius: 7, overflow: 'hidden', background: 'var(--panel-2)', display: 'grid', placeItems: 'center' }}>
                     {photo ? <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={22} className="muted" />}
                   </div>

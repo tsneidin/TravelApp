@@ -529,12 +529,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   };
 
   const handlePlaceClick = (p: Place) => {
-    setActivePlaceId(p.id);
-    if (p.dayId && selectedDayId && p.dayId !== selectedDayId) {
-      setSelectedDayId(p.dayId);
-    }
-    if (viewMode === 'full') {
-      navigate(`${location.pathname}?tab=map&focus=${p.id}`);
+    if (activePlaceId === p.id) {
+      setActivePlaceId(null);
+    } else {
+      setActivePlaceId(p.id);
+      if (p.dayId && selectedDayId && p.dayId !== selectedDayId) {
+        setSelectedDayId(p.dayId);
+      }
+      if (viewMode === 'full') {
+        navigate(`${location.pathname}?tab=map&focus=${p.id}`);
+      }
     }
   };
 

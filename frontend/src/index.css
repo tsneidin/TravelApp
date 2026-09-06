@@ -3060,3 +3060,202 @@ a.link:hover {
   transform: translateY(0);
 }
 
+/* Google Maps Layers & Details Widget */
+.map-layers-widget-container {
+  position: absolute;
+  bottom: 24px;
+  left: 14px;
+  z-index: 20;
+}
+
+.map-layers-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #f8fafc;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.map-layers-btn:hover,
+.map-layers-btn.active {
+  background: var(--panel, #1e293b);
+  border-color: var(--accent, #22d3ee);
+  color: var(--accent, #22d3ee);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.map-layers-btn-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-layers-btn-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.map-layers-menu-card {
+  position: absolute;
+  bottom: 64px;
+  left: 0;
+  width: 280px;
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+  animation: fadeIn 0.16s ease-out;
+  z-index: 30;
+}
+
+.map-layers-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 0.88rem;
+}
+
+.map-layers-section-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.map-layers-types-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.map-type-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #cbd5e1;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.map-type-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.map-type-chip.active {
+  background: rgba(34, 211, 238, 0.15);
+  border-color: var(--accent, #22d3ee);
+  color: var(--accent, #22d3ee);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
+}
+
+.map-type-chip-icon {
+  font-size: 1.15rem;
+}
+
+.map-layers-toggles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.map-layer-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.map-layer-row.layer-active {
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.2);
+}
+
+.map-layer-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.map-layer-icon.transit-icon {
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+}
+
+.map-layer-icon.bike-icon {
+  background: rgba(34, 197, 94, 0.18);
+  color: #22c55e;
+}
+
+.map-layer-icon.traffic-icon {
+  background: rgba(234, 179, 8, 0.18);
+  color: #eab308;
+}
+
+.map-layer-toggle-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+  transition: all 0.15s ease;
+}
+
+.map-layer-toggle-pill.on {
+  background: rgba(34, 211, 238, 0.25);
+  color: var(--accent, #22d3ee);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+}
+
+

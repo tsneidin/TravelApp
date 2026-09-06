@@ -3,7 +3,7 @@ import { NavLink, Outlet, Link, useLocation, useNavigate } from 'react-router-do
 import {
   Plane, CalendarDays, Inbox, LogOut, User, Plus,
   ChevronRight, ChevronDown, Route, Bookmark,
-  X, PanelLeftClose, PanelLeft, Menu, Train,
+  X, PanelLeftClose, PanelLeft, Menu,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { APP_VERSION } from '../lib/version';
@@ -231,16 +231,6 @@ export function Layout() {
   }, []);
 
   // Actions for map sub-items
-  const toggleTransitLayerFromSidebar = (tripId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (activeTab !== 'map' && activeTab !== 'itinerary') {
-      navigate(`/trips/${tripId}?tab=map`);
-    }
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('travelapp:toggle_transit_layer', { detail: { tripId } }));
-    }, 50);
-  };
 
   const toggleRouterFromSidebar = (tripId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -487,20 +477,6 @@ export function Layout() {
 
                             {!collapsedMaps[t.id] && (
                               <div className="side-map-submenu">
-                                {/* Transit Layer Toggle */}
-                                <button
-                                  type="button"
-                                  className={`side-map-subitem ${mapTransitState.showTransitLayer ? 'active-layer' : ''}`}
-                                  onClick={(e) => toggleTransitLayerFromSidebar(t.id, e)}
-                                  title="Toggle Google Maps public transit layer"
-                                >
-                                  <Train size={13} className="side-map-icon" />
-                                  <span className="side-map-label">Transit Layer</span>
-                                  <span className={`side-map-pill ${mapTransitState.showTransitLayer ? 'pill-on' : ''}`}>
-                                    {mapTransitState.showTransitLayer ? 'ON' : 'OFF'}
-                                  </span>
-                                </button>
-
                                 {/* Directions & Transit Router */}
                                 <button
                                   type="button"

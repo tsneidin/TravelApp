@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Activity,
   ArrowDownUp,
+  Bike,
   Bookmark,
   Car,
   Check,
@@ -9,6 +11,7 @@ import {
   Copy,
   Crosshair,
   Footprints,
+  Layers,
   Maximize2,
   Minimize2,
   Navigation,
@@ -128,6 +131,8 @@ export function TripMap({
   const markersMapRef = useRef<Map<string, { marker: any; coord: Coord; place: PlaceWithStop; infoContent: string }>>(new Map());
   const resolvedCoordsRef = useRef<Coord[]>([]);
   const transitLayerRef = useRef<any>(null);
+  const bikeLayerRef = useRef<any>(null);
+  const trafficLayerRef = useRef<any>(null);
   const directionsRenderersRef = useRef<any[]>([]);
   const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
@@ -138,8 +143,14 @@ export function TripMap({
   const [newViewName, setNewViewName] = useState('');
   const [savingPending, setSavingPending] = useState(false);
 
-  // Transit layer & route planner state
-  const [showTransitLayer, setShowTransitLayer] = useState(false);
+  // Layers & Map Type state (Transit defaults to ON)
+  const [showTransitLayer, setShowTransitLayer] = useState(true);
+  const [showBikeLayer, setShowBikeLayer] = useState(false);
+  const [showTrafficLayer, setShowTrafficLayer] = useState(false);
+  const [mapType, setMapType] = useState<'roadmap' | 'hybrid' | 'terrain'>('roadmap');
+  const [showLayersMenu, setShowLayersMenu] = useState(false);
+
+  // Route planner state
   const [showRouter, setShowRouter] = useState(false);
   const [originInput, setOriginInput] = useState('');
   const [destInput, setDestInput] = useState('');
@@ -188,6 +199,7 @@ export function TripMap({
         setPickingTarget(null);
         setIsSavingView(false);
         setIsFullWindow(false);
+        setShowLayersMenu(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -212,10 +224,17 @@ export function TripMap({
         mapRef.current = new maps.Map(elementRef.current, {
           center: { lat: 20, lng: 0 },
           zoom: 2,
-          mapTypeControl: true,
+          mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
         });
+
+        // Initialize layers with Transit defaulted to ON
+        transitLayerRef.current = new maps.TransitLayer();
+        transitLayerRef.current.setMap(mapRef.current);
+
+        bikeLayerRef.current = new maps.BicyclingLayer();
+        trafficLayerRef.current = new maps.TrafficLayer();
 
         mapRef.current.addListener('contextmenu', async (event: any) => {
           if (!event.latLng) return;
@@ -248,6 +267,7 @@ export function TripMap({
 
         mapRef.current.addListener('click', async (event: any) => {
           setContextMenu(null);
+          setShowLayersMenu(false);
           if (!event.latLng) return;
           event.stop?.();
 
@@ -712,6 +732,32 @@ export function TripMap({
     const nextState = !showTransitLayer;
     setShowTransitLayer(nextState);
     transitLayerRef.current.setMap(nextState ? mapRef.current : null);
+  };
+
+  const toggleBikeLayer = () => {
+    if (!mapRef.current || !window.google?.maps) return;
+    if (!bikeLayerRef.current) {
+      bikeLayerRef.current = new window.google.maps.BicyclingLayer();
+    }
+    const nextState = !showBikeLayer;
+    setShowBikeLayer(nextState);
+    bikeLayerRef.current.setMap(nextState ? mapRef.current : null);
+  };
+
+  const toggleTrafficLayer = () => {
+    if (!mapRef.current || !window.google?.maps) return;
+    if (!trafficLayerRef.current) {
+      trafficLayerRef.current = new window.google.maps.TrafficLayer();
+    }
+    const nextState = !showTrafficLayer;
+    setShowTrafficLayer(nextState);
+    trafficLayerRef.current.setMap(nextState ? mapRef.current : null);
+  };
+
+  const switchMapType = (type: 'roadmap' | 'hybrid' | 'terrain') => {
+    if (!mapRef.current) return;
+    setMapType(type);
+    mapRef.current.setMapTypeId(type);
   };
 
   const fitAllStops = () => {
@@ -1667,6 +1713,129 @@ export function TripMap({
           </button>
         </div>
       )}
+
+      {/* Google Maps Layers & Details Control (Satellite, Transit, Bike, Traffic) */}
+      <div className="map-layers-widget-container">
+        <button
+          type="button"
+          className={`map-layers-btn ${showLayersMenu ? 'active' : ''}`}
+          onClick={() => setShowLayersMenu((prev) => !prev)}
+          title="Map types and details (Satellite, Transit, Biking)"
+          aria-label="Map layers and details"
+        >
+          <div className="map-layers-btn-preview">
+            <Layers size={16} />
+          </div>
+          <span className="map-layers-btn-label">Layers</span>
+        </button>
+
+        {showLayersMenu && (
+          <div className="map-layers-menu-card" onClick={(e) => e.stopPropagation()}>
+            <div className="map-layers-header">
+              <strong>Map details</strong>
+              <button
+                type="button"
+                className="btn xs ghost icon-only"
+                onClick={() => setShowLayersMenu(false)}
+                title="Close layers"
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            <div className="map-layers-section-title">Base Map</div>
+            <div className="map-layers-types-row">
+              <button
+                type="button"
+                className={`map-type-chip ${mapType === 'roadmap' ? 'active' : ''}`}
+                onClick={() => switchMapType('roadmap')}
+              >
+                <span className="map-type-chip-icon">🗺️</span>
+                <span>Default</span>
+              </button>
+              <button
+                type="button"
+                className={`map-type-chip ${mapType === 'hybrid' ? 'active' : ''}`}
+                onClick={() => switchMapType('hybrid')}
+              >
+                <span className="map-type-chip-icon">🛰️</span>
+                <span>Satellite</span>
+              </button>
+              <button
+                type="button"
+                className={`map-type-chip ${mapType === 'terrain' ? 'active' : ''}`}
+                onClick={() => switchMapType('terrain')}
+              >
+                <span className="map-type-chip-icon">⛰️</span>
+                <span>Terrain</span>
+              </button>
+            </div>
+
+            <div className="map-layers-section-title" style={{ marginTop: 10 }}>Map Details</div>
+            <div className="map-layers-toggles-list">
+              {/* Transit Layer */}
+              <button
+                type="button"
+                className={`map-layer-row ${showTransitLayer ? 'layer-active' : ''}`}
+                onClick={toggleTransitLayer}
+              >
+                <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span className="map-layer-icon transit-icon">
+                    <Train size={14} />
+                  </span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>Transit</div>
+                    <div className="small muted" style={{ fontSize: '0.7rem' }}>Train, subway & bus lines</div>
+                  </div>
+                </div>
+                <span className={`map-layer-toggle-pill ${showTransitLayer ? 'on' : ''}`}>
+                  {showTransitLayer ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* Biking Layer */}
+              <button
+                type="button"
+                className={`map-layer-row ${showBikeLayer ? 'layer-active' : ''}`}
+                onClick={toggleBikeLayer}
+              >
+                <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span className="map-layer-icon bike-icon">
+                    <Bike size={14} />
+                  </span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>Biking (Bike View)</div>
+                    <div className="small muted" style={{ fontSize: '0.7rem' }}>Bike lanes, trails & paths</div>
+                  </div>
+                </div>
+                <span className={`map-layer-toggle-pill ${showBikeLayer ? 'on' : ''}`}>
+                  {showBikeLayer ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* Traffic Layer */}
+              <button
+                type="button"
+                className={`map-layer-row ${showTrafficLayer ? 'layer-active' : ''}`}
+                onClick={toggleTrafficLayer}
+              >
+                <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span className="map-layer-icon traffic-icon">
+                    <Activity size={14} />
+                  </span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>Traffic</div>
+                    <div className="small muted" style={{ fontSize: '0.7rem' }}>Live traffic flow</div>
+                  </div>
+                </div>
+                <span className={`map-layer-toggle-pill ${showTrafficLayer ? 'on' : ''}`}>
+                  {showTrafficLayer ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div ref={elementRef} style={{ width: '100%', height: '100%', borderRadius: isFullWindow ? 0 : 10 }} />
       {error && <div className="empty-state" style={{ position: 'absolute', inset: 12 }}><b>Google Map unavailable</b><div className="small muted">{error}</div></div>}

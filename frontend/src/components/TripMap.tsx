@@ -222,55 +222,72 @@ export function TripMap({
           } catch { /* ignore */ }
         });
 
-        mapRef.current.addListener('click', () => setContextMenu(null));
-        mapRef.current.addListener('dragstart', () => setContextMenu(null));
-        mapRef.current.addListener('zoom_changed', () => setContextMenu(null));
+        const clickedMarkerRef: { current: any } = { current: null };
 
         mapRef.current.addListener('click', async (event: any) => {
-          const callback = mapClickRef.current;
-          if (!callback || !event.latLng) return;
+          setContextMenu(null);
+          if (!event.latLng) return;
           event.stop?.();
           const geocoder = new maps.Geocoder();
 
           const showPreview = (place: GeocodedPlace, position: any) => {
             previewRef.current?.close();
+
+            if (!clickedMarkerRef.current) {
+              clickedMarkerRef.current = new maps.Marker({
+                map: mapRef.current,
+                position,
+                animation: maps.Animation?.DROP,
+              });
+            } else {
+              clickedMarkerRef.current.setPosition(position);
+              clickedMarkerRef.current.setMap(mapRef.current);
+            }
+
             const card = document.createElement('div');
-            card.style.cssText = 'min-width:220px;max-width:300px;color:#111827;padding:2px';
+            card.style.cssText = 'min-width:240px;max-width:320px;color:#111827;padding:4px 2px;font-family:system-ui,-apple-system,sans-serif';
 
             const title = document.createElement('strong');
             title.textContent = place.name;
-            title.style.cssText = 'display:block;font-size:14px;margin-bottom:4px';
+            title.style.cssText = 'display:block;font-size:14px;font-weight:600;margin-bottom:3px;color:#0f172a';
             card.appendChild(title);
 
             const address = document.createElement('div');
             address.textContent = place.address;
-            address.style.cssText = 'font-size:12px;color:#4b5563;margin-bottom:10px';
+            address.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.35';
             card.appendChild(address);
 
             const actions = document.createElement('div');
-            actions.style.cssText = 'display:flex;gap:8px;align-items:center';
+            actions.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:4px';
 
-            const viewLink = document.createElement('a');
-            viewLink.href = place.mapUrl || `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
-            viewLink.target = '_blank';
-            viewLink.rel = 'noreferrer';
-            viewLink.textContent = 'View on Google Maps';
-            viewLink.style.cssText = 'font-size:12px;color:#2563eb;text-decoration:none';
-            actions.appendChild(viewLink);
+            const dirButton = document.createElement('button');
+            dirButton.type = 'button';
+            dirButton.textContent = '🧭 Directions';
+            dirButton.style.cssText = 'border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#0f172a;padding:5px 9px;font-size:12px;font-weight:500;cursor:pointer';
+            dirButton.addEventListener('click', () => {
+              previewRef.current?.close();
+              setShowRouter(true);
+              setDestInput(place.address || place.name);
+            });
+            actions.appendChild(dirButton);
 
             const addButton = document.createElement('button');
             addButton.type = 'button';
-            addButton.textContent = 'Add to itinerary';
-            addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:6px 9px;font-size:12px;cursor:pointer';
+            addButton.textContent = '+ Add to Itinerary';
+            addButton.style.cssText = 'margin-left:auto;border:0;border-radius:6px;background:#0891b2;color:white;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer';
             addButton.addEventListener('click', () => {
               previewRef.current?.close();
-              callback(place);
+              const callback = mapClickRef.current;
+              callback?.(place);
             });
             actions.appendChild(addButton);
             card.appendChild(actions);
 
             previewRef.current = new maps.InfoWindow({ content: card, position });
-            previewRef.current.open({ map: mapRef.current });
+            previewRef.current.addListener('closeclick', () => {
+              clickedMarkerRef.current?.setMap(null);
+            });
+            previewRef.current.open({ map: mapRef.current, anchor: clickedMarkerRef.current });
           };
 
           try {

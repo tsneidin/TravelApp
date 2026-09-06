@@ -53,7 +53,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
         <div className="row between mb">
           <h2 className="panel-title" style={{ margin: 0 }}>Trip map</h2>
           <div className="row">
-            <span className="small muted">Click anywhere on the map to add a place</span>
+            <span className="small muted">Click to explore or right-click for directions & tools</span>
             <span className="badge">Google Maps · {places.length} itinerary items</span>
           </div>
         </div>

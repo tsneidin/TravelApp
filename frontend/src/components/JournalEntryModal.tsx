@@ -1,21 +1,26 @@
-import { useRef, useState } from 'react';
-import { Image as ImageIcon, Link as LinkIcon, Bold, List as ListIcon, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import {
+  Image as ImageIcon, Link as LinkIcon, Bold, List as ListIcon,
+  Eye, EyeOff, Loader2, ChevronLeft, ChevronRight, Plus, Trash2
+} from 'lucide-react';
 import { Modal } from './Modal';
 import { JournalContent } from './JournalContent';
 import { uploadPhotos } from '../lib/api';
-import type { Photo } from '../lib/types';
+import type { Photo, JournalEntry } from '../lib/types';
 
 interface JournalEntryModalProps {
   tripId: string;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: { title: string; body: string; date?: string }) => Promise<void>;
+  onSave: (data: { id?: string; title: string; body: string; date?: string }) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   initialData?: {
     id?: string;
     title: string;
     body: string;
     date?: string;
   };
+  dayEntries?: JournalEntry[];
   tripPhotos?: Photo[];
   onPhotosUploaded?: () => Promise<void>;
 }
@@ -25,10 +30,27 @@ export function JournalEntryModal({
   isOpen,
   onClose,
   onSave,
+  onDelete,
   initialData,
+  dayEntries = [],
   tripPhotos = [],
   onPhotosUploaded,
 }: JournalEntryModalProps) {
+  const allEntries = useMemo(() => {
+    if (dayEntries && dayEntries.length > 0) return dayEntries;
+    if (initialData?.id) return [initialData as JournalEntry];
+    return [];
+  }, [dayEntries, initialData]);
+
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    if (initialData?.id && allEntries.length > 0) {
+      const idx = allEntries.findIndex((e) => e.id === initialData.id);
+      return idx >= 0 ? idx : 0;
+    }
+    return 0;
+  });
+
+  const [currentId, setCurrentId] = useState<string | undefined>(initialData?.id);
   const [title, setTitle] = useState(initialData?.title || '');
   const [body, setBody] = useState(initialData?.body || '');
   const [date, setDate] = useState(initialData?.date ? initialData.date.slice(0, 10) : '');
@@ -46,6 +68,23 @@ export function JournalEntryModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const loadEntry = (entry: JournalEntry, index: number) => {
+    setCurrentIndex(index);
+    setCurrentId(entry.id);
+    setTitle(entry.title || '');
+    setBody(entry.body || '');
+    if (entry.date) setDate(entry.date.slice(0, 10));
+    setShowPreview(false);
+  };
+
+  const handleCreateNew = () => {
+    setCurrentIndex(-1);
+    setCurrentId(undefined);
+    setTitle('');
+    setBody('');
+    setShowPreview(false);
+  };
 
   const insertTextAtCursor = (insertion: string) => {
     const textarea = textareaRef.current;
@@ -101,6 +140,7 @@ export function JournalEntryModal({
     setBusy(true);
     try {
       await onSave({
+        id: currentId,
         title: title.trim(),
         body: body.trim(),
         date: date || undefined,
@@ -112,7 +152,63 @@ export function JournalEntryModal({
   };
 
   return (
-    <Modal title={initialData?.id ? 'Edit Journal Entry' : 'New Journal Entry'} onClose={onClose}>
+    <Modal title={currentId ? 'Edit Journal Entry' : 'New Journal Entry'} onClose={onClose}>
+      {allEntries.length > 1 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 10px',
+            background: 'var(--surface-hover)',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            marginBottom: '0.6rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              className="btn xs ghost"
+              disabled={currentIndex <= 0}
+              onClick={() => {
+                if (currentIndex > 0) loadEntry(allEntries[currentIndex - 1], currentIndex - 1);
+              }}
+              title="Previous journal entry"
+            >
+              <ChevronLeft size={14} />
+              <span>Prev</span>
+            </button>
+            <span style={{ fontSize: '12px', fontWeight: 600 }}>
+              {currentIndex >= 0 ? `Journal ${currentIndex + 1} of ${allEntries.length}` : 'New Journal Entry'}
+            </span>
+            <button
+              type="button"
+              className="btn xs ghost"
+              disabled={currentIndex < 0 || currentIndex >= allEntries.length - 1}
+              onClick={() => {
+                if (currentIndex < allEntries.length - 1) loadEntry(allEntries[currentIndex + 1], currentIndex + 1);
+              }}
+              title="Next journal entry"
+            >
+              <span>Next</span>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="btn xs ghost"
+            onClick={handleCreateNew}
+            title="Create another journal entry for this date"
+            style={{ color: 'var(--accent)' }}
+          >
+            <Plus size={12} />
+            <span>New Journal</span>
+          </button>
+        </div>
+      )}
+
       <div className="field" style={{ marginBottom: '0.6rem' }}>
         <label style={{ marginBottom: 4 }}>Title</label>
         <input
@@ -324,18 +420,53 @@ export function JournalEntryModal({
         </div>
       )}
 
-      <div className="modal-actions">
-        <button
-          type="button"
-          className="btn primary"
-          onClick={handleSave}
-          disabled={busy || !title.trim() || uploading}
-        >
-          {busy ? 'Saving…' : 'Save Entry'}
-        </button>
-        <button type="button" className="btn" onClick={onClose}>
-          Cancel
-        </button>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          marginTop: '16px',
+        }}
+      >
+        <div>
+          {currentId && onDelete && (
+            <button
+              type="button"
+              className="btn ghost danger"
+              onClick={async () => {
+                if (confirm('Delete this journal entry?')) {
+                  setBusy(true);
+                  try {
+                    await onDelete(currentId);
+                    onClose();
+                  } finally {
+                    setBusy(false);
+                  }
+                }
+              }}
+              disabled={busy}
+              title="Delete this journal entry"
+            >
+              <Trash2 size={13} />
+              <span>Delete</span>
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleSave}
+            disabled={busy || !title.trim() || uploading}
+          >
+            {busy ? 'Saving…' : 'Save Entry'}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
       </div>
     </Modal>
   );

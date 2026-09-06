@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
-import type { Trip, Place, JournalEntry } from '../../lib/types';
+import type { Trip, Place, JournalEntry, Day } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
@@ -131,10 +131,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [dragId, setDragId] = useState<string | null>(null);
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
   const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
-  const [dayEditor, setDayEditor] = useState<{ id: string; label: string; notes: string; dayNumber?: number; spanDays?: number } | null>(null);
+  const [dayEditor, setDayEditor] = useState<{
+    id: string;
+    label: string;
+    notes: string;
+    dayNumber?: number;
+    spanDays?: number;
+    activeTargetKey?: string;
+    placeNotesMap?: Record<string, string>;
+  } | null>(null);
   const [journalModalState, setJournalModalState] = useState<{
     open: boolean;
     entry?: { id?: string; title: string; body: string; date?: string };
+    dayEntries?: JournalEntry[];
     dayLabel?: string;
   }>({ open: false });
   const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
@@ -607,10 +616,52 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     setDeletingDayId(dayId);
   };
 
+  const openDayNotes = (day: Day, dayIndex: number) => {
+    const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
+    const pNotesMap: Record<string, string> = {};
+    (day.places ?? []).forEach((p: Place) => {
+      pNotesMap[p.id] = p.notes || '';
+    });
+    setDayEditor({
+      id: day.id,
+      label: customTitle,
+      notes: day.notes || '',
+      dayNumber: dayIndex + 1,
+      spanDays: 1,
+      activeTargetKey: 'day',
+      placeNotesMap: pNotesMap,
+    });
+  };
+
+  const openDayJournals = (day: Day, dayIndex: number) => {
+    const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
+    const entriesForDay = (trip.journal ?? []).filter((j: JournalEntry) => {
+      if (!j.date) return false;
+      return j.date.slice(0, 10) === day.date.slice(0, 10);
+    });
+    const first = entriesForDay.length > 0 ? entriesForDay[0] : undefined;
+    setJournalModalState({
+      open: true,
+      entry: first ? {
+        id: first.id,
+        title: first.title,
+        body: first.body,
+        date: first.date ? first.date.slice(0, 10) : day.date.slice(0, 10),
+      } : {
+        title: '',
+        body: '',
+        date: day.date.slice(0, 10),
+      },
+      dayEntries: entriesForDay,
+      dayLabel: `Day ${dayIndex + 1}${customTitle}`,
+    });
+  };
+
   const saveDayNotes = async () => {
     if (!dayEditor) return;
     const trimmed = dayEditor.label.trim();
     const currentSpan = dayEditor.spanDays ?? 1;
+    const currentDay = days.find((d) => d.id === dayEditor.id);
 
     if (currentSpan > 1) {
       const targetDays = getConsecutiveDays(dayEditor.id, currentSpan, days);
@@ -629,13 +680,32 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         notes: dayEditor.notes,
       });
     }
+
+    if (dayEditor.placeNotesMap && currentDay?.places) {
+      const patchPromises: Promise<unknown>[] = [];
+      for (const p of currentDay.places) {
+        const editedPlaceNote = dayEditor.placeNotesMap[p.id];
+        if (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) {
+          patchPromises.push(
+            apiPatch(`/trips/${trip.id}/places/${p.id}`, {
+              notes: editedPlaceNote.trim() || null,
+            })
+          );
+        }
+      }
+      if (patchPromises.length > 0) {
+        await Promise.all(patchPromises);
+      }
+    }
+
     setDayEditor(null);
     await reload();
   };
 
-  const handleSaveJournalEntry = async (data: { title: string; body: string; date?: string }) => {
-    if (journalModalState.entry?.id) {
-      await apiPatch(`/trips/${trip.id}/journal/${journalModalState.entry.id}`, {
+  const handleSaveJournalEntry = async (data: { id?: string; title: string; body: string; date?: string }) => {
+    const targetId = data.id || journalModalState.entry?.id;
+    if (targetId) {
+      await apiPatch(`/trips/${trip.id}/journal/${targetId}`, {
         title: data.title,
         body: data.body,
         date: data.date || undefined,
@@ -1172,9 +1242,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               if (!j.date) return false;
               return j.date.slice(0, 10) === day.date.slice(0, 10);
             });
-            const dayNotesCount = day.notes?.trim()
-              ? Math.max(1, day.notes.trim().split('\n').filter((l: string) => l.trim().length > 0).length)
-              : 0;
+            const dayPlaceNotes = (day.places ?? []).filter((p) => Boolean(p.notes?.trim()));
+            const hasDayNotes = Boolean(day.notes?.trim());
+            const totalDayNotesCount = (hasDayNotes ? 1 : 0) + dayPlaceNotes.length;
 
             return (
               <div
@@ -1192,71 +1262,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                           : {day.label}
                         </span>
                       )}
-                      {isFocused && (
-                        <span className="focus-indicator-badge">🎯 In Focus</span>
-                      )}
-                      {dayJournalEntries.length > 0 && (
-                        <span
-                          className="badge"
-                          style={{
-                            background: 'rgba(34, 211, 238, 0.12)',
-                            color: 'var(--accent)',
-                            border: '1px solid rgba(34, 211, 238, 0.35)',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                          title={`${dayJournalEntries.length} journal ${dayJournalEntries.length === 1 ? 'entry' : 'entries'} recorded for this day. Click to view/edit.`}
-                          onClick={() => {
-                            const first = dayJournalEntries[0];
-                            setJournalModalState({
-                              open: true,
-                              entry: {
-                                id: first.id,
-                                title: first.title,
-                                body: first.body,
-                                date: first.date ? first.date.slice(0, 10) : day.date.slice(0, 10),
-                              },
-                            });
-                          }}
-                        >
-                          <BookOpen size={11} />
-                          <span>{dayJournalEntries.length} {dayJournalEntries.length === 1 ? 'Journal' : 'Journals'}</span>
-                        </span>
-                      )}
-                      {dayNotesCount > 0 && (
-                        <span
-                          className="badge"
-                          style={{
-                            background: 'rgba(234, 179, 8, 0.12)',
-                            color: 'var(--text)',
-                            border: '1px solid rgba(234, 179, 8, 0.35)',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                          title={`${dayNotesCount} ${dayNotesCount === 1 ? 'note' : 'notes'} recorded for this day. Click to view/edit.`}
-                          onClick={() => {
-                            const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
-                            setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
-                          }}
-                        >
-                          <NotebookPen size={11} style={{ color: '#eab308' }} />
-                          <span>{dayNotesCount} {dayNotesCount === 1 ? 'Note' : 'Notes'}</span>
-                        </span>
-                      )}
                       <button
                         type="button"
                         className="btn xs ghost muted-hover"
                         title="Rename day or edit notes"
-                        onClick={() => {
-                          const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
-                          setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
-                        }}
+                        onClick={() => openDayNotes(day, dayIndex)}
                         style={{ padding: '2px 4px' }}
                       >
                         <Pencil size={12} />
@@ -1277,14 +1287,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       <button
                         type="button"
                         className="btn sm ghost"
-                        style={dayNotesCount > 0 ? { color: 'var(--accent)' } : undefined}
+                        style={totalDayNotesCount > 0 ? { color: 'var(--accent)' } : undefined}
                         title="Edit day notes"
-                        onClick={() => {
-                          const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
-                          setDayEditor({ id: day.id, label: customTitle, notes: day.notes || '', dayNumber: dayIndex + 1 });
-                        }}
+                        onClick={() => openDayNotes(day, dayIndex)}
                       >
-                        <NotebookPen size={13} /> Notes{dayNotesCount > 0 ? ` (${dayNotesCount})` : ''}
+                        <NotebookPen size={13} /> {totalDayNotesCount > 0 ? `Notes(${totalDayNotesCount})` : 'Notes'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        style={dayJournalEntries.length > 0 ? { color: 'var(--accent)' } : undefined}
+                        title="Add or view journal entries for this day"
+                        onClick={() => openDayJournals(day, dayIndex)}
+                      >
+                        <BookOpen size={13} /> {dayJournalEntries.length > 0 ? `Journals(${dayJournalEntries.length})` : 'Journals'}
                       </button>
                       <button
                         type="button"
@@ -1629,25 +1645,130 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
 
       {dayEditor && (() => {
+        const currentDay = days.find((d) => d.id === dayEditor.id);
         const maxSpan = days.length > 0 ? days.length - (dayEditor.dayNumber ? dayEditor.dayNumber - 1 : 0) : 1;
         const currentSpan = dayEditor.spanDays ?? 1;
         const targetDays = currentSpan > 1 ? getConsecutiveDays(dayEditor.id, currentSpan, days) : [];
 
+        const noteTargets = [
+          {
+            key: 'day',
+            label: `Day ${dayEditor.dayNumber || 1} Notes`,
+            subtitle: 'Day-level general notes',
+            type: 'day' as const,
+          },
+          ...(currentDay?.places ?? []).map((p, idx) => ({
+            key: p.id,
+            label: `Stop #${idx + 1}: ${p.name}`,
+            subtitle: p.address || p.category || 'Place notes',
+            type: 'place' as const,
+            place: p,
+          })),
+        ];
+
+        const activeKey = dayEditor.activeTargetKey || 'day';
+        const activeIdx = Math.max(0, noteTargets.findIndex((t) => t.key === activeKey));
+        const currentTarget = noteTargets[activeIdx] || noteTargets[0];
+
+        const activeNoteText = activeKey === 'day'
+          ? dayEditor.notes
+          : (dayEditor.placeNotesMap?.[activeKey] ?? '');
+
+        const updateActiveNoteText = (newText: string) => {
+          if (activeKey === 'day') {
+            setDayEditor({ ...dayEditor, notes: newText });
+          } else {
+            setDayEditor({
+              ...dayEditor,
+              placeNotesMap: {
+                ...(dayEditor.placeNotesMap || {}),
+                [activeKey]: newText,
+              },
+            });
+          }
+        };
+
         return (
-          <Modal title={`Day ${dayEditor.dayNumber ?? ''} details${dayEditor.label ? ` — ${dayEditor.label}` : ''}`} onClose={() => setDayEditor(null)}>
-            <div className="field">
-              <label>Day title / label</label>
-              <input
-                value={dayEditor.label}
-                onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
-                placeholder="e.g. Arrival in Tokyo"
-                autoFocus
-              />
-            </div>
-            <div className="field">
+          <Modal title={`Day ${dayEditor.dayNumber ?? ''} Notes${dayEditor.label ? ` — ${dayEditor.label}` : ''}`} onClose={() => setDayEditor(null)}>
+            {/* Pager if multiple note targets exist */}
+            {noteTargets.length > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 10px',
+                  background: 'var(--surface-hover)',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border)',
+                  marginBottom: '0.6rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn xs ghost"
+                    disabled={activeIdx <= 0}
+                    onClick={() => {
+                      if (activeIdx > 0) {
+                        setDayEditor({ ...dayEditor, activeTargetKey: noteTargets[activeIdx - 1].key });
+                      }
+                    }}
+                    title="Previous note"
+                  >
+                    <ChevronLeft size={14} />
+                    <span>Prev</span>
+                  </button>
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                    Note {activeIdx + 1} of {noteTargets.length}: {currentTarget.label}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn xs ghost"
+                    disabled={activeIdx >= noteTargets.length - 1}
+                    onClick={() => {
+                      if (activeIdx < noteTargets.length - 1) {
+                        setDayEditor({ ...dayEditor, activeTargetKey: noteTargets[activeIdx + 1].key });
+                      }
+                    }}
+                    title="Next note"
+                  >
+                    <span>Next</span>
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+
+                <select
+                  value={activeKey}
+                  onChange={(e) => setDayEditor({ ...dayEditor, activeTargetKey: e.target.value })}
+                  style={{ fontSize: '12px', padding: '2px 6px', maxWidth: '170px' }}
+                >
+                  {noteTargets.map((t, idx) => (
+                    <option key={t.key} value={t.key}>
+                      {`${idx + 1}. ${t.label}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {activeKey === 'day' && (
+              <div className="field" style={{ marginBottom: '0.6rem' }}>
+                <label style={{ marginBottom: 4 }}>Day title / label</label>
+                <input
+                  value={dayEditor.label}
+                  onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
+                  placeholder="e.g. Arrival in Tokyo"
+                />
+              </div>
+            )}
+
+            <div className="field" style={{ marginBottom: '0.6rem' }}>
               <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ margin: 0 }}>Day notes</label>
-                {days.length > 1 && (
+                <label style={{ margin: 0 }}>
+                  {activeKey === 'day' ? 'General Day notes' : `${currentTarget.label} notes`}
+                </label>
+                {activeKey === 'day' && days.length > 1 && (
                   <div className="row items-center gap-1">
                     <span className="small muted">Span to next:</span>
                     <input
@@ -1666,12 +1787,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 )}
               </div>
               <textarea
-                rows={7}
-                value={dayEditor.notes}
-                onChange={(event) => setDayEditor({ ...dayEditor, notes: event.target.value })}
-                placeholder="General plans, reminders, weather backup, meeting details…"
+                rows={6}
+                value={activeNoteText}
+                onChange={(event) => updateActiveNoteText(event.target.value)}
+                placeholder={activeKey === 'day' ? 'General plans, reminders, weather backup, meeting details…' : `Notes, tips or details for ${currentTarget.label}…`}
+                autoFocus
               />
-              {currentSpan > 1 && targetDays.length > 1 && (
+              {activeKey === 'day' && currentSpan > 1 && targetDays.length > 1 && (
                 <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Calendar size={13} className="text-accent" />
                   <span>
@@ -1694,7 +1816,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           isOpen={journalModalState.open}
           onClose={() => setJournalModalState({ open: false })}
           onSave={handleSaveJournalEntry}
+          onDelete={handleRemoveJournal}
           initialData={journalModalState.entry}
+          dayEntries={journalModalState.dayEntries || []}
           tripPhotos={trip.photos}
           onPhotosUploaded={reload}
         />

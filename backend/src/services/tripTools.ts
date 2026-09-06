@@ -591,7 +591,7 @@ export const TRIP_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'list_todos',
-      description: 'List all to-do tasks and pre-trip checklist items (e.g. mail hold, prescriptions, passport check).',
+      description: 'List all to-do tasks and checklist items categorized by trip phase (Pre-Trip, During Trip, and Post-Trip).',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -599,13 +599,13 @@ export const TRIP_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'add_todo',
-      description: 'Add a to-do item or pre-trip task with optional due date, category, and notes.',
+      description: 'Add a to-do item or task categorized by trip phase (Pre-Trip, During Trip, or Post-Trip) with optional due date and notes.',
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: 'Task title (e.g., "Place USPS mail hold", "Refill prescriptions")' },
+          title: { type: 'string', description: 'Task title (e.g., "Place USPS mail hold", "Pick up pocket Wi-Fi at airport", "Submit expense report")' },
+          category: { type: 'string', enum: ['Pre-Trip', 'During Trip', 'Post-Trip'], description: 'Trip phase: "Pre-Trip" | "During Trip" | "Post-Trip" (default "Pre-Trip")' },
           dueDate: { type: 'string', description: 'Due date in YYYY-MM-DD format (optional)' },
-          category: { type: 'string', description: 'Category (e.g. "Pre-Trip", "Home & Mail", "Health", "Documents", "Finance")' },
           notes: { type: 'string', description: 'Additional notes or instructions' },
         },
         required: ['title'],
@@ -616,14 +616,14 @@ export const TRIP_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'update_todo',
-      description: 'Update a to-do task (mark done, change due date, category, or title). Identify by current title.',
+      description: 'Update a to-do task (mark done, change due date, category phase Pre-Trip/During Trip/Post-Trip, or title). Identify by current title.',
       parameters: {
         type: 'object',
         properties: {
           currentTitle: { type: 'string', description: 'Current task title to find it' },
           title: { type: 'string', description: 'New title if renaming' },
+          category: { type: 'string', enum: ['Pre-Trip', 'During Trip', 'Post-Trip'], description: 'Phase category: "Pre-Trip" | "During Trip" | "Post-Trip"' },
           dueDate: { type: 'string', description: 'New due date in YYYY-MM-DD format (or "clear" to remove)' },
-          category: { type: 'string', description: 'New category' },
           notes: { type: 'string', description: 'New notes' },
           done: { type: 'boolean', description: 'Completed status' },
         },

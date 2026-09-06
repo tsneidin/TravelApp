@@ -199,6 +199,7 @@ async function buildSystemPrompt(tripId: string, focusedDayId?: string): Promise
     `  1. Call add_booking with confirmation code (reference), provider, startAt, endAt, price, currency, and the full structured legs array (with each leg's carrier, flightNumber, fromCity, fromCode, toCity, toCode, local departTime, local arriveTime, seat, and flightClass).`,
     `  2. This automatically creates missing days, logs flight legs or stays into the itinerary with accurate local flight times and editable details, and records the cost in the budget!`,
     `  3. Call add_place if additional custom stops or activities are requested.`,
+    `- For to-do checklist items, use add_todo, update_todo, or delete_todo. Always categorize to-do tasks into one of the 3 trip phases: "Pre-Trip", "During Trip", or "Post-Trip".`,
     `- For packing items, use add_packing_item, update_packing_item, or delete_packing_item.`,
     `- When asked for recommendations (things to do, see, eat, explore), call get_suggestions to return interactive discovery cards. Do NOT automatically add recommendations to the itinerary via add_place unless the user explicitly tells you to add them.`,
     `- Focus directly on answering the user's latest message or instruction. Do NOT carry over, resume, or re-answer previous conversation topics unless the user explicitly references them.`,

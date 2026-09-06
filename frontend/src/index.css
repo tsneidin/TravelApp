@@ -15,6 +15,7 @@
   --muted: #8ea0bc;
   --accent: #22d3ee;
   --accent-2: #2dd4bf;
+  --accent-text: #06222c;
   --danger: #f87171;
   --ok: #34d399;
   --warn: #fbbf24;
@@ -25,109 +26,115 @@
   --sar: env(safe-area-inset-right, 0px);
 }
 
-/* Home Depot Theme: Signature Orange, Charcoal & Slate Tooling */
+/* Home Depot Theme: The Home Depot Official Safety Orange, Charcoal & Slate Tooling */
 [data-theme="homedepot"] {
-  --bg: #111518;
-  --bg-glow: #2e180d;
-  --panel: #181f25;
-  --panel-2: #13191e;
-  --card: #1f2832;
-  --card-2: #283441;
-  --line: #374657;
+  --bg: #14171a;
+  --bg-glow: #381a07;
+  --panel: #1c2127;
+  --panel-2: #14181d;
+  --card: #232a32;
+  --card-2: #2d3640;
+  --line: #3f4c5a;
   --text: #ffffff;
-  --muted: #9faec0;
+  --muted: #a3b2c2;
   --accent: #f96302;
-  --accent-2: #ff8533;
+  --accent-2: #ff7824;
+  --accent-text: #ffffff;
   --danger: #ef4444;
   --ok: #10b981;
   --warn: #f59e0b;
 }
 
-/* Lowe's Theme: Royal Navy Blue & Golden Yellow */
+/* Lowe's Theme: Lowe's Official Royal Navy Blue & Value Gold */
 [data-theme="lowes"] {
-  --bg: #091322;
-  --bg-glow: #072c5a;
-  --panel: #0d1e38;
-  --panel-2: #09172c;
-  --card: #132849;
-  --card-2: #1a355f;
-  --line: #274b83;
-  --text: #f1f6fd;
-  --muted: #8fa6ca;
-  --accent: #1976d2;
+  --bg: #07152b;
+  --bg-glow: #002d62;
+  --panel: #0b1f3d;
+  --panel-2: #07162b;
+  --card: #102b54;
+  --card-2: #163a70;
+  --line: #1f4f96;
+  --text: #ffffff;
+  --muted: #95b3db;
+  --accent: #004990;
   --accent-2: #ffc220;
+  --accent-text: #ffffff;
   --danger: #f87171;
   --ok: #22c55e;
   --warn: #ffc220;
 }
 
-/* Milwaukee Tool Theme: Heavy-Duty Crimson Red & Carbon Black */
+/* Milwaukee Tool Theme: Heavy-Duty Crimson Red & Carbon Matte Black */
 [data-theme="milwaukee"] {
-  --bg: #101114;
-  --bg-glow: #38080c;
-  --panel: #17181d;
-  --panel-2: #131417;
-  --card: #1f2127;
-  --card-2: #282a33;
-  --line: #3d414e;
+  --bg: #0c0d10;
+  --bg-glow: #4a060a;
+  --panel: #14161b;
+  --panel-2: #0e0f13;
+  --card: #1c1e26;
+  --card-2: #262933;
+  --line: #3d4150;
   --text: #ffffff;
-  --muted: #9da3b4;
+  --muted: #a8aebb;
   --accent: #db0010;
-  --accent-2: #ff3344;
-  --danger: #ff4d4f;
+  --accent-2: #ff2a3a;
+  --accent-text: #ffffff;
+  --danger: #ff3b30;
   --ok: #22c55e;
   --warn: #eab308;
 }
 
-/* Amazon Theme: Squid Ink Navy & Smile Orange */
+/* Amazon Theme: Amazon Prime Squid Ink Navy, Subnav Navy & Smile Amber */
 [data-theme="amazon"] {
-  --bg: #11171f;
-  --bg-glow: #1e2c3f;
-  --panel: #19222e;
-  --panel-2: #141b24;
-  --card: #222e3e;
-  --card-2: #2b3a4e;
-  --line: #394d67;
-  --text: #f3f5f8;
-  --muted: #9ba9bc;
+  --bg: #0e131a;
+  --bg-glow: #1a2536;
+  --panel: #131921;
+  --panel-2: #0c1016;
+  --card: #1d2633;
+  --card-2: #232f3e;
+  --line: #32445b;
+  --text: #ffffff;
+  --muted: #a2b0c3;
   --accent: #ff9900;
   --accent-2: #00a8e1;
+  --accent-text: #111827;
   --danger: #ef4444;
   --ok: #10b981;
   --warn: #febd69;
 }
 
-/* Facebook Theme: Meta Blue & Midnight Slate */
+/* Facebook Theme: Meta / Facebook Brand Blue & Dark Mode Slate */
 [data-theme="facebook"] {
-  --bg: #141517;
-  --bg-glow: #0d2242;
-  --panel: #1e1f23;
-  --panel-2: #18191c;
-  --card: #282a2f;
-  --card-2: #34373d;
-  --line: #42464e;
+  --bg: #18191a;
+  --bg-glow: #0a1f3d;
+  --panel: #242526;
+  --panel-2: #1c1d1e;
+  --card: #242526;
+  --card-2: #3a3b3c;
+  --line: #3e4042;
   --text: #e4e6eb;
   --muted: #b0b3b8;
   --accent: #0866ff;
   --accent-2: #45bd62;
+  --accent-text: #ffffff;
   --danger: #fa383e;
   --ok: #45bd62;
   --warn: #f7b125;
 }
 
-/* American Airlines Theme: Aviation Sky Blue, Flag Red & Platinum */
+/* American Airlines Theme: Aviation Admirals Blue, Flag Red & Fuselage Platinum */
 [data-theme="americanairlines"] {
-  --bg: #0c1420;
-  --bg-glow: #102646;
-  --panel: #132032;
-  --panel-2: #0e1826;
-  --card: #1a2a42;
-  --card-2: #233755;
-  --line: #324e77;
-  --text: #f0f4f9;
-  --muted: #8fa5c4;
+  --bg: #081322;
+  --bg-glow: #002244;
+  --panel: #0d1e35;
+  --panel-2: #081322;
+  --card: #142a4a;
+  --card-2: #1b3863;
+  --line: #294e85;
+  --text: #f8fafc;
+  --muted: #95acc9;
   --accent: #0078d2;
   --accent-2: #c30019;
+  --accent-text: #ffffff;
   --danger: #c30019;
   --ok: #10b981;
   --warn: #f59e0b;
@@ -416,12 +423,13 @@ input[type='range']::-webkit-slider-thumb:active {
 }
 .btn.primary {
   background: var(--accent);
-  color: #06222c;
+  color: var(--accent-text, #ffffff);
   border-color: var(--accent);
+  font-weight: 600;
 }
 .btn.primary:hover {
-  filter: brightness(1.1);
-  color: #06222c;
+  filter: brightness(1.08);
+  color: var(--accent-text, #ffffff);
 }
 .btn.danger {
   background: rgba(248, 113, 113, 0.12);

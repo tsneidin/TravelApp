@@ -9,6 +9,8 @@ import { AuditBadge } from '../../components/AuditBadge';
 import { getCategoryIcon } from '../../lib/icons';
 import { apiPost, apiPatch } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
+import { isAccommodationItem, isTransitItem, normalizePlaceLocationKey } from '../../lib/placeUtils';
+import { extractSpanId } from '../../lib/spanUtils';
 
 interface TimelineTabProps {
   trip: Trip;
@@ -301,7 +303,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
 
     // Check hotel bookings
     for (const b of trip.bookings ?? []) {
-      if (b.type === 'hotel') {
+      if (b.type === 'hotel' || isAccommodationItem(b)) {
         const sKey = parseDateKey(b.startAt);
         const eKey = parseDateKey(b.endAt);
 
@@ -324,26 +326,54 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
       }
     }
 
-    // Check lodging places
+    // Check lodging places across itinerary days and group multi-day spans
+    const stayPlaceGroups = new Map<string, { places: Place[]; dayIndices: number[] }>();
+
     for (const d of timelineDays) {
       const dIdx = dateToIndex.get(d.dateStr) ?? 0;
       for (const p of d.places) {
-        const cat = (p.category || '').toLowerCase();
-        if (cat === 'lodging' || cat === 'hotel') {
-          const exists = rawStays.some(
-            (s) => s.title.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(s.title.toLowerCase())
-          );
-          if (!exists) {
-            rawStays.push({
-              id: p.id,
-              title: p.name,
-              startDayIndex: dIdx,
-              endDayIndex: Math.min(dIdx + 1, timelineDays.length - 1),
-              nights: 1,
-              place: p,
-            });
+        if (isAccommodationItem(p)) {
+          const spanId = extractSpanId(p);
+          const groupKey = spanId ? `span:${spanId}` : normalizePlaceLocationKey(p);
+          if (!stayPlaceGroups.has(groupKey)) {
+            stayPlaceGroups.set(groupKey, { places: [], dayIndices: [] });
           }
+          const group = stayPlaceGroups.get(groupKey)!;
+          group.places.push(p);
+          group.dayIndices.push(dIdx);
         }
+      }
+    }
+
+    for (const group of stayPlaceGroups.values()) {
+      const primaryPlace = group.places[0];
+      const minDayIdx = Math.min(...group.dayIndices);
+      const maxDayIdx = Math.max(...group.dayIndices);
+
+      // Avoid duplicate if a hotel booking already covers this stay
+      const coveredByBooking = rawStays.some(
+        (s) =>
+          s.booking &&
+          (s.title.toLowerCase().includes(primaryPlace.name.toLowerCase()) ||
+            primaryPlace.name.toLowerCase().includes(s.title.toLowerCase()))
+      );
+
+      if (!coveredByBooking) {
+        const isSingleDay = minDayIdx === maxDayIdx;
+        const startDayIndex = minDayIdx;
+        const endDayIndex = isSingleDay
+          ? Math.min(minDayIdx + 1, timelineDays.length - 1)
+          : Math.min(maxDayIdx + 1, timelineDays.length - 1);
+        const nights = isSingleDay ? 1 : Math.max(1, maxDayIdx - minDayIdx + 1);
+
+        rawStays.push({
+          id: primaryPlace.id,
+          title: primaryPlace.name,
+          startDayIndex,
+          endDayIndex,
+          nights,
+          place: primaryPlace,
+        });
       }
     }
 
@@ -390,20 +420,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
     for (const d of timelineDays) {
       const dIdx = dateToIndex.get(d.dateStr) ?? 0;
       for (const p of d.places) {
-        const cat = (p.category || '').toLowerCase();
-        const pNameLower = p.name.toLowerCase();
-        if (
-          cat === 'transport' ||
-          cat === 'transit' ||
-          cat === 'flight' ||
-          pNameLower.includes('flight') ||
-          pNameLower.includes('airline') ||
-          pNameLower.includes('american airlines') ||
-          pNameLower.includes('delta') ||
-          pNameLower.includes('united') ||
-          pNameLower.includes('train') ||
-          pNameLower.includes('flixbus')
-        ) {
+        if (isTransitItem(p)) {
           let endDIdx = dIdx;
           if (p.endTime && p.startTime && p.endTime < p.startTime) {
             endDIdx = Math.min(dIdx + 1, timelineDays.length - 1);
@@ -982,27 +999,32 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                     gridTemplateColumns: `repeat(${timelineDays.length}, ${colWidth}px)`,
                   }}
                 >
-                  {timelineDays.map((day) => (
-                    <div
-                      key={day.dateStr}
-                      style={{
-                        padding: '6px 8px',
-                        borderRight: '1px solid rgba(255,255,255,0.06)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 6,
-                        minHeight: 120,
-                      }}
-                    >
-                      {day.places.length === 0 ? (
-                        <div className="small muted" style={{ fontStyle: 'italic', fontSize: '0.74rem', padding: '10px 4px', textAlign: 'center' }}>
-                          No stops
-                        </div>
-                      ) : (
-                        day.places.map((place, pIdx) => (
-                          <div
-                            key={place.id}
-                            onClick={() => setSelectedItem({ type: 'place', title: place.name, place })}
+                  {timelineDays.map((day) => {
+                    const activityPlaces = day.places.filter(
+                      (place) => !isAccommodationItem(place) && !isTransitItem(place)
+                    );
+
+                    return (
+                      <div
+                        key={day.dateStr}
+                        style={{
+                          padding: '6px 8px',
+                          borderRight: '1px solid rgba(255,255,255,0.06)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                          minHeight: 120,
+                        }}
+                      >
+                        {activityPlaces.length === 0 ? (
+                          <div className="small muted" style={{ fontStyle: 'italic', fontSize: '0.74rem', padding: '10px 4px', textAlign: 'center' }}>
+                            No activities
+                          </div>
+                        ) : (
+                          activityPlaces.map((place, pIdx) => (
+                            <div
+                              key={place.id}
+                              onClick={() => setSelectedItem({ type: 'place', title: place.name, place })}
                             style={{
                               background: 'var(--panel-2)',
                               border: '1px solid var(--line)',
@@ -1046,7 +1068,8 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                         ))
                       )}
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
             )}
@@ -1224,6 +1247,32 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}>
                     {selectedItem.stay.place.description}
                   </div>
+                </div>
+              )}
+
+              {selectedItem.stay.place?.notes && (
+                <div className="field mb-3">
+                  <label>Notes</label>
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}>
+                    ✏️ {selectedItem.stay.place.notes}
+                  </div>
+                </div>
+              )}
+
+              {selectedItem.stay.place?.website && (
+                <div className="field mb-3">
+                  <label>Website</label>
+                  <div>
+                    <a href={selectedItem.stay.place.website} target="_blank" rel="noreferrer" className="link small" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {selectedItem.stay.place.website} <ExternalLink size={12} />
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {(selectedItem.stay.place?.createdBy || selectedItem.stay.place?.updatedBy) && (
+                <div style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end' }}>
+                  <AuditBadge createdBy={selectedItem.stay.place.createdBy} createdAt={selectedItem.stay.place.createdAt} updatedBy={selectedItem.stay.place.updatedBy} updatedAt={selectedItem.stay.place.updatedAt} />
                 </div>
               )}
             </div>

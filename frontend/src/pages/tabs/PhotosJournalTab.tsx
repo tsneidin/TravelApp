@@ -3,6 +3,7 @@ import { Plus, Trash2, Image as ImageIcon, PenSquare, Pencil } from 'lucide-reac
 import { apiPost, apiPatch, apiDelete, uploadPhotos } from '../../lib/api';
 import type { Trip, JournalEntry, Photo } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
+import { AuditBadge } from '../../components/AuditBadge';
 
 interface JournalForm {
   title: string;
@@ -106,9 +107,16 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
                   />
                 </button>
                 <div className="row between mt" style={{ gap: 6 }}>
-                  <span className="small muted">{p.caption || 'No caption'}</span>
+                  <span className="small muted grow" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.caption || 'No caption'}
+                  </span>
                   <button className="btn sm ghost danger" onClick={() => removePhoto(p.id)}><Trash2 size={13} /></button>
                 </div>
+                {(p.createdBy || p.updatedBy) && (
+                  <div style={{ marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
+                    <AuditBadge createdBy={p.createdBy} createdAt={p.createdAt} updatedBy={p.updatedBy} updatedAt={p.updatedAt} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -139,6 +147,11 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
               </div>
               <div className="small muted mb">{j.date ? new Date(j.date).toLocaleDateString() : ''}</div>
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.92rem' }}>{j.body}</div>
+              {(j.createdBy || j.updatedBy) && (
+                <div style={{ marginTop: 10, paddingTop: 6, borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
+                  <AuditBadge createdBy={j.createdBy} createdAt={j.createdAt} updatedBy={j.updatedBy} updatedAt={j.updatedAt} />
+                </div>
+              )}
             </div>
           ))
         )}
@@ -173,8 +186,8 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
             <textarea rows={6} value={jForm.body} onChange={(e) => setJForm({ ...jForm, body: e.target.value })} placeholder="What happened today…" />
           </div>
           <div className="modal-actions">
-            <button className="btn" onClick={() => setJOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={saveJournal} disabled={busy || !jForm.title}>Save</button>
+            <button className="btn" onClick={() => setJOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}

@@ -1,8 +1,17 @@
+export interface AuditUser {
+  id: string;
+  name: string;
+  email?: string;
+  avatarUrl?: string | null;
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
   isAdmin: boolean;
+  avatarUrl?: string | null;
+  settings?: Record<string, unknown> | null;
 }
 
 export interface Trip {
@@ -17,7 +26,7 @@ export interface Trip {
   createdAt: string;
   updatedAt: string;
   ownerId: string;
-  owner?: { id: string; name: string; email: string };
+  owner?: AuditUser;
   members?: TripMember[];
   days?: Day[];
   places?: Place[];
@@ -50,7 +59,7 @@ export interface TripMember {
   id: string;
   role: 'owner' | 'editor' | 'viewer';
   userId: string;
-  user?: { id: string; email: string; name: string };
+  user?: AuditUser;
 }
 
 export interface Day {
@@ -61,6 +70,10 @@ export interface Day {
   notes?: string | null;
   sortOrder: number;
   places: Place[];
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
 }
 
 export interface Place {
@@ -80,6 +93,12 @@ export interface Place {
   sortOrder: number;
   includeInCalendar: boolean;
   dayId?: string | null;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type BookingType = 'flight' | 'hotel' | 'car' | 'activity';
@@ -95,6 +114,20 @@ export interface Booking {
   endAt?: string | null;
   details?: Record<string, unknown> | null;
   sourceImportId?: string | null;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExpenseSplit {
+  userId: string;
+  amount: number;
+  percentage?: number;
+  shares?: number;
+  isPaid?: boolean;
 }
 
 export interface Expense {
@@ -106,7 +139,42 @@ export interface Expense {
   amount: number;
   currency: string;
   date?: string | null;
-  createdAt: string;
+  splitType?: string | null;
+  splits?: ExpenseSplit[] | null;
+  paidById?: string | null;
+  paidBy?: AuditUser | null;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MemberBalance {
+  userId: string;
+  name: string;
+  email?: string;
+  avatarUrl?: string | null;
+  totalPaid: number;
+  totalShare: number;
+  netBalance: number;
+}
+
+export interface SettlementTransaction {
+  fromUserId: string;
+  fromName: string;
+  toUserId: string;
+  toName: string;
+  amount: number;
+  currency: string;
+}
+
+export interface TripSettlementSummary {
+  currency: string;
+  totalSpent: number;
+  memberBalances: MemberBalance[];
+  settlements: SettlementTransaction[];
 }
 
 export interface PackingItem {
@@ -116,6 +184,12 @@ export interface PackingItem {
   item: string;
   done: boolean;
   sortOrder: number;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TodoItem {
@@ -127,6 +201,10 @@ export interface TodoItem {
   category?: string | null;
   done: boolean;
   sortOrder: number;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -137,7 +215,12 @@ export interface JournalEntry {
   title: string;
   body: string;
   date?: string | null;
-  createdAt: string;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Photo {
@@ -145,7 +228,12 @@ export interface Photo {
   caption?: string | null;
   filename: string;
   placeId?: string | null;
-  createdAt: string;
+  createdById?: string | null;
+  createdBy?: AuditUser | null;
+  updatedById?: string | null;
+  updatedBy?: AuditUser | null;
+  createdAt?: string;
+  updatedAt?: string;
   url: string;
 }
 

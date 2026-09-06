@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, MapPin, ArrowRight } from 'lucide-react';
+import { Plus, MapPin, ArrowRight, Users } from 'lucide-react';
 import { apiGet, apiPost } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { endForStart } from '../lib/dateRange';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
@@ -9,6 +10,7 @@ import { Modal } from '../components/Modal';
 import { ThemeSelector } from '../components/ThemeSelector';
 
 export function Dashboard() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,28 +92,55 @@ export function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-3">
-          {trips.map((t) => (
-            <Link key={t.id} to={`/trips/${t.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-              <div className="card" style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="row between">
-                  <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{t.name}</h3>
-                  <ArrowRight size={16} style={{ color: 'var(--accent)' }} />
+          {trips.map((t) => {
+            const isOwner = user?.id ? t.ownerId === user.id : true;
+            const memberCount = (t.members?.length ?? 0) + 1;
+            const membership = t.members?.find((m) => m.userId === user?.id);
+
+            return (
+              <Link key={t.id} to={`/trips/${t.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="card" style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div className="row between" style={{ alignItems: 'flex-start' }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{t.name}</h3>
+                      {!isOwner && (
+                        <span
+                          className="badge"
+                          style={{
+                            marginTop: 4,
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            color: 'var(--accent)',
+                            borderColor: 'rgba(99, 102, 241, 0.3)',
+                            fontSize: '0.72rem',
+                          }}
+                        >
+                          Shared ({membership?.role || 'Member'})
+                        </span>
+                      )}
+                    </div>
+                    <ArrowRight size={16} style={{ color: 'var(--accent)' }} />
+                  </div>
+                  <div className="row small muted">
+                    <MapPin size={14} /> {t.destination || 'No destination yet'}
+                  </div>
+                  <div className="row" style={{ marginTop: 'auto', flexWrap: 'wrap', gap: 6 }}>
+                    <span className="badge accent">{t._count?.places ?? 0} places</span>
+                    <span className="badge warn">{t._count?.expenses ?? 0} expenses</span>
+                    {memberCount > 1 && (
+                      <span className="badge" title={`${memberCount} members on this trip`}>
+                        <Users size={12} style={{ marginRight: 3, verticalAlign: -1 }} /> {memberCount}
+                      </span>
+                    )}
+                    {t.startDate && (
+                      <span className="badge">
+                        {new Date(t.startDate).toLocaleDateString()} — {t.endDate ? new Date(t.endDate).toLocaleDateString() : '?'}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="row small muted">
-                  <MapPin size={14} /> {t.destination || 'No destination yet'}
-                </div>
-                <div className="row" style={{ marginTop: 'auto' }}>
-                  <span className="badge accent">{t._count?.places ?? 0} places</span>
-                  <span className="badge warn">{t._count?.expenses ?? 0} expenses</span>
-                  {t.startDate && (
-                    <span className="badge">
-                      {new Date(t.startDate).toLocaleDateString()} — {t.endDate ? new Date(t.endDate).toLocaleDateString() : '?'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
 
@@ -149,10 +178,10 @@ export function Dashboard() {
           </div>
           {error && <div className="small danger mb">{error}</div>}
           <div className="modal-actions">
-            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
             <button className="btn primary" onClick={create} disabled={saving || !form.name}>
               {saving ? 'Creating…' : 'Create'}
             </button>
+            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
           </div>
         </Modal>
       )}

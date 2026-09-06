@@ -13,6 +13,7 @@ import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
 import { computePlaceStopNumberMap } from '../../lib/placeUtils';
+import { AuditBadge } from '../../components/AuditBadge';
 
 interface PlaceForm {
   dayId?: string;
@@ -801,6 +802,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 >
                   Add details
                 </button>
+              </div>
+            )}
+            {(p.createdBy || p.updatedBy) && (
+              <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
+                <AuditBadge createdBy={p.createdBy} createdAt={p.createdAt} updatedBy={p.updatedBy} updatedAt={p.updatedAt} />
               </div>
             )}
           </div>

@@ -44,17 +44,20 @@ model User {
   email        String   @unique
   name         String
   passwordHash String
+  avatarUrl    String?
+  settings     Json?
   isAdmin      Boolean  @default(false)
   createdAt    DateTime @default(now())
 
-  memberships TripMember[]
-  ownsTrips   Trip[]         @relation("Owner")
-  photos      Photo[]
-  journal     JournalEntry[]
-  expenses    Expense[]
-  imports     EmailImport[]
-  bookings    Booking[]
-  chat        ChatMessage[]
+  memberships  TripMember[]
+  ownsTrips    Trip[]         @relation("Owner")
+  photos       Photo[]
+  journal      JournalEntry[]
+  expenses     Expense[]      @relation("ExpenseUser")
+  paidExpenses Expense[]      @relation("ExpensePayer")
+  imports      EmailImport[]
+  bookings     Booking[]
+  chat         ChatMessage[]
 }
 
 model Trip {
@@ -102,12 +105,15 @@ model TripMember {
 }
 
 model Day {
-  id        String   @id @default(cuid())
-  label     String?
-  date      DateTime
-  notes     String?
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  label       String?
+  date        DateTime
+  notes       String?
+  sortOrder   Int      @default(0)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   trip   Trip    @relation(fields: [tripId], references: [id])
   tripId String
@@ -117,21 +123,24 @@ model Day {
 }
 
 model Place {
-  id        String   @id @default(cuid())
-  name      String
-  category  String?
-  address   String?
-  lat       Float?
-  lng       Float?
-  description String?
-  notes     String?
-  website   String?
-  sourceText String?
-  startTime DateTime?
-  endTime   DateTime?
-  sortOrder Int      @default(0)
-  includeInCalendar Boolean @default(true)
-  createdAt DateTime @default(now())
+  id                String    @id @default(cuid())
+  name              String
+  category          String?
+  address           String?
+  lat               Float?
+  lng               Float?
+  description       String?
+  notes             String?
+  website           String?
+  sourceText        String?
+  startTime         DateTime?
+  endTime           DateTime?
+  sortOrder         Int       @default(0)
+  includeInCalendar Boolean   @default(true)
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
 
   trip     Trip      @relation(fields: [tripId], references: [id])
   tripId   String
@@ -146,12 +155,13 @@ model Place {
 }
 
 model Photo {
-  id        String   @id @default(cuid())
-  filename  String
-  caption   String?
-  mimeType  String?
-  size      Int?
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  filename    String
+  caption     String?
+  mimeType    String?
+  size        Int?
+  createdById String?
+  createdAt   DateTime @default(now())
 
   user    User    @relation(fields: [userId], references: [id])
   userId  String
@@ -162,12 +172,14 @@ model Photo {
 }
 
 model JournalEntry {
-  id        String   @id @default(cuid())
-  title     String
-  body      String
-  date      DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  title       String
+  body        String
+  date        DateTime?
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   user   User  @relation(fields: [userId], references: [id])
   userId String
@@ -185,25 +197,36 @@ model Expense {
   amount      Float
   currency    String          @default("USD")
   date        DateTime?
+  splitType   String          @default("equal")
+  splits      Json?
+  paidById    String?
+  paidBy      User?           @relation("ExpensePayer", fields: [paidById], references: [id], onDelete: SetNull)
+  createdById String?
+  updatedById String?
   createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @default(now()) @updatedAt
 
   trip    Trip    @relation(fields: [tripId], references: [id])
   tripId  String
-  user    User    @relation(fields: [userId], references: [id])
+  user    User    @relation("ExpenseUser", fields: [userId], references: [id])
   userId  String
   place   Place?  @relation(fields: [placeId], references: [id], onDelete: SetNull)
   placeId String?
 
   @@index([tripId])
+  @@index([paidById])
 }
 
 model PackingItem {
-  id        String  @id @default(cuid())
-  category  String?
-  item      String
-  done      Boolean @default(false)
-  sortOrder Int     @default(0)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  category    String?
+  item        String
+  done        Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   trip   Trip  @relation(fields: [tripId], references: [id])
   tripId String
@@ -220,6 +243,8 @@ model Booking {
   startAt        DateTime?
   endAt          DateTime?
   details        Json?
+  createdById    String?
+  updatedById    String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -299,17 +324,19 @@ model MapView {
 }
 
 model TodoItem {
-  id        String    @id @default(cuid())
-  tripId    String
-  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  title     String
-  notes     String?
-  dueDate   DateTime?
-  category  String?   @default("Pre-Trip")
-  done      Boolean   @default(false)
-  sortOrder Int       @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  tripId      String
+  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  title       String
+  notes       String?
+  dueDate     DateTime?
+  category    String?   @default("Pre-Trip")
+  done        Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([tripId])
 }

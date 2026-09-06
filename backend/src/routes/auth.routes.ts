@@ -1,12 +1,36 @@
 import { Router } from 'express';
+import multer from 'multer';
+import path from 'node:path';
+import fs from 'node:fs';
 import { asyncHandler, badRequest, notFound, unauthorized } from '../lib/errors.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { signToken } from '../lib/jwt.js';
 import { prisma } from '../db.js';
 import { getUser } from '../middleware/auth.js';
+import { config } from '../config.js';
 import { z } from 'zod';
 
 export const authRouter = Router();
+
+fs.mkdirSync(config.uploadDir, { recursive: true });
+const avatarStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, config.uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname ?? '').slice(0, 12);
+    cb(null, `avatar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+  },
+});
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(new Error('Only image files are allowed for avatars'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -88,13 +112,78 @@ authRouter.get(
     });
     if (!user) throw notFound('User not found');
     res.json({
-      user: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin },
+      user: pubUser(user),
       memberships: user.memberships,
       ownsTrips: user.ownsTrips,
     });
   }),
 );
 
-function pubUser(u: { id: string; email: string; name: string; isAdmin: boolean }) {
-  return { id: u.id, email: u.email, name: u.name, isAdmin: u.isAdmin };
+authRouter.patch(
+  '/profile',
+  asyncHandler(async (req, res) => {
+    const u = getUser(req);
+    const data: Record<string, unknown> = {};
+    if (typeof req.body.name === 'string' && req.body.name.trim()) {
+      data.name = req.body.name.trim();
+    }
+    if (req.body.avatarUrl !== undefined) {
+      data.avatarUrl = req.body.avatarUrl ? String(req.body.avatarUrl) : null;
+    }
+    if (req.body.settings !== undefined) {
+      data.settings = req.body.settings;
+    }
+    const updated = await prisma.user.update({
+      where: { id: u.id },
+      data,
+    });
+    res.json({ user: pubUser(updated) });
+  }),
+);
+
+authRouter.post(
+  '/avatar',
+  avatarUpload.single('file'),
+  asyncHandler(async (req, res) => {
+    const u = getUser(req);
+    if (!req.file) throw badRequest('No avatar image uploaded');
+    const avatarUrl = `/api/uploads/${encodeURIComponent(req.file.filename)}`;
+    const updated = await prisma.user.update({
+      where: { id: u.id },
+      data: { avatarUrl },
+    });
+    res.json({ avatarUrl, user: pubUser(updated) });
+  }),
+);
+
+authRouter.post(
+  '/change-password',
+  asyncHandler(async (req, res) => {
+    const u = getUser(req);
+    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+    if (!currentPassword || !newPassword) throw badRequest('currentPassword and newPassword are required');
+    if (newPassword.length < 8) throw badRequest('New password must be at least 8 characters');
+
+    const user = await prisma.user.findUnique({ where: { id: u.id } });
+    if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw unauthorized('Current password incorrect');
+    }
+
+    await prisma.user.update({
+      where: { id: u.id },
+      data: { passwordHash: await hashPassword(newPassword) },
+    });
+    res.json({ ok: true });
+  }),
+);
+
+function pubUser(u: { id: string; email: string; name: string; isAdmin: boolean; avatarUrl?: string | null; settings?: unknown }) {
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    isAdmin: u.isAdmin,
+    avatarUrl: u.avatarUrl ?? null,
+    settings: (u.settings as Record<string, unknown>) ?? null,
+  };
 }

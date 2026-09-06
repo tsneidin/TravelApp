@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip } from '../../lib/types';
 import { Modal } from '../../components/Modal';
+import { AuditBadge } from '../../components/AuditBadge';
 
 interface PackingEdit {
   id: string;
@@ -104,7 +105,12 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
                       style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
                     />
                     <div className="grow" style={{ fontWeight: 400, textDecoration: i.done ? 'line-through' : undefined, opacity: i.done ? 0.55 : 1 }}>
-                      {i.item}
+                      <div>{i.item}</div>
+                      {(i.createdBy || i.updatedBy) && (
+                        <div style={{ marginTop: 2 }}>
+                          <AuditBadge createdBy={i.createdBy} createdAt={i.createdAt} updatedBy={i.updatedBy} updatedAt={i.updatedAt} />
+                        </div>
+                      )}
                     </div>
                     <button className="btn sm ghost" title="Edit packing item" onClick={() => openEdit(i)}>
                       <Pencil size={13} />
@@ -139,10 +145,10 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
             />
           </label>
           <div className="modal-actions">
-            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
             <button type="button" className="btn primary" onClick={() => void saveEdit()} disabled={saving || !editing.item.trim()}>
               {saving ? 'Saving…' : 'Save'}
             </button>
+            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </Modal>
       )}

@@ -5,6 +5,7 @@ import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js
 import { syncBookingToItinerary } from '../services/bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from '../services/dayReconciliation.js';
 import { inferCategoryFromText } from '../services/ai.js';
+import { calculateTripSettlement, type MemberInfo } from '../services/expenseSplitting.js';
 import type { MemberRole } from '@prisma/client';
 
 const ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
@@ -16,12 +17,21 @@ async function loadTrip(tripId: string) {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
-      owner: true,
-      members: { include: { user: { select: { id: true, email: true, name: true } } } },
+      owner: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      members: {
+        include: {
+          user: { select: { id: true, email: true, name: true, avatarUrl: true } },
+        },
+      },
       days: { orderBy: { date: 'asc' }, include: { places: { orderBy: { sortOrder: 'asc' } } } },
       places: true,
       bookings: true,
-      expenses: true,
+      expenses: {
+        orderBy: { date: 'asc' },
+        include: {
+          paidBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        },
+      },
       packing: { orderBy: { sortOrder: 'asc' } },
       journal: { orderBy: { date: 'asc' } },
       photos: true,
@@ -31,10 +41,73 @@ async function loadTrip(tripId: string) {
     },
   });
   if (!trip) throw notFound('Trip not found');
+
+  // Collect all unique user IDs for audit lookup
+  const userIds = new Set<string>();
+  if (trip.ownerId) userIds.add(trip.ownerId);
+  trip.members.forEach((m) => userIds.add(m.userId));
+  trip.places.forEach((p) => {
+    if (p.createdById) userIds.add(p.createdById);
+    if (p.updatedById) userIds.add(p.updatedById);
+  });
+  trip.bookings.forEach((b) => {
+    if (b.createdById) userIds.add(b.createdById);
+    if (b.updatedById) userIds.add(b.updatedById);
+  });
+  trip.expenses.forEach((e) => {
+    if (e.createdById) userIds.add(e.createdById);
+    if (e.updatedById) userIds.add(e.updatedById);
+    if (e.paidById) userIds.add(e.paidById);
+  });
+  trip.todos.forEach((t) => {
+    if (t.createdById) userIds.add(t.createdById);
+    if (t.updatedById) userIds.add(t.updatedById);
+  });
+  trip.journal.forEach((j) => {
+    if (j.createdById) userIds.add(j.createdById);
+    if (j.userId) userIds.add(j.userId);
+  });
+  trip.photos.forEach((p) => {
+    if (p.createdById) userIds.add(p.createdById);
+    if (p.userId) userIds.add(p.userId);
+  });
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: Array.from(userIds) } },
+    select: { id: true, name: true, email: true, avatarUrl: true },
+  });
+  const userMap = new Map<string, { id: string; name: string; email: string; avatarUrl: string | null }>();
+  users.forEach((u) => userMap.set(u.id, u));
+
+  const attachAudit = <T extends { createdById?: string | null; updatedById?: string | null; userId?: string | null }>(
+    item: T,
+  ) => {
+    const creatorId = item.createdById || item.userId;
+    const updaterId = item.updatedById;
+    return {
+      ...item,
+      createdBy: creatorId ? userMap.get(creatorId) ?? null : null,
+      updatedBy: updaterId ? userMap.get(updaterId) ?? null : null,
+    };
+  };
+
   return {
     ...trip,
+    places: trip.places.map(attachAudit),
+    days: trip.days.map((d) => ({
+      ...attachAudit(d),
+      places: d.places.map(attachAudit),
+    })),
+    bookings: trip.bookings.map(attachAudit),
+    expenses: trip.expenses.map((e) => ({
+      ...attachAudit(e),
+      paidBy: e.paidById ? userMap.get(e.paidById) ?? e.paidBy : e.paidBy,
+    })),
+    todos: trip.todos.map(attachAudit),
+    packing: trip.packing.map(attachAudit),
+    journal: trip.journal.map(attachAudit),
     photos: trip.photos.map((photo) => ({
-      ...photo,
+      ...attachAudit(photo),
       url: `/api/uploads/${encodeURIComponent(photo.filename)}`,
     })),
   };
@@ -65,7 +138,8 @@ tripsRouter.get(
     const trips = await prisma.trip.findMany({
       where,
       include: {
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        members: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } },
         days: { orderBy: { date: 'asc' }, include: { places: { orderBy: { sortOrder: 'asc' } } } },
         mapViews: { orderBy: { createdAt: 'asc' } },
         _count: { select: { places: true, expenses: true } },
@@ -210,6 +284,9 @@ tripsRouter.post(
       where: { tripId_userId: { tripId, userId: target.id } },
       update: { role },
       create: { tripId, userId: target.id, role },
+      include: {
+        user: { select: { id: true, email: true, name: true, avatarUrl: true } },
+      },
     });
     res.status(201).json({ member });
   }),
@@ -225,6 +302,9 @@ tripsRouter.patch(
       where: { tripId_userId: { tripId, userId } },
       update: { role },
       create: { tripId, userId, role },
+      include: {
+        user: { select: { id: true, email: true, name: true, avatarUrl: true } },
+      },
     });
     res.json({ member });
   }),
@@ -234,9 +314,52 @@ tripsRouter.delete(
   '/:tripId/members/:userId',
   asyncHandler(async (req, res) => {
     const { tripId, userId } = req.params;
-    await requireTripAccess(req, tripId, 'owner');
+    const user = getUser(req);
+    const trip = await prisma.trip.findUnique({ where: { id: tripId } });
+    if (!trip) throw notFound('Trip not found');
+    const isTripOwner = trip.ownerId === user.id;
+    const isSelfLeaving = userId === user.id;
+    if (!isTripOwner && !user.isAdmin && !isSelfLeaving) {
+      throw forbidden('Only the trip owner can remove members, or a member can remove themselves');
+    }
     await prisma.tripMember.deleteMany({ where: { tripId, userId } });
     res.status(204).send();
+  }),
+);
+
+// ---------- settlement & cost splitting ----------
+tripsRouter.get(
+  '/:tripId/expenses/settlement',
+  asyncHandler(async (req, res) => {
+    const { tripId } = req.params;
+    await requireTripAccess(req, tripId, 'viewer');
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      include: {
+        owner: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        members: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } },
+        expenses: true,
+      },
+    });
+    if (!trip) throw notFound('Trip not found');
+
+    const memberList: MemberInfo[] = [
+      {
+        id: trip.owner.id,
+        name: trip.owner.name,
+        email: trip.owner.email,
+        avatarUrl: trip.owner.avatarUrl,
+      },
+      ...trip.members.map((m) => ({
+        id: m.user.id,
+        name: m.user.name,
+        email: m.user.email,
+        avatarUrl: m.user.avatarUrl,
+      })),
+    ];
+
+    const settlement = calculateTripSettlement(trip.expenses, memberList, trip.currency);
+    res.json(settlement);
   }),
 );
 
@@ -259,13 +382,22 @@ tripsRouter.post(
   '/:tripId/days',
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['date']);
     const date = new Date(req.body.date);
     const rawLabel = typeof req.body.label === 'string' ? req.body.label.trim() : undefined;
     const label = rawLabel && !isGenericDayLabel(rawLabel) ? rawLabel : undefined;
     const sortOrder = req.body.sortOrder ?? (await prisma.day.count({ where: { tripId } }));
-    const day = await prisma.day.create({ data: { tripId, date, label, sortOrder } });
+    const day = await prisma.day.create({
+      data: {
+        tripId,
+        date,
+        label,
+        sortOrder,
+        createdById: user.id,
+      },
+    });
     await reconcileTripDays(tripId);
     res.status(201).json({ day });
   }),
@@ -275,8 +407,11 @@ tripsRouter.patch(
   '/:tripId/days/:dayId',
   asyncHandler(async (req, res) => {
     const { tripId, dayId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
-    const data: Record<string, unknown> = {};
+    const data: Record<string, unknown> = {
+      updatedById: user.id,
+    };
     if (req.body.label !== undefined) data.label = req.body.label;
     if (req.body.notes !== undefined) data.notes = req.body.notes;
     if (req.body.date !== undefined) data.date = new Date(req.body.date);
@@ -310,6 +445,7 @@ tripsRouter.post(
   '/:tripId/places',
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['name']);
     const count = await prisma.place.count({ where: { tripId } });
@@ -319,6 +455,7 @@ tripsRouter.post(
     const place = await prisma.place.create({
       data: {
         tripId,
+        createdById: user.id,
         name: req.body.name,
         category,
         address: req.body.address,
@@ -342,9 +479,12 @@ tripsRouter.patch(
   '/:tripId/places/:placeId',
   asyncHandler(async (req, res) => {
     const { tripId, placeId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     const allowed = ['name', 'category', 'address', 'lat', 'lng', 'website', 'description', 'notes', 'dayId', 'sortOrder', 'includeInCalendar'];
-    const data: Record<string, unknown> = {};
+    const data: Record<string, unknown> = {
+      updatedById: user.id,
+    };
     for (const k of allowed) if (req.body[k] !== undefined) data[k] = req.body[k];
     if (req.body.startTime !== undefined) data.startTime = req.body.startTime ? new Date(req.body.startTime) : null;
     if (req.body.endTime !== undefined) data.endTime = req.body.endTime ? new Date(req.body.endTime) : null;
@@ -477,6 +617,7 @@ tripsRouter.post(
   '/:tripId/todos',
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['title']);
     const title = String(req.body.title).trim();
@@ -491,6 +632,7 @@ tripsRouter.post(
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
         category: req.body.category ? String(req.body.category).trim() : 'Pre-Trip',
         sortOrder: count,
+        createdById: user.id,
       },
     });
     res.status(201).json({ todo });
@@ -501,8 +643,11 @@ tripsRouter.patch(
   '/:tripId/todos/:todoId',
   asyncHandler(async (req, res) => {
     const { tripId, todoId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
-    const data: Record<string, unknown> = {};
+    const data: Record<string, unknown> = {
+      updatedById: user.id,
+    };
     if (typeof req.body.title === 'string') data.title = req.body.title.trim();
     if (typeof req.body.notes === 'string') data.notes = req.body.notes.trim();
     if (req.body.notes === null) data.notes = null;

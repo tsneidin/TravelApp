@@ -4,6 +4,7 @@ import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
 import type { Trip, Booking, BookingType } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
+import { AuditBadge } from '../../components/AuditBadge';
 
 const TYPES: { value: BookingType; label: string; hint: string }[] = [
   { value: 'flight', label: 'Flight', hint: 'Airline, flight number, times' },
@@ -117,7 +118,14 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
               {bookings.map((b) => (
                 <tr key={b.id}>
                   <td><span className="badge">{typeLabel(b.type)}</span></td>
-                  <td style={{ textAlign: 'left' }}>{b.title}</td>
+                  <td style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 600 }}>{b.title}</div>
+                    {(b.createdBy || b.updatedBy) && (
+                      <div style={{ marginTop: 4 }}>
+                        <AuditBadge createdBy={b.createdBy} createdAt={b.createdAt} updatedBy={b.updatedBy} updatedAt={b.updatedAt} />
+                      </div>
+                    )}
+                  </td>
                   <td>{b.provider || '—'}</td>
                   <td>{b.reference || '—'}</td>
                   <td>{b.startAt ? new Date(b.startAt).toLocaleDateString() : '—'}</td>
@@ -175,8 +183,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
             </div>
           </div>
           <div className="modal-actions">
-            <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={save} disabled={busy || !form.title}>Save</button>
+            <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}
@@ -204,8 +212,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
             </div>
           </div>
           <div className="modal-actions">
-            <button className="btn" onClick={() => setNoteBooking(null)}>Cancel</button>
             <button className="btn primary" onClick={() => void saveNotes()} disabled={busy}>Save notes</button>
+            <button className="btn" onClick={() => setNoteBooking(null)}>Cancel</button>
           </div>
         </Modal>
       )}

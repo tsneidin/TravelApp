@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Plane, CalendarDays, Inbox, LogOut, User, Plus,
+  Plane, CalendarDays, Inbox, LogOut, Plus,
   ChevronRight, ChevronDown, Route, Bookmark,
   X, PanelLeftClose, PanelLeft, Menu, Sparkles,
 } from 'lucide-react';
@@ -10,6 +10,8 @@ import { APP_VERSION } from '../lib/version';
 import { apiDelete, apiGet } from '../lib/api';
 import { AIChat } from './AIChat';
 import { MobileBottomNav } from './MobileBottomNav';
+import { Avatar } from './Avatar';
+import { UserSettingsModal } from './UserSettingsModal';
 import type { Trip } from '../lib/types';
 
 const TRIP_TABS: { key: string; label: string }[] = [
@@ -205,6 +207,8 @@ export function Layout() {
       return {};
     }
   });
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const toggleItineraryCollapse = (tripId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -624,11 +628,31 @@ export function Layout() {
         <div className="side-version" title={`Build ${APP_VERSION}`}>v{APP_VERSION}</div>
 
         <div className="side-user">
-          <div className="side-avatar">{user?.name?.charAt(0)?.toUpperCase() ?? <User size={16} />}</div>
-          <div className="side-user-info">
-            <div className="side-user-name">{user?.name}</div>
-            <div className="side-user-role">{user?.isAdmin ? 'Admin' : 'Member'}</div>
-          </div>
+          <button
+            type="button"
+            className="side-user-profile-btn"
+            onClick={() => setSettingsOpen(true)}
+            title="Account & Member Settings"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              textAlign: 'left',
+              cursor: 'pointer',
+              flex: 1,
+              minWidth: 0,
+              color: 'inherit',
+            }}
+          >
+            <Avatar user={user} size="lg" />
+            <div className="side-user-info" style={{ minWidth: 0, overflow: 'hidden' }}>
+              <div className="side-user-name" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.name}</div>
+              <div className="side-user-role">{user?.isAdmin ? 'Admin' : 'Member'} • Settings</div>
+            </div>
+          </button>
           <button
             type="button"
             className="side-logout-btn"
@@ -651,6 +675,9 @@ export function Layout() {
 
       {/* ---------- Right-side AI assistant ---------- */}
       <AIChat tripId={activeTripId ?? null} />
+
+      {/* ---------- User Settings Modal ---------- */}
+      {settingsOpen && <UserSettingsModal onClose={() => setSettingsOpen(false)} />}
 
       {/* ---------- Mobile Bottom Navigation Bar (<= 820px) ---------- */}
       {activeTripId && (

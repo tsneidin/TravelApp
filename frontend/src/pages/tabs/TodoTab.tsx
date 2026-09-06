@@ -18,6 +18,7 @@ import {
 import { apiDelete, apiPatch, apiPost } from '../../lib/api';
 import type { TodoItem, Trip } from '../../lib/types';
 import { Modal } from '../../components/Modal';
+import { AuditBadge } from '../../components/AuditBadge';
 
 interface TodoEdit {
   id: string;
@@ -834,6 +835,12 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
                               {item.notes}
                             </div>
                           )}
+
+                          {(item.createdBy || item.updatedBy) && (
+                            <div style={{ marginTop: 4 }}>
+                              <AuditBadge createdBy={item.createdBy} createdAt={item.createdAt} updatedBy={item.updatedBy} updatedAt={item.updatedAt} />
+                            </div>
+                          )}
                         </div>
 
                         <div className="row" style={{ gap: 4, flexShrink: 0, marginLeft: 8 }}>
@@ -969,9 +976,6 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
           </div>
 
           <div className="modal-actions">
-            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
-              Cancel
-            </button>
             <button
               type="button"
               className="btn primary"
@@ -979,6 +983,9 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
               disabled={saving || !editing.title.trim()}
             >
               {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
+              Cancel
             </button>
           </div>
         </Modal>

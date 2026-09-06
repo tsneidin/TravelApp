@@ -42,6 +42,7 @@ contentRouter.get(
       caption: p.caption,
       filename: p.filename,
       placeId: p.placeId,
+      createdById: p.createdById || p.userId,
       createdAt: p.createdAt,
       url: `/api/uploads/${encodeURIComponent(p.filename)}`,
     })) });
@@ -65,6 +66,7 @@ contentRouter.post(
           data: {
             tripId,
             userId: user.id,
+            createdById: user.id,
             placeId,
             filename: f.filename,
             caption,
@@ -80,6 +82,7 @@ contentRouter.post(
         caption: p.caption,
         filename: p.filename,
         placeId: p.placeId,
+        createdById: p.createdById || p.userId,
         createdAt: p.createdAt,
         url: `/api/uploads/${encodeURIComponent(p.filename)}`,
       })),
@@ -135,7 +138,14 @@ contentRouter.post(
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['title', 'body']);
     const entry = await prisma.journalEntry.create({
-      data: { tripId, userId: user.id, title: req.body.title, body: req.body.body, date: req.body.date ? new Date(req.body.date) : null },
+      data: {
+        tripId,
+        userId: user.id,
+        createdById: user.id,
+        title: req.body.title,
+        body: req.body.body,
+        date: req.body.date ? new Date(req.body.date) : null,
+      },
     });
     res.status(201).json({ entry });
   }),
@@ -145,6 +155,7 @@ contentRouter.patch(
   '/:tripId/journal/:entryId',
   asyncHandler(async (req, res) => {
     const { tripId, entryId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     const entry = await prisma.journalEntry.update({
       where: { id: entryId },
@@ -152,6 +163,7 @@ contentRouter.patch(
         title: req.body.title,
         body: req.body.body,
         date: req.body.date !== undefined ? (req.body.date ? new Date(req.body.date) : null) : undefined,
+        updatedById: user.id,
       },
     });
     res.json({ entry });
@@ -183,11 +195,18 @@ contentRouter.post(
   '/:tripId/packing',
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['item']);
     const count = await prisma.packingItem.count({ where: { tripId } });
     const item = await prisma.packingItem.create({
-      data: { tripId, item: req.body.item, category: req.body.category, sortOrder: count },
+      data: {
+        tripId,
+        item: req.body.item,
+        category: req.body.category,
+        sortOrder: count,
+        createdById: user.id,
+      },
     });
     res.status(201).json({ item });
   }),
@@ -197,6 +216,7 @@ contentRouter.patch(
   '/:tripId/packing/:itemId',
   asyncHandler(async (req, res) => {
     const { tripId, itemId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     const item = await prisma.packingItem.update({
       where: { id: itemId },
@@ -205,6 +225,7 @@ contentRouter.patch(
         category: req.body.category,
         done: req.body.done,
         sortOrder: req.body.sortOrder,
+        updatedById: user.id,
       },
     });
     res.json({ item });
@@ -227,7 +248,13 @@ contentRouter.get(
   asyncHandler(async (req, res) => {
     const { tripId } = req.params;
     await requireTripAccess(req, tripId, 'viewer');
-    const expenses = await prisma.expense.findMany({ where: { tripId }, orderBy: { date: 'asc' } });
+    const expenses = await prisma.expense.findMany({
+      where: { tripId },
+      orderBy: { date: 'asc' },
+      include: {
+        paidBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
+    });
     res.json({ expenses });
   }),
 );
@@ -243,13 +270,20 @@ contentRouter.post(
       data: {
         tripId,
         userId: user.id,
+        createdById: user.id,
+        paidById: req.body.paidById || user.id,
         description: req.body.description,
         notes: req.body.notes,
         amount: Number(req.body.amount),
         currency: req.body.currency || 'USD',
         category: req.body.category || 'other',
+        splitType: req.body.splitType || 'equal',
+        splits: req.body.splits || undefined,
         date: req.body.date ? new Date(req.body.date) : null,
         placeId: req.body.placeId || null,
+      },
+      include: {
+        paidBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
       },
     });
     res.status(201).json({ expense });
@@ -260,16 +294,26 @@ contentRouter.patch(
   '/:tripId/expenses/:expenseId',
   asyncHandler(async (req, res) => {
     const { tripId, expenseId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
+    const data: Record<string, unknown> = {
+      updatedById: user.id,
+    };
+    if (req.body.description !== undefined) data.description = req.body.description;
+    if (req.body.notes !== undefined) data.notes = req.body.notes;
+    if (req.body.amount !== undefined) data.amount = Number(req.body.amount);
+    if (req.body.currency !== undefined) data.currency = req.body.currency;
+    if (req.body.category !== undefined) data.category = req.body.category;
+    if (req.body.paidById !== undefined) data.paidById = req.body.paidById || null;
+    if (req.body.splitType !== undefined) data.splitType = req.body.splitType;
+    if (req.body.splits !== undefined) data.splits = req.body.splits;
+    if (req.body.date !== undefined) data.date = req.body.date ? new Date(req.body.date) : null;
+
     const expense = await prisma.expense.update({
       where: { id: expenseId },
-      data: {
-        description: req.body.description,
-        notes: req.body.notes,
-        amount: req.body.amount !== undefined ? Number(req.body.amount) : undefined,
-        currency: req.body.currency,
-        category: req.body.category,
-        date: req.body.date !== undefined ? (req.body.date ? new Date(req.body.date) : null) : undefined,
+      data,
+      include: {
+        paidBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
       },
     });
     res.json({ expense });
@@ -308,6 +352,7 @@ contentRouter.post(
       data: {
         tripId,
         userId: user.id,
+        createdById: user.id,
         type: req.body.type,
         title: req.body.title,
         provider: req.body.provider,
@@ -325,6 +370,7 @@ contentRouter.patch(
   '/:tripId/bookings/:bookingId',
   asyncHandler(async (req, res) => {
     const { tripId, bookingId } = req.params;
+    const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     const booking = await prisma.booking.update({
       where: { id: bookingId },
@@ -336,6 +382,7 @@ contentRouter.patch(
         startAt: req.body.startAt !== undefined ? (req.body.startAt ? new Date(req.body.startAt) : null) : undefined,
         endAt: req.body.endAt !== undefined ? (req.body.endAt ? new Date(req.body.endAt) : null) : undefined,
         details: req.body.details,
+        updatedById: user.id,
       },
     });
     res.json({ booking });

@@ -727,6 +727,7 @@ tbody tr.total-row td {
 .side-brand {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 6px 10px 18px;
   font-weight: 800;
@@ -736,6 +737,24 @@ tbody tr.total-row td {
 }
 .side-brand span {
   color: var(--text);
+}
+.side-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.side-pin-btn:hover {
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.1);
+  border-color: rgba(34, 211, 238, 0.25);
 }
 .side-links {
   display: flex;
@@ -907,6 +926,236 @@ tbody tr.total-row td {
   padding: 6px 10px;
   line-height: 1.4;
 }
+
+/* Map Submenu & Saved Views in Sidebar */
+.side-map-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.side-map-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 0 6px 12px;
+}
+
+.side-map-subitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.side-map-subitem:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.side-map-subitem.active-layer,
+.side-map-subitem.active-router {
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.22);
+}
+
+.side-map-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.side-map-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-map-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.side-map-pill.pill-on {
+  background: rgba(34, 211, 238, 0.2);
+  color: var(--accent);
+}
+
+.side-map-views-section {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side-map-section-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 4px 6px 2px;
+  opacity: 0.8;
+}
+
+.side-map-view-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+
+.side-map-view-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.side-map-view-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.76rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-map-view-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-map-del-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: all 0.12s;
+}
+
+.side-map-del-btn:hover {
+  color: var(--danger, #ef4444);
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.side-map-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  margin-top: 4px;
+  border-radius: 6px;
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px dashed rgba(34, 211, 238, 0.28);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.side-map-action-btn:hover {
+  background: rgba(34, 211, 238, 0.14);
+  border-color: var(--accent);
+}
+
+/* Auto-Hide Side Menu Styles */
+.side-nav-autohide {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100vh !important;
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease;
+}
+
+.side-nav-autohide.side-nav-peeking {
+  transform: translateX(0);
+  box-shadow: 4px 0 32px rgba(0, 0, 0, 0.65);
+}
+
+.sidebar-hover-zone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  z-index: 90;
+}
+
+.sidebar-floating-toggle {
+  position: fixed;
+  left: 12px;
+  top: 14px;
+  z-index: 80;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+}
+
+.sidebar-floating-toggle:hover {
+  background: var(--panel);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: scale(1.05);
+}
+
+.side-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 95;
+  animation: fadeIn 0.15s ease-out;
+}
+
 .side-spacer {
   flex: 1;
 }
@@ -2640,4 +2889,29 @@ a.link:hover {
   padding: 3px 8px;
   border-radius: 6px;
   margin-bottom: 8px;
+}
+
+/* Map Save View Modal / Overlay */
+.map-save-view-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease;
+}
+
+.map-save-view-modal {
+  width: 100%;
+  max-width: 360px;
+  background: var(--panel, #0f172a);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.15));
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
 }

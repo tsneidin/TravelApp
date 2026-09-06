@@ -67,6 +67,7 @@ tripsRouter.get(
       include: {
         owner: { select: { id: true, name: true, email: true } },
         days: { orderBy: { date: 'asc' }, include: { places: { orderBy: { sortOrder: 'asc' } } } },
+        mapViews: { orderBy: { createdAt: 'asc' } },
         _count: { select: { places: true, expenses: true } },
       },
       orderBy: { updatedAt: 'desc' },

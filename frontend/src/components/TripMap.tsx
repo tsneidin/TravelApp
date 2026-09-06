@@ -6,19 +6,16 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Compass,
   Copy,
   Crosshair,
   Footprints,
-  Layers,
   Navigation,
   Plus,
-  Route,
   Train,
   X,
 } from 'lucide-react';
 import type { Day, GeocodedPlace, MapView, Place } from '../lib/types';
-import { apiDelete, apiPost } from '../lib/api';
+import { apiPost } from '../lib/api';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
 type Coord = { lat: number; lng: number };
@@ -712,17 +709,6 @@ export function TripMap({
     }
   };
 
-  const handleDeleteView = async (viewId: string) => {
-    if (!tripId) return;
-    setLocalViews((prev) => prev.filter((v) => v.id !== viewId));
-    try {
-      await apiDelete(`/trips/${tripId}/map-views/${viewId}`);
-      void onMapViewsChange?.();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete map view');
-    }
-  };
-
   const calculateRoute = async (
     customOrigin?: string,
     customDest?: string,
@@ -882,119 +868,150 @@ export function TripMap({
     return [...(days || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder);
   }, [days]);
 
+  // Broadcast transit layer & router drawer state to sidebar
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('travelapp:transit_state', {
+        detail: {
+          tripId,
+          showTransitLayer,
+          showRouter,
+        },
+      }),
+    );
+  }, [tripId, showTransitLayer, showRouter]);
+
+  // Listen to actions dispatched from sidebar
+  useEffect(() => {
+    const onToggleTransit = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tripId && tripId && detail.tripId !== tripId) return;
+      toggleTransitLayer();
+    };
+
+    const onOpenRouter = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tripId && tripId && detail.tripId !== tripId) return;
+      setShowRouter((prev) => !prev);
+    };
+
+    const onJumpView = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.view) {
+        jumpToView(detail.view);
+      }
+    };
+
+    const onPromptSave = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tripId && tripId && detail.tripId !== tripId) return;
+      setIsSavingView(true);
+      if (originInput.trim() && destInput.trim()) {
+        const modeLabel = travelMode === 'TRANSIT' ? 'Transit' : travelMode === 'DRIVING' ? 'Drive' : 'Route';
+        setNewViewName(`${modeLabel}: ${originInput.split(',')[0].trim()} → ${destInput.split(',')[0].trim()}`);
+      } else {
+        setNewViewName(`View ${(localViews || []).length + 1}`);
+      }
+    };
+
+    const onFitAll = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tripId && tripId && detail.tripId !== tripId) return;
+      fitAllStops();
+    };
+
+    const onRequestTransitState = () => {
+      window.dispatchEvent(
+        new CustomEvent('travelapp:transit_state', {
+          detail: {
+            tripId,
+            showTransitLayer,
+            showRouter,
+          },
+        }),
+      );
+    };
+
+    window.addEventListener('travelapp:toggle_transit_layer', onToggleTransit);
+    window.addEventListener('travelapp:open_transit_router', onOpenRouter);
+    window.addEventListener('travelapp:jump_map_view', onJumpView);
+    window.addEventListener('travelapp:save_map_view_prompt', onPromptSave);
+    window.addEventListener('travelapp:fit_all_stops', onFitAll);
+    window.addEventListener('travelapp:request_transit_state', onRequestTransitState);
+
+    return () => {
+      window.removeEventListener('travelapp:toggle_transit_layer', onToggleTransit);
+      window.removeEventListener('travelapp:open_transit_router', onOpenRouter);
+      window.removeEventListener('travelapp:jump_map_view', onJumpView);
+      window.removeEventListener('travelapp:save_map_view_prompt', onPromptSave);
+      window.removeEventListener('travelapp:fit_all_stops', onFitAll);
+      window.removeEventListener('travelapp:request_transit_state', onRequestTransitState);
+    };
+  }, [tripId, showTransitLayer, showRouter, originInput, destInput, travelMode, localViews]);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: typeof height === 'number' ? `${height}px` : height }}>
-      <div className="map-views-bar">
-        <button
-          type="button"
-          className="map-view-chip map-view-chip-standalone"
-          onClick={fitAllStops}
-          title="Fit all itinerary stops on screen"
+      {/* Floating Save View Dialog (triggered from sidebar or context menu) */}
+      {isSavingView && (
+        <div
+          className="map-save-view-overlay"
+          onClick={() => setIsSavingView(false)}
         >
-          <Compass size={13} /> Fit All
-        </button>
-
-        <button
-          type="button"
-          className={`map-view-chip map-view-chip-standalone ${showTransitLayer ? 'active-layer-btn' : ''}`}
-          onClick={toggleTransitLayer}
-          title="Toggle Google Maps Transit Layer (trains, subways, transit lines)"
-        >
-          <Layers size={13} /> {showTransitLayer ? '🚊 Transit ON' : '🚊 Transit'}
-        </button>
-
-        <button
-          type="button"
-          className={`map-view-chip map-view-chip-standalone ${showRouter ? 'active-layer-btn' : ''}`}
-          onClick={() => setShowRouter(!showRouter)}
-          title="Open Transit & Directions Route Planner"
-        >
-          <Route size={13} /> Directions & Transit
-        </button>
-
-        {localViews.map((view) => (
-          <div key={view.id} className="map-view-chip-group">
-            <button
-              type="button"
-              className="map-view-chip"
-              onClick={() => jumpToView(view)}
-              title={view.origin && view.destination ? `Directions: ${view.origin} → ${view.destination} (${view.travelMode || 'TRANSIT'})` : `Jump to ${view.name} (zoom ${view.zoom})`}
-            >
-              {view.origin && view.destination ? (
-                <Route size={12} style={{ color: '#0891b2' }} />
-              ) : (
-                <Bookmark size={12} style={{ opacity: 0.85 }} />
-              )}
-              <span>{view.name}</span>
-            </button>
-            {tripId && (
+          <div
+            className="map-save-view-modal panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="row between mb">
+              <div className="row" style={{ gap: 6 }}>
+                <Bookmark size={16} style={{ color: 'var(--accent)' }} />
+                <strong style={{ fontSize: '0.92rem' }}>Save Current Map View</strong>
+              </div>
               <button
                 type="button"
-                className="map-view-chip-del"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleDeleteView(view.id);
-                }}
-                title="Delete saved view"
+                className="btn sm ghost icon-only"
+                onClick={() => setIsSavingView(false)}
               >
-                <X size={11} />
+                <X size={14} />
               </button>
-            )}
-          </div>
-        ))}
-
-        {tripId && (
-          isSavingView ? (
+            </div>
+            <p className="small muted mb" style={{ lineHeight: 1.4 }}>
+              Save current camera coordinates, zoom level{originInput && destInput ? ' and active route' : ''} to the left menu.
+            </p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSaveCurrentView();
               }}
-              className="map-view-save-form"
             >
               <input
                 autoFocus
                 type="text"
-                className="map-view-input"
+                className="input mb"
                 value={newViewName}
                 onChange={(e) => setNewViewName(e.target.value)}
-                placeholder="View name..."
+                placeholder="e.g. Downtown Walking Loop"
+                style={{ width: '100%' }}
               />
-              <button
-                type="submit"
-                className="map-view-chip map-view-save-confirm"
-                disabled={savingPending || !newViewName.trim()}
-              >
-                {savingPending ? '…' : 'Save'}
-              </button>
-              <button
-                type="button"
-                className="map-view-chip map-view-cancel"
-                onClick={() => setIsSavingView(false)}
-              >
-                <X size={11} />
-              </button>
+              <div className="row end" style={{ gap: 6, marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setIsSavingView(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn primary sm"
+                  disabled={savingPending || !newViewName.trim()}
+                >
+                  {savingPending ? 'Saving…' : 'Save View'}
+                </button>
+              </div>
             </form>
-          ) : (
-            <button
-              type="button"
-              className="map-view-chip map-view-save-btn"
-              onClick={() => {
-                setIsSavingView(true);
-                if (originInput.trim() && destInput.trim()) {
-                  const modeLabel = travelMode === 'TRANSIT' ? 'Transit' : travelMode === 'DRIVING' ? 'Drive' : 'Route';
-                  setNewViewName(`${modeLabel}: ${originInput.split(',')[0].trim()} → ${destInput.split(',')[0].trim()}`);
-                } else {
-                  setNewViewName(`View ${localViews.length + 1}`);
-                }
-              }}
-              title="Save current camera position, zoom, and any active directions"
-            >
-              <Plus size={12} /> {originInput.trim() && destInput.trim() ? 'Save Route View' : 'Save View'}
-            </button>
-          )
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Interactive Transit & Directions Route Planner Drawer */}
       {showRouter && (

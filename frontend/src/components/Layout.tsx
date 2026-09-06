@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Plane, CalendarDays, Inbox, LogOut, User, Plus,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, Route, Bookmark,
+  X, PanelLeftClose, PanelLeft, Menu, Train,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { APP_VERSION } from '../lib/version';
-import { apiGet } from '../lib/api';
+import { apiDelete, apiGet } from '../lib/api';
 import { AIChat } from './AIChat';
 import type { Trip } from '../lib/types';
 
@@ -145,6 +146,27 @@ export function Layout() {
   const activeTab = new URLSearchParams(location.search).get('tab') ?? 'itinerary';
   const activeDayId = location.hash.startsWith('#day-') ? location.hash.slice(5) : null;
 
+  // Auto-hide sidebar mode state
+  const [autoHideSidebar, setAutoHideSidebar] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('travelapp_sidebar_autohide') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [sidebarPeeking, setSidebarPeeking] = useState(false);
+
+  const toggleAutoHide = () => {
+    setAutoHideSidebar((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('travelapp_sidebar_autohide', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Collapse states for itinerary and map sub-menus
   const [collapsedItineraries, setCollapsedItineraries] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('travelapp_collapsed_itin');
@@ -152,6 +174,21 @@ export function Layout() {
     } catch {
       return {};
     }
+  });
+
+  const [collapsedMaps, setCollapsedMaps] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('travelapp_collapsed_maps');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Transit & router live status from TripMap
+  const [mapTransitState, setMapTransitState] = useState<{ showTransitLayer: boolean; showRouter: boolean }>({
+    showTransitLayer: false,
+    showRouter: false,
   });
 
   const toggleItineraryCollapse = (tripId: string, e: React.MouseEvent) => {
@@ -164,6 +201,96 @@ export function Layout() {
       } catch {}
       return next;
     });
+  };
+
+  const toggleMapCollapse = (tripId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCollapsedMaps((prev) => {
+      const next = { ...prev, [tripId]: !prev[tripId] };
+      try {
+        localStorage.setItem('travelapp_collapsed_maps', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Sync transit state from active map
+  useEffect(() => {
+    const onTransitState = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setMapTransitState({
+          showTransitLayer: Boolean(detail.showTransitLayer),
+          showRouter: Boolean(detail.showRouter),
+        });
+      }
+    };
+    window.addEventListener('travelapp:transit_state', onTransitState);
+    return () => window.removeEventListener('travelapp:transit_state', onTransitState);
+  }, []);
+
+  // Actions for map sub-items
+  const toggleTransitLayerFromSidebar = (tripId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeTab !== 'map' && activeTab !== 'itinerary') {
+      navigate(`/trips/${tripId}?tab=map`);
+    }
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('travelapp:toggle_transit_layer', { detail: { tripId } }));
+    }, 50);
+  };
+
+  const toggleRouterFromSidebar = (tripId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeTab !== 'map' && activeTab !== 'itinerary') {
+      navigate(`/trips/${tripId}?tab=map`);
+    }
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('travelapp:open_transit_router', { detail: { tripId } }));
+    }, 50);
+  };
+
+  const jumpToMapView = (tripId: string, view: any, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeTab !== 'map' && activeTab !== 'itinerary') {
+      navigate(`/trips/${tripId}?tab=map`);
+    }
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('travelapp:jump_map_view', { detail: { tripId, view } }));
+    }, 50);
+  };
+
+  const deleteMapView = async (tripId: string, viewId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await apiDelete(`/trips/${tripId}/map-views/${viewId}`);
+      setTrips((prev) =>
+        prev.map((t) =>
+          t.id === tripId
+            ? { ...t, mapViews: (t.mapViews ?? []).filter((v) => v.id !== viewId) }
+            : t,
+        ),
+      );
+      window.dispatchEvent(new CustomEvent('travelapp:mutated'));
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete saved view');
+    }
+  };
+
+  const promptSaveViewFromSidebar = (tripId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeTab !== 'map' && activeTab !== 'itinerary') {
+      navigate(`/trips/${tripId}?tab=map`);
+    }
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('travelapp:save_map_view_prompt', { detail: { tripId } }));
+    }, 50);
   };
 
   // Refresh the trip folder list whenever the route changes or data mutates so the tree stays current.
@@ -193,12 +320,53 @@ export function Layout() {
   }, [location.key]);
 
   return (
-    <div className="app-frame">
+    <div className={`app-frame ${autoHideSidebar ? 'app-frame-autohide' : ''}`}>
+      {/* Edge hover zone & floating toggle for auto-hidden sidebar */}
+      {autoHideSidebar && (
+        <>
+          <div
+            className="sidebar-hover-zone"
+            onMouseEnter={() => setSidebarPeeking(true)}
+          />
+          {!sidebarPeeking && (
+            <button
+              type="button"
+              className="sidebar-floating-toggle"
+              onClick={() => setSidebarPeeking(true)}
+              title="Show sidebar menu"
+            >
+              <Menu size={16} />
+            </button>
+          )}
+          {sidebarPeeking && (
+            <div
+              className="side-nav-backdrop"
+              onClick={() => setSidebarPeeking(false)}
+            />
+          )}
+        </>
+      )}
+
       {/* ---------- Left folder tree (Wanderlog-style) ---------- */}
-      <aside className="side-nav">
+      <aside
+        className={`side-nav ${autoHideSidebar ? 'side-nav-autohide' : ''} ${sidebarPeeking ? 'side-nav-peeking' : ''}`}
+        onMouseEnter={() => autoHideSidebar && setSidebarPeeking(true)}
+        onMouseLeave={() => autoHideSidebar && setSidebarPeeking(false)}
+      >
         <div className="side-brand">
-          <Plane size={22} />
-          <span>TravelApp</span>
+          <div className="row" style={{ gap: 8, flex: 1, minWidth: 0, alignItems: 'center' }}>
+            <Plane size={22} style={{ flexShrink: 0 }} />
+            <span>TravelApp</span>
+          </div>
+          <button
+            type="button"
+            className="side-pin-btn"
+            onClick={toggleAutoHide}
+            title={autoHideSidebar ? 'Pin sidebar open' : 'Auto-hide sidebar'}
+            aria-label={autoHideSidebar ? 'Pin sidebar open' : 'Auto-hide sidebar'}
+          >
+            {autoHideSidebar ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+          </button>
         </div>
 
         <div className="side-section-label">Browse</div>
@@ -294,6 +462,105 @@ export function Layout() {
                                 );
                               });
                             })()}
+                          </div>
+                        ) : tb.key === 'map' ? (
+                          /* Map Dropdown Sub-menu */
+                          <div className="side-tab-group side-map-group">
+                            <div className={`side-tab side-tab-parent ${activeTab === tb.key ? 'active' : ''}`}>
+                              <Link
+                                to={`/trips/${t.id}?tab=${tb.key}`}
+                                className="side-tab-link"
+                              >
+                                <span className="side-tab-dot" />
+                                {tb.label}
+                              </Link>
+                              <button
+                                type="button"
+                                className="side-tab-collapse-btn"
+                                onClick={(e) => toggleMapCollapse(t.id, e)}
+                                title={collapsedMaps[t.id] ? 'Expand map tools & saved views' : 'Collapse map tools'}
+                                aria-label={collapsedMaps[t.id] ? 'Expand map tools & saved views' : 'Collapse map tools'}
+                              >
+                                {collapsedMaps[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                              </button>
+                            </div>
+
+                            {!collapsedMaps[t.id] && (
+                              <div className="side-map-submenu">
+                                {/* Transit Layer Toggle */}
+                                <button
+                                  type="button"
+                                  className={`side-map-subitem ${mapTransitState.showTransitLayer ? 'active-layer' : ''}`}
+                                  onClick={(e) => toggleTransitLayerFromSidebar(t.id, e)}
+                                  title="Toggle Google Maps public transit layer"
+                                >
+                                  <Train size={13} className="side-map-icon" />
+                                  <span className="side-map-label">Transit Layer</span>
+                                  <span className={`side-map-pill ${mapTransitState.showTransitLayer ? 'pill-on' : ''}`}>
+                                    {mapTransitState.showTransitLayer ? 'ON' : 'OFF'}
+                                  </span>
+                                </button>
+
+                                {/* Directions & Transit Router */}
+                                <button
+                                  type="button"
+                                  className={`side-map-subitem ${mapTransitState.showRouter ? 'active-router' : ''}`}
+                                  onClick={(e) => toggleRouterFromSidebar(t.id, e)}
+                                  title="Open Directions and Transit Route Planner"
+                                >
+                                  <Route size={13} className="side-map-icon" />
+                                  <span className="side-map-label">Directions & Transit</span>
+                                  {mapTransitState.showRouter && (
+                                    <span className="side-map-pill pill-on">Open</span>
+                                  )}
+                                </button>
+
+                                {/* Saved Map Views Section */}
+                                {(t.mapViews ?? []).length > 0 && (
+                                  <div className="side-map-views-section">
+                                    <div className="side-map-section-label">
+                                      Saved Views ({(t.mapViews ?? []).length})
+                                    </div>
+                                    {(t.mapViews ?? []).map((view) => (
+                                      <div key={view.id} className="side-map-view-row">
+                                        <button
+                                          type="button"
+                                          className="side-map-view-btn"
+                                          onClick={(e) => jumpToMapView(t.id, view, e)}
+                                          title={view.origin && view.destination ? `Route: ${view.origin} → ${view.destination}` : `Zoom ${view.zoom}`}
+                                        >
+                                          {view.origin && view.destination ? (
+                                            <Route size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                                          ) : (
+                                            <Bookmark size={12} style={{ color: '#cbd5e1', flexShrink: 0 }} />
+                                          )}
+                                          <span className="side-map-view-name">{view.name}</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="side-map-del-btn"
+                                          onClick={(e) => void deleteMapView(t.id, view.id, e)}
+                                          title="Delete saved view"
+                                        >
+                                          <X size={11} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Save current view quick-action */}
+                                <button
+                                  type="button"
+                                  className="side-map-action-btn"
+                                  onClick={(e) => promptSaveViewFromSidebar(t.id, e)}
+                                  title="Save current camera position, zoom, and directions to this menu"
+                                >
+                                  <Plus size={12} />
+                                  <span>Save Current Map View</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <Link

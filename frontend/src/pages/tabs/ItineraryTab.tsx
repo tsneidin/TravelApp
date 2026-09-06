@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
-  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink
+  ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink,
+  ArrowUp, ArrowDown
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place, JournalEntry, Day } from '../../lib/types';
@@ -149,6 +150,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
   const [deletingPlace, setDeletingPlace] = useState<Place | null>(null);
   const [deletingDayId, setDeletingDayId] = useState<string | null>(null);
+  const [pendingReorder, setPendingReorder] = useState<{
+    sourcePlace: Place;
+    sourceDayId: string | null;
+    targetDayId: string;
+    targetIndex: number;
+    siblingPlaces: Place[];
+  } | null>(null);
 
   const toggleExpand = (placeId: string) => {
     setExpandedPlaceIds((prev) => {
@@ -557,6 +565,119 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
   };
 
+  const executeReorderSingle = async (
+    sourcePlace: Place,
+    sourceDayId: string | null,
+    targetDayId: string,
+    targetIndex: number,
+  ) => {
+    const targetIsUnassigned = !targetDayId || targetDayId === 'unassigned';
+    const targetPlaces = targetIsUnassigned
+      ? [...orphanPlaces].filter((p) => p.id !== sourcePlace.id)
+      : [...(days.find((d) => d.id === targetDayId)?.places ?? [])].filter((p) => p.id !== sourcePlace.id);
+    const clampedIndex = Math.max(0, Math.min(targetIndex, targetPlaces.length));
+
+    const updatedPlace = { ...sourcePlace, dayId: targetIsUnassigned ? null : targetDayId };
+    targetPlaces.splice(clampedIndex, 0, updatedPlace);
+
+    const entries: { placeId: string; dayId: string | null; sortOrder: number }[] = targetPlaces.map(
+      (p, i) => ({ placeId: p.id, dayId: targetIsUnassigned ? null : targetDayId, sortOrder: i }),
+    );
+
+    // If moved from a different day, also re-index remaining places in source day
+    if (sourceDayId && sourceDayId !== (targetIsUnassigned ? null : targetDayId)) {
+      const sourceDay = days.find((d) => d.id === sourceDayId);
+      const sourceRemaining = (sourceDay?.places ?? []).filter((p) => p.id !== sourcePlace.id);
+      sourceRemaining.forEach((p, i) => {
+        entries.push({ placeId: p.id, dayId: sourceDayId, sortOrder: i });
+      });
+    }
+
+    setPendingReorder(null);
+    setDragId(null);
+    await apiPost(`/trips/${trip.id}/reorder`, { entries });
+    await reload();
+  };
+
+  const executeReorderSeries = async (
+    sourcePlace: Place,
+    sourceDayId: string | null,
+    targetDayId: string,
+    targetIndex: number,
+    siblingPlaces: Place[],
+  ) => {
+    const isSameDay = sourceDayId === targetDayId;
+    const targetIsUnassigned = !targetDayId || targetDayId === 'unassigned';
+
+    const sortedDays = [...days].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder
+    );
+
+    const entries: { placeId: string; dayId: string | null; sortOrder: number }[] = [];
+
+    if (isSameDay || targetIsUnassigned) {
+      // 1. Same-day reordering: shift position within day for this place and its siblings
+      const sourcePlaces = [...(days.find((d) => d.id === sourceDayId)?.places ?? [])].filter(
+        (p) => p.id !== sourcePlace.id
+      );
+      const clampedIndex = Math.max(0, Math.min(targetIndex, sourcePlaces.length));
+      sourcePlaces.splice(clampedIndex, 0, { ...sourcePlace, dayId: sourceDayId });
+      sourcePlaces.forEach((p, i) => {
+        entries.push({ placeId: p.id, dayId: sourceDayId, sortOrder: i });
+      });
+
+      for (const sibling of siblingPlaces) {
+        if (sibling.id === sourcePlace.id || !sibling.dayId) continue;
+        const sibDay = days.find((d) => d.id === sibling.dayId);
+        if (!sibDay) continue;
+        const sibPlaces = [...(sibDay.places ?? [])].filter((p) => p.id !== sibling.id);
+        const sibClamped = Math.max(0, Math.min(clampedIndex, sibPlaces.length));
+        sibPlaces.splice(sibClamped, 0, { ...sibling, dayId: sibling.dayId });
+        sibPlaces.forEach((p, i) => {
+          entries.push({ placeId: p.id, dayId: sibling.dayId ?? null, sortOrder: i });
+        });
+      }
+    } else {
+      // 2. Across-day move (e.g. Day 1 -> Day 3)
+      const sourceDayIdx = sortedDays.findIndex((d) => d.id === sourceDayId);
+      const targetDayIdx = sortedDays.findIndex((d) => d.id === targetDayId);
+      const deltaDays = sourceDayIdx !== -1 && targetDayIdx !== -1 ? targetDayIdx - sourceDayIdx : 0;
+
+      const dayPlacesMap = new Map<string, Place[]>();
+      for (const d of sortedDays) {
+        const nonSeriesPlaces = (d.places ?? []).filter(
+          (p) => !siblingPlaces.some((s) => s.id === p.id)
+        );
+        dayPlacesMap.set(d.id, nonSeriesPlaces);
+      }
+
+      for (const sibling of siblingPlaces) {
+        const curSibDayIdx = sortedDays.findIndex((d) => d.id === sibling.dayId);
+        let newSibDayIdx = curSibDayIdx !== -1 ? curSibDayIdx + deltaDays : targetDayIdx;
+        newSibDayIdx = Math.max(0, Math.min(sortedDays.length - 1, newSibDayIdx));
+        const targetDay = sortedDays[newSibDayIdx];
+
+        if (targetDay) {
+          const list = dayPlacesMap.get(targetDay.id) ?? [];
+          const clampedIndex = Math.max(0, Math.min(targetIndex, list.length));
+          list.splice(clampedIndex, 0, { ...sibling, dayId: targetDay.id });
+          dayPlacesMap.set(targetDay.id, list);
+        }
+      }
+
+      for (const [dayId, pList] of dayPlacesMap.entries()) {
+        pList.forEach((p, i) => {
+          entries.push({ placeId: p.id, dayId, sortOrder: i });
+        });
+      }
+    }
+
+    setPendingReorder(null);
+    setDragId(null);
+    await apiPost(`/trips/${trip.id}/reorder`, { entries });
+    await reload();
+  };
+
   const reorder = async (placeId: string, targetDayId: string, targetIndex: number) => {
     let sourcePlace: Place | undefined;
     let sourceDayId: string | null = null;
@@ -575,31 +696,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     }
     if (!sourcePlace) return;
 
-    const targetIsUnassigned = !targetDayId || targetDayId === 'unassigned';
-    const targetPlaces = targetIsUnassigned
-      ? [...orphanPlaces].filter((p) => p.id !== placeId)
-      : [...(days.find((d) => d.id === targetDayId)?.places ?? [])].filter((p) => p.id !== placeId);
-    const clampedIndex = Math.max(0, Math.min(targetIndex, targetPlaces.length));
-
-    const updatedPlace = { ...sourcePlace, dayId: targetIsUnassigned ? null : targetDayId };
-    targetPlaces.splice(clampedIndex, 0, updatedPlace);
-
-    const entries: { placeId: string; dayId: string | null; sortOrder: number }[] = targetPlaces.map(
-      (p, i) => ({ placeId: p.id, dayId: targetIsUnassigned ? null : targetDayId, sortOrder: i }),
-    );
-
-    // If moved from a different day, also re-index remaining places in source day
-    if (sourceDayId && sourceDayId !== (targetIsUnassigned ? null : targetDayId)) {
-      const sourceDay = days.find((d) => d.id === sourceDayId);
-      const sourceRemaining = (sourceDay?.places ?? []).filter((p) => p.id !== placeId);
-      sourceRemaining.forEach((p, i) => {
-        entries.push({ placeId: p.id, dayId: sourceDayId, sortOrder: i });
+    const siblingPlaces = findSpannedPlaces(sourcePlace, allPlaces, days);
+    if (siblingPlaces.length > 1) {
+      setPendingReorder({
+        sourcePlace,
+        sourceDayId,
+        targetDayId,
+        targetIndex,
+        siblingPlaces,
       });
+      return;
     }
 
-    setDragId(null);
-    await apiPost(`/trips/${trip.id}/reorder`, { entries });
-    await reload();
+    await executeReorderSingle(sourcePlace, sourceDayId, targetDayId, targetIndex);
   };
 
   const dropOnDay = (dayId: string, index: number) => (e: React.DragEvent) => {
@@ -774,7 +883,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       : result;
   }, [days, selectedDayId, orphanPlaces, placeStopNumberMap]);
 
-  const renderPlaceRow = (p: Place, stopNumber?: number, placeIndex?: number) => {
+  const renderPlaceRow = (p: Place, stopNumber?: number, placeIndex?: number, totalInDay?: number) => {
     const hasDetails = Boolean(p.description?.trim() || p.notes?.trim());
     const isExpanded = expandedPlaceIds.has(p.id);
 
@@ -892,6 +1001,28 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
               {/* Right: Sleek, compact action icons */}
               <div className="place-card-actions" onClick={(e) => e.stopPropagation()}>
+                {placeIndex != null && (totalInDay ?? 0) > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="place-action-btn"
+                      disabled={placeIndex <= 0}
+                      title="Move up"
+                      onClick={() => void reorder(p.id, p.dayId || '', placeIndex - 1)}
+                    >
+                      <ArrowUp size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="place-action-btn"
+                      disabled={placeIndex >= (totalInDay ?? 0) - 1}
+                      title="Move down"
+                      onClick={() => void reorder(p.id, p.dayId || '', placeIndex + 1)}
+                    >
+                      <ArrowDown size={13} />
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   className="place-action-btn"
@@ -1379,7 +1510,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
                     return (
                       <div key={p.id}>
-                        {renderPlaceRow(p, placeStopNumberMap.get(p.id), pIdx)}
+                        {renderPlaceRow(p, placeStopNumberMap.get(p.id), pIdx, day.places.length)}
                         {nextPlace && hasCoords && nextHasCoords && (
                           <TravelEstimate
                             origin={{ lat: p.lat!, lng: p.lng!, name: p.name }}
@@ -1501,7 +1632,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       if (movingId) void reorder(movingId, '', idx);
                     }}
                   >
-                    {renderPlaceRow(p, placeStopNumberMap.get(p.id), idx)}
+                    {renderPlaceRow(p, placeStopNumberMap.get(p.id), idx, orphanPlaces.length)}
                   </div>
                 ))}
               </div>
@@ -1925,6 +2056,50 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           }}
           onCancel={() => setDeletingDayId(null)}
         />
+      )}
+
+      {pendingReorder && (
+        <Modal title="Move Spanned Item" onClose={() => setPendingReorder(null)}>
+          <p style={{ marginTop: 0, marginBottom: '1.25rem', lineHeight: '1.5' }}>
+            <strong>{cleanPlaceOrStayTitle(pendingReorder.sourcePlace.name)}</strong> appears on <strong>{pendingReorder.siblingPlaces.length} days</strong>.
+            <br />
+            Do you want to move only this occurrence, or move the entire series together?
+          </p>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                void executeReorderSeries(
+                  pendingReorder.sourcePlace,
+                  pendingReorder.sourceDayId,
+                  pendingReorder.targetDayId,
+                  pendingReorder.targetIndex,
+                  pendingReorder.siblingPlaces,
+                );
+              }}
+            >
+              Move Entire Series ({pendingReorder.siblingPlaces.length} Days)
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                void executeReorderSingle(
+                  pendingReorder.sourcePlace,
+                  pendingReorder.sourceDayId,
+                  pendingReorder.targetDayId,
+                  pendingReorder.targetIndex,
+                );
+              }}
+            >
+              Move Only This Occurrence
+            </button>
+            <button type="button" className="btn" onClick={() => setPendingReorder(null)}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Add / Edit Place Modal with Search Autocomplete & Multi-day Span */}

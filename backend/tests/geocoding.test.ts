@@ -50,4 +50,12 @@ describe('searchPlaces', () => {
     const res = await searchPlaces('   ');
     expect(res).toEqual([]);
   });
+
+  it('parses coordinate queries directly', async () => {
+    const res = await searchPlaces('40.7128, -74.0060');
+    expect(res).toHaveLength(1);
+    expect(res[0].lat).toBe(40.7128);
+    expect(res[0].lng).toBe(-74.006);
+    expect(res[0].address).toBe('40.7128, -74.006');
+  });
 });

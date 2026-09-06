@@ -161,6 +161,22 @@ export async function searchPlaces(
   const q = query.trim();
   if (!q) return [];
 
+  // If query is direct lat, lng coordinates
+  const coordMatch = q.match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+  if (coordMatch) {
+    const lat = Number(Number(coordMatch[1]).toFixed(6));
+    const lng = Number(Number(coordMatch[3]).toFixed(6));
+    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return [{
+        name: `${lat}, ${lng}`,
+        address: `${lat}, ${lng}`,
+        lat,
+        lng,
+        category: 'Sightseeing',
+      }];
+    }
+  }
+
   const biasLat = options?.biasLat;
   const biasLng = options?.biasLng;
   const limit = options?.limit ?? 6;

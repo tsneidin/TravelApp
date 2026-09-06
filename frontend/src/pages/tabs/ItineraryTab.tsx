@@ -415,12 +415,28 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         finalEndTime = `${baseDate}T${editing.endTime}:00.000Z`;
       }
 
+      let latVal: number | null = editing.lat ? Number(editing.lat) : null;
+      let lngVal: number | null = editing.lng ? Number(editing.lng) : null;
+
+      // Automatically parse lat, lng coordinates if entered in the address field
+      if (editing.address?.trim()) {
+        const coordMatch = editing.address.trim().match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+        if (coordMatch) {
+          const parsedLat = Number(coordMatch[1]);
+          const parsedLng = Number(coordMatch[3]);
+          if (!isNaN(parsedLat) && !isNaN(parsedLng) && parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
+            latVal = parsedLat;
+            lngVal = parsedLng;
+          }
+        }
+      }
+
       const payload = {
         name: editing.name.trim(),
         category: editing.category || undefined,
         address: editing.address || undefined,
-        lat: editing.lat ? Number(editing.lat) : null,
-        lng: editing.lng ? Number(editing.lng) : null,
+        lat: latVal,
+        lng: lngVal,
         website: editing.website || undefined,
         description: editing.description || undefined,
         notes: editing.notes || undefined,
@@ -1505,18 +1521,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             </div>
           </div>
           <div className="field">
-            <label>Address</label>
-            <input value={editing.address} onChange={(e) => setEditing({ ...editing, address: e.target.value })} placeholder="Street, city" />
-          </div>
-          <div className="grid grid-2">
-            <div className="field small">
-              <label>Lat</label>
-              <input value={editing.lat} onChange={(e) => setEditing({ ...editing, lat: e.target.value })} placeholder="35.6764" />
-            </div>
-            <div className="field small">
-              <label>Lng</label>
-              <input value={editing.lng} onChange={(e) => setEditing({ ...editing, lng: e.target.value })} placeholder="139.6993" />
-            </div>
+            <label>Address or Coordinates</label>
+            <input
+              value={editing.address}
+              onChange={(e) => {
+                const val = e.target.value;
+                const coordMatch = val.trim().match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+                if (coordMatch) {
+                  setEditing({ ...editing, address: val, lat: coordMatch[1], lng: coordMatch[3] });
+                } else {
+                  setEditing({ ...editing, address: val });
+                }
+              }}
+              placeholder="Street, city or 40.7128, -74.0060"
+            />
           </div>
           {days.length > 0 && (
             <div className="field small">

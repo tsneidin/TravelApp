@@ -164,6 +164,44 @@ export function parseEmlContent(input: string | Buffer): {
 }
 
 /**
+ * Attempt extraction via Apache Tika server if available.
+ */
+export async function extractWithTika(
+  buffer: Buffer,
+  filename: string,
+  mimetype?: string
+): Promise<{ text: string; charCount: number } | null> {
+  const tikaUrl = process.env.TIKA_URL || 'http://192.168.86.86:9998';
+  if (!tikaUrl) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${tikaUrl.replace(/\/+$/, '')}/tika`, {
+      method: 'PUT',
+      headers: {
+        Accept: 'text/plain',
+        ...(mimetype ? { 'Content-Type': mimetype } : {}),
+      },
+      body: buffer,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const text = await res.text();
+    const cleaned = text
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      .trim();
+    if (!cleaned) return null;
+    return { text: cleaned, charCount: cleaned.length };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Main parser entry point: extract clean text and travel context from uploaded files.
  */
 export async function extractDocumentText(file: {
@@ -176,16 +214,40 @@ export async function extractDocumentText(file: {
   const mime = (file.mimetype || '').toLowerCase();
   const size = file.buffer.length;
 
-  // 1. PDF Files
+  // 1. Office / Binary Document Files (.docx, .doc, .xlsx, .xls, .pptx, .rtf, .odt)
+  const officeExts = ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'rtf', 'odt', 'pages', 'numbers'];
+  if (officeExts.includes(ext)) {
+    const tika = await extractWithTika(file.buffer, filename, mime);
+    if (tika && tika.text) {
+      return {
+        filename,
+        fileType: 'unknown',
+        size,
+        text: tika.text,
+        summary: `Document (${tika.charCount} characters extracted via Apache Tika)`,
+        metadata: { parser: 'apache-tika', charCount: tika.charCount },
+      };
+    }
+  }
+
+  // 2. PDF Files
   if (ext === 'pdf' || mime === 'application/pdf') {
     try {
       const { text, totalPages } = await extractText(new Uint8Array(file.buffer), { mergePages: true });
       const rawText = Array.isArray(text) ? text.join('\n\n') : String(text || '');
-      const cleaned = rawText
+      let cleaned = rawText
         .replace(/\r\n/g, '\n')
         .replace(/[ \t]+/g, ' ')
         .replace(/\n\s*\n\s*\n+/g, '\n\n')
         .trim();
+
+      // If PDF has no text extracted, try Tika (handles scanned OCR and complex formats)
+      if (!cleaned || cleaned.length < 10) {
+        const tika = await extractWithTika(file.buffer, filename, mime);
+        if (tika && tika.text) {
+          cleaned = tika.text;
+        }
+      }
 
       const summary = `PDF document (${totalPages} page${totalPages === 1 ? '' : 's'}, ${cleaned.length} characters extracted)`;
       return {
@@ -197,6 +259,18 @@ export async function extractDocumentText(file: {
         metadata: { totalPages, charCount: cleaned.length },
       };
     } catch (err) {
+      // Fallback to Tika if unpdf threw an error
+      const tika = await extractWithTika(file.buffer, filename, mime);
+      if (tika && tika.text) {
+        return {
+          filename,
+          fileType: 'pdf',
+          size,
+          text: tika.text,
+          summary: `PDF document (${tika.charCount} characters extracted via Apache Tika)`,
+          metadata: { parser: 'apache-tika', charCount: tika.charCount },
+        };
+      }
       return {
         filename,
         fileType: 'pdf',
@@ -207,7 +281,7 @@ export async function extractDocumentText(file: {
     }
   }
 
-  // 2. Email Files (.eml, .msg, message/rfc822)
+  // 3. Email Files (.eml, .msg, message/rfc822)
   if (ext === 'eml' || ext === 'msg' || mime.includes('rfc822') || mime.includes('message/')) {
     try {
       const parsed = parseEmlContent(file.buffer);

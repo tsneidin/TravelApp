@@ -4,6 +4,7 @@ import {
   Plane, CalendarDays, Inbox, LogOut, Plus,
   ChevronRight, ChevronDown, Route, Bookmark,
   X, PanelLeftClose, PanelLeft, Menu, Sparkles, NotebookPen,
+  StickyNote,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { APP_VERSION } from '../lib/version';
@@ -573,7 +574,7 @@ export function Layout() {
                             const hasAnyNotes = totalNotesCount > 0;
 
                             return (
-                              <div className="side-tab-group">
+                              <div className="side-tab-group side-map-group">
                                 <div
                                   className={`side-tab side-tab-parent ${activeTab === 'itinerary' && (location.hash === '#notes' || location.hash === '#trip-notes') ? 'active' : ''}`}
                                   onClick={() => {
@@ -635,117 +636,95 @@ export function Layout() {
                                 </div>
 
                                 {!collapsedNotes[t.id] && (
-                                  <div className="side-notes-submenu" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    {/* Trip-level notes row */}
-                                    {(tripNotesCount > 0 || !hasAnyNotes) && (
-                                      <button
-                                        type="button"
-                                        className="side-tab side-day"
-                                        style={{
-                                          width: '100%',
-                                          background: 'transparent',
-                                          border: 'none',
-                                          cursor: 'pointer',
-                                          textAlign: 'left',
-                                          fontFamily: 'inherit',
-                                        }}
-                                        onClick={() => {
-                                          navigate(`/trips/${t.id}?tab=itinerary#trip-notes`);
-                                          setTimeout(() => {
-                                            window.dispatchEvent(
-                                              new CustomEvent('travelapp:open_day_notes', {
-                                                detail: { tripId: t.id, dayId: 'trip' },
-                                              }),
-                                            );
-                                          }, 70);
-                                        }}
-                                        title="General trip notes (not tied to a day) · Click to edit"
-                                      >
-                                        <span className="side-tab-dot" style={tripNotesCount > 0 ? { background: 'var(--accent)', opacity: 1 } : undefined} />
-                                        <span
-                                          className="side-day-city"
-                                          style={{
-                                            color: tripNotesCount > 0 ? 'var(--text)' : 'var(--muted)',
-                                            fontWeight: tripNotesCount > 0 ? 600 : 400,
-                                          }}
-                                        >
-                                          {t.notes?.trim()
-                                            ? t.notes.slice(0, 18) + (t.notes.length > 18 ? '…' : '')
-                                            : unassignedNotePlaces.length > 0
-                                            ? unassignedNotePlaces[0].name
-                                            : 'Trip notes'}
-                                        </span>
-                                        {tripNotesCount > 0 && (
-                                          <span
-                                            className="side-day-date"
-                                            style={{
-                                              color: 'var(--accent)',
-                                              fontWeight: 700,
+                                  <div className="side-map-submenu">
+                                    <div className="side-map-views-section">
+                                      {/* Trip-level notes row */}
+                                      {(tripNotesCount > 0 || !hasAnyNotes) && (
+                                        <div className={`side-map-view-row ${activeTab === 'itinerary' && location.hash === '#trip-notes' ? 'active' : ''}`}>
+                                          <button
+                                            type="button"
+                                            className="side-map-view-btn"
+                                            onClick={() => {
+                                              navigate(`/trips/${t.id}?tab=itinerary#trip-notes`);
+                                              setTimeout(() => {
+                                                window.dispatchEvent(
+                                                  new CustomEvent('travelapp:open_day_notes', {
+                                                    detail: { tripId: t.id, dayId: 'trip' },
+                                                  }),
+                                                );
+                                              }, 70);
                                             }}
+                                            title="General trip notes (not tied to a day) · Click to open notes editor"
                                           >
-                                            {tripNotesCount}
-                                          </span>
-                                        )}
-                                      </button>
-                                    )}
+                                            <StickyNote size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                                            <span className="side-map-view-name" style={{ fontWeight: 600 }}>Trip Notes</span>
+                                          </button>
+                                          {tripNotesCount > 0 && (
+                                            <span className="side-map-pill pill-on" style={{ marginRight: 4 }}>
+                                              {tripNotesCount}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
 
-                                    {/* Day-level notes rows (only days with >= 1 note) */}
-                                    {daysWithNotes.map(({ day, originalIndex, dayNotesCount, dayNotePlaces }) => {
-                                      const dateStr = formatSidebarDate(day.date);
-                                      const snippet = day.notes?.trim()
-                                        ? day.notes.slice(0, 18) + (day.notes.length > 18 ? '…' : '')
-                                        : dayNotePlaces.length > 0
-                                        ? dayNotePlaces[0].name
-                                        : `Day ${originalIndex + 1}`;
+                                      {/* Day-level notes rows (only days with >= 1 note) */}
+                                      {daysWithNotes.map(({ day, originalIndex, dayNotesCount, dayNotePlaces }) => {
+                                        const dateStr = formatSidebarDate(day.date);
+                                        const snippet = day.notes?.trim()
+                                          ? (day.notes.startsWith('http') ? 'Link' : day.notes.slice(0, 16) + (day.notes.length > 16 ? '…' : ''))
+                                          : dayNotePlaces.length > 0
+                                          ? dayNotePlaces[0].name
+                                          : '';
 
-                                      return (
-                                        <button
-                                          key={day.id}
-                                          type="button"
-                                          className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
-                                          style={{
-                                            width: '100%',
-                                            background: 'transparent',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            textAlign: 'left',
-                                            fontFamily: 'inherit',
-                                          }}
-                                          onClick={() => {
-                                            navigate(`/trips/${t.id}?tab=itinerary#day-${day.id}`);
-                                            setTimeout(() => {
-                                              window.dispatchEvent(
-                                                new CustomEvent('travelapp:open_day_notes', {
-                                                  detail: { tripId: t.id, dayId: day.id, dayIndex: originalIndex },
-                                                }),
-                                              );
-                                            }, 70);
-                                          }}
-                                          title={`Day ${originalIndex + 1} (${dateStr}) Notes · Click to open notes editor`}
-                                        >
-                                          <span className="side-tab-dot" style={{ background: 'var(--accent)', opacity: 1 }} />
-                                          <span className="side-day-num">{originalIndex + 1}</span>
-                                          <span
-                                            className="side-day-city"
-                                            style={{
-                                              color: 'var(--text)',
-                                              fontWeight: 600,
-                                            }}
-                                          >
-                                            {snippet}
-                                          </span>
-                                          <span
-                                            className="side-day-date"
-                                            style={{
-                                              color: 'var(--accent)',
-                                              fontWeight: 700,
-                                            }}
-                                          >
-                                            {dayNotesCount}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                                        return (
+                                          <div key={day.id} className={`side-map-view-row ${activeTab === 'itinerary' && (location.hash === `#day-${day.id}` || activeDayId === day.id) ? 'active' : ''}`}>
+                                            <button
+                                              type="button"
+                                              className="side-map-view-btn"
+                                              onClick={() => {
+                                                navigate(`/trips/${t.id}?tab=itinerary#day-${day.id}`);
+                                                setTimeout(() => {
+                                                  window.dispatchEvent(
+                                                    new CustomEvent('travelapp:open_day_notes', {
+                                                      detail: { tripId: t.id, dayId: day.id, dayIndex: originalIndex },
+                                                    }),
+                                                  );
+                                                }, 70);
+                                              }}
+                                              title={`Day ${originalIndex + 1} (${dateStr}) Notes · Click to open notes editor`}
+                                            >
+                                              <StickyNote size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                                              <span className="side-map-view-name">
+                                                Day {originalIndex + 1}{snippet ? ` — ${snippet}` : ''}
+                                              </span>
+                                            </button>
+                                            <span className="side-map-pill" style={{ marginRight: 4 }}>
+                                              {dayNotesCount}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Add Trip Note quick action */}
+                                    <button
+                                      type="button"
+                                      className="side-map-action-btn"
+                                      onClick={() => {
+                                        navigate(`/trips/${t.id}?tab=itinerary#trip-notes`);
+                                        setTimeout(() => {
+                                          window.dispatchEvent(
+                                            new CustomEvent('travelapp:open_day_notes', {
+                                              detail: { tripId: t.id, dayId: 'trip' },
+                                            }),
+                                          );
+                                        }, 70);
+                                      }}
+                                      title="Add general trip notes or reference links"
+                                    >
+                                      <Plus size={12} />
+                                      <span>Add Trip Note</span>
+                                    </button>
                                   </div>
                                 )}
                               </div>

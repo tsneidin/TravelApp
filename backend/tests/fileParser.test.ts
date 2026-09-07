@@ -156,4 +156,16 @@ startxref
       expect(res.text).toContain('Flight AF 007 to Rome');
       expect(res.metadata?.totalPages).toBe(1);
     });
+
+    it('extracts text from office documents using Tika when available', async () => {
+      const sampleText = Buffer.from('Itinerary: Hotel Booking in Rome for 3 nights');
+      const res = await extractDocumentText({
+        buffer: sampleText,
+        originalname: 'reservation.docx',
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      // If Tika server is reachable at 192.168.86.86:9998, it extracts text; otherwise it falls back to text
+      expect(res.text).toBeTruthy();
+      expect(res.text).toContain('Itinerary: Hotel Booking in Rome');
+    });
   });

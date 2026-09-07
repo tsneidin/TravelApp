@@ -976,6 +976,9 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
           </div>
 
           <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </button>
             <button
               type="button"
               className="btn primary"
@@ -983,9 +986,6 @@ export function TodoTab({ trip, reload }: { trip: Trip; reload: () => Promise<vo
               disabled={saving || !editing.title.trim()}
             >
               {saving ? 'Saving…' : 'Save Changes'}
-            </button>
-            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>
-              Cancel
             </button>
           </div>
         </Modal>

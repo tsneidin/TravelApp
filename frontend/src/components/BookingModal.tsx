@@ -568,11 +568,11 @@ export function BookingModal({
         </div>
 
         <div className="modal-actions" style={{ marginTop: 20 }}>
-          <button className="btn primary" onClick={save} disabled={busy || !form.title.trim()}>
-            {busy ? 'Saving…' : booking ? 'Save Changes' : 'Add Booking'}
-          </button>
           <button className="btn" onClick={onClose}>
             Cancel
+          </button>
+          <button className="btn primary" onClick={save} disabled={busy || !form.title.trim()}>
+            {busy ? 'Saving…' : booking ? 'Save Changes' : 'Add Booking'}
           </button>
         </div>
       </Modal>

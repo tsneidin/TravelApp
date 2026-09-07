@@ -410,11 +410,11 @@ export function JournalEntryModal({
             </div>
           </div>
           <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-            <button type="button" className="btn xs primary" onClick={handleInsertLink} disabled={!linkDialog.url.trim()}>
-              Insert Link
-            </button>
             <button type="button" className="btn xs" onClick={() => setLinkDialog({ open: false, text: '', url: '' })}>
               Cancel
+            </button>
+            <button type="button" className="btn xs primary" onClick={handleInsertLink} disabled={!linkDialog.url.trim()}>
+              Insert Link
             </button>
           </div>
         </div>
@@ -455,6 +455,9 @@ export function JournalEntryModal({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
           <button
             type="button"
             className="btn primary"
@@ -462,9 +465,6 @@ export function JournalEntryModal({
             disabled={busy || !title.trim() || uploading}
           >
             {busy ? 'Saving…' : 'Save Entry'}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
           </button>
         </div>
       </div>

@@ -1397,10 +1397,10 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
           </div>
 
           <div className="modal-actions">
+            <button className="btn" onClick={() => setPlaceModalOpen(false)}>Cancel</button>
             <button className="btn primary" onClick={savePlaceDraft} disabled={busy || !placeDraft.name.trim()}>
               {busy ? 'Saving…' : 'Save'}
             </button>
-            <button className="btn" onClick={() => setPlaceModalOpen(false)}>Cancel</button>
           </div>
         </Modal>
       )}
@@ -1455,10 +1455,10 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
             </div>
           </div>
           <div className="modal-actions">
+            <button className="btn" onClick={() => setEditingBooking(null)}>Cancel</button>
             <button className="btn primary" onClick={saveBookingForm} disabled={busy || !bookingForm.title}>
               {busy ? 'Saving…' : 'Save Changes'}
             </button>
-            <button className="btn" onClick={() => setEditingBooking(null)}>Cancel</button>
           </div>
         </Modal>
       )}

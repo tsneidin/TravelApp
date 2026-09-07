@@ -149,6 +149,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     activeTargetKey?: string;
     placeNotesMap?: Record<string, string>;
     placeUrlsMap?: Record<string, string>;
+    placeTitlesMap?: Record<string, string>;
+    newNoteTitle?: string;
+    newNoteText?: string;
+    newNoteUrl?: string;
   } | null>(null);
   const [journalModalState, setJournalModalState] = useState<{
     open: boolean;
@@ -757,9 +761,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const orphanNotes = orphanPlaces.filter(isItemNote);
     const pNotesMap: Record<string, string> = {};
     const pUrlsMap: Record<string, string> = {};
+    const pTitlesMap: Record<string, string> = {};
     orphanNotes.forEach((p: Place) => {
       pNotesMap[p.id] = p.notes || p.description || '';
       pUrlsMap[p.id] = p.website || '';
+      pTitlesMap[p.id] = p.name || '';
     });
     setDayEditor({
       id: 'trip',
@@ -773,16 +779,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       activeTargetKey: 'trip',
       placeNotesMap: pNotesMap,
       placeUrlsMap: pUrlsMap,
+      placeTitlesMap: pTitlesMap,
     });
   };
 
-  const openDayNotes = (day: Day, dayIndex: number) => {
+  const openDayNotes = (day: Day, dayIndex: number, startNewNote?: boolean) => {
     const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
     const pNotesMap: Record<string, string> = {};
     const pUrlsMap: Record<string, string> = {};
+    const pTitlesMap: Record<string, string> = {};
     (day.places ?? []).filter(isItemNote).forEach((p: Place) => {
       pNotesMap[p.id] = p.notes || p.description || '';
       pUrlsMap[p.id] = p.website || '';
+      pTitlesMap[p.id] = p.name || '';
     });
     const sortedDays = [...days].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
@@ -799,9 +808,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       defaultLocation: resolved.name || trip.destination || '',
       dayNumber: dayIndex + 1,
       spanDays: 1,
-      activeTargetKey: 'day',
+      activeTargetKey: startNewNote ? 'new' : 'day',
       placeNotesMap: pNotesMap,
       placeUrlsMap: pUrlsMap,
+      placeTitlesMap: pTitlesMap,
+      newNoteTitle: '',
+      newNoteText: '',
+      newNoteUrl: '',
     });
   };
 
@@ -847,6 +860,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const saveDayNotes = async () => {
     if (!dayEditor) return;
 
+    // 1. If currently drafting a new note, create the place item
+    if (dayEditor.activeTargetKey === 'new') {
+      const noteName = dayEditor.newNoteTitle?.trim() || 'Note';
+      const noteText = dayEditor.newNoteText?.trim() || '';
+      const noteUrl = dayEditor.newNoteUrl?.trim() || null;
+      if (noteText || noteName !== 'Note' || noteUrl) {
+        await apiPost(`/trips/${trip.id}/places`, {
+          dayId: dayEditor.id === 'trip' ? null : dayEditor.id,
+          name: noteName,
+          category: 'Note',
+          description: noteText,
+          website: noteUrl,
+        });
+      }
+    }
+
+    // 2. Save trip or day notes
     if (dayEditor.id === 'trip') {
       await apiPatch(`/trips/${trip.id}`, {
         notes: dayEditor.notes?.trim() || null,
@@ -858,12 +888,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         for (const p of orphanPlaces) {
           const editedPlaceNote = dayEditor.placeNotesMap?.[p.id];
           const editedPlaceUrl = dayEditor.placeUrlsMap?.[p.id];
+          const editedPlaceTitle = dayEditor.placeTitlesMap?.[p.id];
           if (
             (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) ||
-            (editedPlaceUrl !== undefined && editedPlaceUrl !== (p.website || ''))
+            (editedPlaceUrl !== undefined && editedPlaceUrl !== (p.website || '')) ||
+            (editedPlaceTitle !== undefined && editedPlaceTitle !== (p.name || ''))
           ) {
             patchPromises.push(
               apiPatch(`/trips/${trip.id}/places/${p.id}`, {
+                ...(editedPlaceTitle !== undefined ? { name: editedPlaceTitle.trim() || 'Note' } : {}),
                 ...(editedPlaceNote !== undefined ? { notes: editedPlaceNote.trim() || null } : {}),
                 ...(editedPlaceUrl !== undefined ? { website: editedPlaceUrl.trim() || null } : {}),
               })
@@ -919,12 +952,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       for (const p of currentDay.places) {
         const editedPlaceNote = dayEditor.placeNotesMap?.[p.id];
         const editedPlaceUrl = dayEditor.placeUrlsMap?.[p.id];
+        const editedPlaceTitle = dayEditor.placeTitlesMap?.[p.id];
         if (
           (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) ||
-          (editedPlaceUrl !== undefined && editedPlaceUrl !== (p.website || ''))
+          (editedPlaceUrl !== undefined && editedPlaceUrl !== (p.website || '')) ||
+          (editedPlaceTitle !== undefined && editedPlaceTitle !== (p.name || ''))
         ) {
           patchPromises.push(
             apiPatch(`/trips/${trip.id}/places/${p.id}`, {
+              ...(editedPlaceTitle !== undefined ? { name: editedPlaceTitle.trim() || 'Note' } : {}),
               ...(editedPlaceNote !== undefined ? { notes: editedPlaceNote.trim() || null } : {}),
               ...(editedPlaceUrl !== undefined ? { website: editedPlaceUrl.trim() || null } : {}),
             })
@@ -1690,7 +1726,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                               }}
                             >
                               <FileText size={15} style={{ color: '#eab308' }} />
-                              <span>Day Notes</span>
+                              <span>Notes</span>
                             </button>
 
                             <button
@@ -2098,19 +2134,34 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             ];
 
         const activeKey = dayEditor.activeTargetKey || (isTripLevel ? 'trip' : 'day');
-        const activeIdx = Math.max(0, noteTargets.findIndex((t) => t.key === activeKey));
-        const currentTarget = noteTargets[activeIdx] || noteTargets[0];
+        const isNewNote = activeKey === 'new';
+        const activeIdx = isNewNote ? -1 : Math.max(0, noteTargets.findIndex((t) => t.key === activeKey));
+        const currentTarget = isNewNote
+          ? { key: 'new', label: 'New Note', subtitle: 'New note draft', type: 'new' as const }
+          : (noteTargets[activeIdx] || noteTargets[0]);
 
-        const activeNoteText = (activeKey === 'day' || activeKey === 'trip')
+        const activeNoteText = isNewNote
+          ? (dayEditor.newNoteText ?? '')
+          : (activeKey === 'day' || activeKey === 'trip')
           ? dayEditor.notes
           : (dayEditor.placeNotesMap?.[activeKey] ?? '');
 
-        const activeNoteUrl = (activeKey === 'day' || activeKey === 'trip')
+        const activeNoteUrl = isNewNote
+          ? (dayEditor.newNoteUrl ?? '')
+          : (activeKey === 'day' || activeKey === 'trip')
           ? (dayEditor.noteUrl ?? '')
           : (dayEditor.placeUrlsMap?.[activeKey] ?? '');
 
+        const activeNoteTitle = isNewNote
+          ? (dayEditor.newNoteTitle ?? '')
+          : (currentTarget.type === 'place' && currentTarget.place)
+          ? (dayEditor.placeTitlesMap?.[activeKey] ?? currentTarget.place.name ?? '')
+          : '';
+
         const updateActiveNoteText = (newText: string) => {
-          if (activeKey === 'day' || activeKey === 'trip') {
+          if (isNewNote) {
+            setDayEditor({ ...dayEditor, newNoteText: newText });
+          } else if (activeKey === 'day' || activeKey === 'trip') {
             setDayEditor({ ...dayEditor, notes: newText });
           } else {
             setDayEditor({
@@ -2124,7 +2175,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         };
 
         const updateActiveNoteUrl = (newUrl: string) => {
-          if (activeKey === 'day' || activeKey === 'trip') {
+          if (isNewNote) {
+            setDayEditor({ ...dayEditor, newNoteUrl: newUrl });
+          } else if (activeKey === 'day' || activeKey === 'trip') {
             setDayEditor({ ...dayEditor, noteUrl: newUrl });
           } else {
             setDayEditor({
@@ -2137,70 +2190,138 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           }
         };
 
+        const updateActiveNoteTitle = (newTitle: string) => {
+          if (isNewNote) {
+            setDayEditor({ ...dayEditor, newNoteTitle: newTitle });
+          } else if (currentTarget.type === 'place') {
+            setDayEditor({
+              ...dayEditor,
+              placeTitlesMap: {
+                ...(dayEditor.placeTitlesMap || {}),
+                [activeKey]: newTitle,
+              },
+            });
+          }
+        };
+
+        const handleCreateNewNote = () => {
+          setDayEditor({
+            ...dayEditor,
+            activeTargetKey: 'new',
+            newNoteTitle: '',
+            newNoteText: '',
+            newNoteUrl: '',
+          });
+        };
+
         return (
           <Modal
-            title={isTripLevel ? `Trip Notes — ${trip.name}` : `Day ${dayEditor.dayNumber ?? ''} Notes${dayEditor.label ? ` — ${dayEditor.label}` : ''}`}
+            title={
+              isTripLevel
+                ? `Trip Notes — ${trip.name}`
+                : `Day ${dayEditor.dayNumber ?? ''} Notes${dayEditor.label ? ` — ${dayEditor.label}` : ''}`
+            }
             onClose={() => setDayEditor(null)}
           >
-            {/* Pager if multiple note targets exist */}
-            {noteTargets.length > 1 && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 10px',
-                  background: 'var(--surface-hover)',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border)',
-                  marginBottom: '0.6rem',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button
-                    type="button"
-                    className="btn xs ghost"
-                    disabled={activeIdx <= 0}
-                    onClick={() => {
-                      if (activeIdx > 0) {
-                        setDayEditor({ ...dayEditor, activeTargetKey: noteTargets[activeIdx - 1].key });
-                      }
-                    }}
-                    title="Previous note"
-                  >
-                    <ChevronLeft size={14} />
-                    <span>Prev</span>
-                  </button>
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                    Note {activeIdx + 1} of {noteTargets.length}: {currentTarget.label}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn xs ghost"
-                    disabled={activeIdx >= noteTargets.length - 1}
-                    onClick={() => {
-                      if (activeIdx < noteTargets.length - 1) {
-                        setDayEditor({ ...dayEditor, activeTargetKey: noteTargets[activeIdx + 1].key });
-                      }
-                    }}
-                    title="Next note"
-                  >
-                    <span>Next</span>
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-
-                <select
-                  value={activeKey}
-                  onChange={(e) => setDayEditor({ ...dayEditor, activeTargetKey: e.target.value })}
-                  style={{ fontSize: '12px', padding: '2px 6px', maxWidth: '170px' }}
+            {/* Top Toolbar matching JournalEntryModal with Prev, Note X of Y, Next, and + New Note */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                background: 'var(--surface-hover)',
+                borderRadius: '6px',
+                border: '1px solid var(--border)',
+                marginBottom: '0.8rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  disabled={!isNewNote && activeIdx <= 0}
+                  onClick={() => {
+                    if (isNewNote) {
+                      setDayEditor({
+                        ...dayEditor,
+                        activeTargetKey: noteTargets[noteTargets.length - 1].key,
+                      });
+                    } else if (activeIdx > 0) {
+                      setDayEditor({
+                        ...dayEditor,
+                        activeTargetKey: noteTargets[activeIdx - 1].key,
+                      });
+                    }
+                  }}
+                  title="Previous note"
                 >
-                  {noteTargets.map((t, idx) => (
-                    <option key={t.key} value={t.key}>
-                      {`${idx + 1}. ${t.label}`}
-                    </option>
-                  ))}
-                </select>
+                  <ChevronLeft size={14} />
+                  <span>Prev</span>
+                </button>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                  {isNewNote
+                    ? 'New Note'
+                    : `Note ${activeIdx + 1} of ${noteTargets.length}: ${currentTarget.label}`}
+                </span>
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  disabled={isNewNote || activeIdx >= noteTargets.length - 1}
+                  onClick={() => {
+                    if (!isNewNote && activeIdx < noteTargets.length - 1) {
+                      setDayEditor({
+                        ...dayEditor,
+                        activeTargetKey: noteTargets[activeIdx + 1].key,
+                      });
+                    }
+                  }}
+                  title="Next note"
+                >
+                  <span>Next</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {noteTargets.length > 1 && (
+                  <select
+                    value={activeKey}
+                    onChange={(e) => setDayEditor({ ...dayEditor, activeTargetKey: e.target.value })}
+                    style={{ fontSize: '12px', padding: '2px 6px', maxWidth: '160px' }}
+                  >
+                    {noteTargets.map((t, idx) => (
+                      <option key={t.key} value={t.key}>
+                        {`${idx + 1}. ${t.label}`}
+                      </option>
+                    ))}
+                    {isNewNote && <option value="new">+ New Note (draft)</option>}
+                  </select>
+                )}
+
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  onClick={handleCreateNewNote}
+                  title={isTripLevel ? 'Add a new trip note' : 'Add a new note to this day'}
+                  style={{ color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Plus size={12} />
+                  <span>New Note</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Note Title if new note or place note */}
+            {(isNewNote || (currentTarget.type === 'place' && currentTarget.place)) && (
+              <div className="field" style={{ marginBottom: '0.6rem' }}>
+                <label style={{ marginBottom: 4 }}>Note Title / Label</label>
+                <input
+                  value={activeNoteTitle}
+                  onChange={(e) => updateActiveNoteTitle(e.target.value)}
+                  placeholder={isNewNote ? 'e.g. Packing reminder, train timetable, reservation details…' : 'Note Title'}
+                  autoFocus={isNewNote}
+                />
               </div>
             )}
 
@@ -2279,7 +2400,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <div className="field" style={{ marginBottom: '0.6rem' }}>
               <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
                 <label style={{ margin: 0 }}>
-                  {activeKey === 'trip'
+                  {isNewNote
+                    ? 'Story & Notes'
+                    : activeKey === 'trip'
                     ? 'Trip Notes'
                     : activeKey === 'day'
                     ? 'General Day notes'
@@ -2308,13 +2431,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 value={activeNoteText}
                 onChange={(event) => updateActiveNoteText(event.target.value)}
                 placeholder={
-                  isTripLevel
+                  isNewNote
+                    ? 'Capture notes, memories, reference links, recommendations, or thoughts…'
+                    : isTripLevel
                     ? 'General trip reminders, packing lists, confirmation links, emergency contacts…'
                     : activeKey === 'day'
                     ? 'General plans, reminders, weather backup, meeting details…'
                     : `Notes, tips or details for ${currentTarget.label}…`
                 }
-                autoFocus
+                autoFocus={!isNewNote && activeKey === 'day'}
               />
               {activeKey === 'day' && !isTripLevel && currentSpan > 1 && targetDays.length > 1 && (
                 <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2364,9 +2489,47 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               />
             </div>
 
-            <div className="modal-actions">
-              <button className="btn primary" onClick={() => void saveDayNotes()}>Save</button>
-              <button className="btn" onClick={() => setDayEditor(null)}>Cancel</button>
+            <div
+              className="modal-actions"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: 18,
+              }}
+            >
+              <div>
+                {currentTarget.type === 'place' && currentTarget.place && (
+                  <button
+                    type="button"
+                    className="btn danger ghost"
+                    onClick={async () => {
+                      if (window.confirm(`Delete note "${currentTarget.label}"?`)) {
+                        await apiDelete(`/trips/${trip.id}/places/${currentTarget.place!.id}`);
+                        await reload();
+                        setDayEditor(null);
+                      }
+                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+                <button type="button" className="btn" onClick={() => setDayEditor(null)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void saveDayNotes()}
+                >
+                  {isNewNote ? 'Save Note' : 'Save'}
+                </button>
+              </div>
             </div>
           </Modal>
         );
@@ -2447,18 +2610,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 Would you like to delete all {siblingPlaces.length} occurrences in this multi-day series or only remove this specific day's instance?
               </p>
               <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn danger"
-                  onClick={async () => {
-                    await apiPost(`/trips/${trip.id}/places/bulk-delete`, {
-                      placeIds: siblingPlaces.map((p) => p.id),
-                    });
-                    setDeletingPlace(null);
-                    await reload();
-                  }}
-                >
-                  Delete All {siblingPlaces.length} Occurrences
+                <button type="button" className="btn" onClick={() => setDeletingPlace(null)}>
+                  Cancel
                 </button>
                 <button
                   type="button"
@@ -2472,8 +2625,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 >
                   Delete Only This Day
                 </button>
-                <button type="button" className="btn" onClick={() => setDeletingPlace(null)}>
-                  Cancel
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={async () => {
+                    await apiPost(`/trips/${trip.id}/places/bulk-delete`, {
+                      placeIds: siblingPlaces.map((p) => p.id),
+                    });
+                    setDeletingPlace(null);
+                    await reload();
+                  }}
+                >
+                  Delete All {siblingPlaces.length} Occurrences
                 </button>
               </div>
             </Modal>
@@ -2849,11 +3012,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', flexShrink: 0 }}>
-              <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>
-                {busy ? 'Saving…' : 'Save'}
-              </button>
               <button type="button" className="btn" onClick={() => setOpen(false)}>
                 Cancel
+              </button>
+              <button type="button" className="btn primary" onClick={save} disabled={busy || !editing.name}>
+                {busy ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

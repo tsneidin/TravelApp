@@ -145,10 +145,10 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
             />
           </label>
           <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
             <button type="button" className="btn primary" onClick={() => void saveEdit()} disabled={saving || !editing.item.trim()}>
               {saving ? 'Saving…' : 'Save'}
             </button>
-            <button type="button" className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </Modal>
       )}

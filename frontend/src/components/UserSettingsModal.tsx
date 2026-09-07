@@ -260,11 +260,11 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
           </div>
 
           <div className="modal-actions">
-            <button type="submit" className="btn primary" disabled={savingProfile || !name.trim()}>
-              {savingProfile ? 'Saving…' : 'Save Changes'}
-            </button>
             <button type="button" className="btn" onClick={onClose}>
               Cancel
+            </button>
+            <button type="submit" className="btn primary" disabled={savingProfile || !name.trim()}>
+              {savingProfile ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -401,15 +401,15 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
           </div>
 
           <div className="modal-actions">
+            <button type="button" className="btn" onClick={onClose}>
+              Cancel
+            </button>
             <button
               type="submit"
               className="btn primary"
               disabled={savingPassword || !currentPassword || !newPassword || newPassword !== confirmPassword}
             >
               {savingPassword ? 'Updating…' : 'Update Password'}
-            </button>
-            <button type="button" className="btn" onClick={onClose}>
-              Cancel
             </button>
           </div>
         </form>

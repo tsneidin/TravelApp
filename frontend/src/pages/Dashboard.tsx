@@ -176,10 +176,10 @@ export function Dashboard() {
           </div>
           {error && <div className="small danger mb">{error}</div>}
           <div className="modal-actions">
+            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
             <button className="btn primary" onClick={create} disabled={saving || !form.name}>
               {saving ? 'Creating…' : 'Create'}
             </button>
-            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
           </div>
         </Modal>
       )}

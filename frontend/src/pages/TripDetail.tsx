@@ -219,8 +219,8 @@ export function TripDetail() {
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <div className="modal-actions">
-            <button className="btn primary" onClick={save}>Save</button>
             <button className="btn" onClick={() => setEditOpen(false)}>Cancel</button>
+            <button className="btn primary" onClick={save}>Save</button>
           </div>
         </Modal>
       )}

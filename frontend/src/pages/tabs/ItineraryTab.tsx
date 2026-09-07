@@ -4,10 +4,10 @@ import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
   ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink,
-  ArrowUp, ArrowDown
+  ArrowUp, ArrowDown, CheckSquare
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
-import type { Trip, Place, JournalEntry, Day } from '../../lib/types';
+import type { Trip, Place, JournalEntry, Day, TodoItem } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
@@ -16,6 +16,7 @@ import { getCategoryIcon } from '../../lib/icons';
 import { computePlaceStopNumberMap, cleanPlaceOrStayTitle } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
+import { DayTodoModal } from '../../components/DayTodoModal';
 import {
   generateSpanId,
   extractSpanId,
@@ -147,6 +148,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     dayEntries?: JournalEntry[];
     dayLabel?: string;
   }>({ open: false });
+  const [dayTodoModalState, setDayTodoModalState] = useState<{
+    day: Day;
+    dayIndex: number;
+  } | null>(null);
   const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
   const [deletingPlace, setDeletingPlace] = useState<Place | null>(null);
   const [deletingDayId, setDeletingDayId] = useState<string | null>(null);
@@ -771,6 +776,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     });
   };
 
+  const openDayTodos = (day: Day, dayIndex: number) => {
+    setDayTodoModalState({ day, dayIndex });
+  };
+
   const saveDayNotes = async () => {
     if (!dayEditor) return;
     const trimmed = dayEditor.label.trim();
@@ -1378,6 +1387,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               if (!j.date) return false;
               return j.date.slice(0, 10) === day.date.slice(0, 10);
             });
+            const dayTodos = (trip.todos ?? []).filter((t: TodoItem) => {
+              if (!t.dueDate) return false;
+              return t.dueDate.slice(0, 10) === day.date.slice(0, 10);
+            });
             const dayPlaceNotes = (day.places ?? []).filter(isItemNote);
             const hasDayNotes = Boolean(day.notes?.trim());
             const totalDayNotesCount = (hasDayNotes ? 1 : 0) + dayPlaceNotes.length;
@@ -1437,6 +1450,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         onClick={() => openDayJournals(day, dayIndex)}
                       >
                         <BookOpen size={13} /> {dayJournalEntries.length > 0 ? `Journals(${dayJournalEntries.length})` : 'Journals'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        style={dayTodos.length > 0 ? { color: 'var(--accent)' } : undefined}
+                        title="Add or view to-do items due on this day"
+                        onClick={() => openDayTodos(day, dayIndex)}
+                      >
+                        <CheckSquare size={13} /> {dayTodos.length > 0 ? `To-Do's(${dayTodos.length})` : "To-Do's"}
                       </button>
                       <button
                         type="button"
@@ -1957,6 +1979,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           dayEntries={journalModalState.dayEntries || []}
           tripPhotos={trip.photos}
           onPhotosUploaded={reload}
+        />
+      )}
+
+      {dayTodoModalState && (
+        <DayTodoModal
+          tripId={trip.id}
+          isOpen={Boolean(dayTodoModalState)}
+          onClose={() => setDayTodoModalState(null)}
+          day={dayTodoModalState.day}
+          dayIndex={dayTodoModalState.dayIndex}
+          todos={trip.todos ?? []}
+          onReload={reload}
+          onNavigateToTodos={() => navigate(`/trips/${trip.id}?tab=todos`)}
         />
       )}
 

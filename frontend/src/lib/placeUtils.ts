@@ -34,12 +34,16 @@ export function isAccommodationItem(item?: {
     cat === 'hostel' ||
     cat === 'villa' ||
     cat === 'apartment' ||
-    cat === 'airbnb'
+    cat === 'airbnb' ||
+    cat === 'motel' ||
+    cat === 'inn' ||
+    cat === 'guesthouse' ||
+    cat === 'guest house'
   ) {
     return true;
   }
   const text = `${cat} ${item.name || ''} ${item.title || ''}`.toLowerCase();
-  return /hotel|albergo|lodging|accommodation|apartment|airbnb|hostel|resort|villa|inn\b|motel|b&b\b/i.test(
+  return /\b(hotel|albergo|lodging|accommodation|apartment|airbnb|hostel|resort|villa|inn\b|motel|b&b\b|bed & breakfast|bed and breakfast|guesthouse|guest house|cottage|ryokan|pension|suites)\b/i.test(
     text,
   );
 }

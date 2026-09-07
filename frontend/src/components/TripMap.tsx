@@ -23,6 +23,7 @@ import {
 import type { Day, GeocodedPlace, MapView, Place } from '../lib/types';
 import { apiPost } from '../lib/api';
 import { PlaceSearchInput } from './PlaceSearchInput';
+import { isAccommodationItem } from '../lib/placeUtils';
 
 export interface PlaceWithStop extends Place { stopNumber?: number; }
 export interface RouteOption {
@@ -71,12 +72,48 @@ function loadGoogleMaps(): Promise<any> {
 
 const geocodeCache = new Map<string, Coord>();
 
-function categoryFromGoogleTypes(types: string[] = []): string {
-  if (types.some((type) => ['restaurant', 'cafe', 'bar', 'bakery', 'meal_takeaway'].includes(type))) return 'Restaurant';
-  if (types.some((type) => ['lodging', 'campground', 'rv_park'].includes(type))) return 'Accommodation';
-  if (types.some((type) => ['airport', 'train_station', 'bus_station', 'transit_station', 'car_rental'].includes(type))) return 'Transport';
-  if (types.some((type) => ['store', 'shopping_mall', 'supermarket'].includes(type))) return 'Shopping';
-  if (types.some((type) => ['amusement_park', 'aquarium', 'zoo', 'movie_theater', 'stadium'].includes(type))) return 'Activity';
+function categoryFromGoogleTypes(types: string[] = [], name?: string): string {
+  const tList = types.map((t) => t.toLowerCase());
+  if (
+    tList.some((type) =>
+      [
+        'lodging',
+        'hotel',
+        'motel',
+        'resort_hotel',
+        'bed_and_breakfast',
+        'guest_house',
+        'hostel',
+        'campground',
+        'rv_park',
+        'extended_stay_hotel',
+        'inn',
+        'resort',
+        'cottage',
+        'farmstay',
+        'serviced_apartment',
+        'hotel_or_motel',
+        'room',
+      ].includes(type),
+    )
+  ) {
+    return 'Accommodation';
+  }
+  if (name && isAccommodationItem({ name })) {
+    return 'Accommodation';
+  }
+  if (tList.some((type) => ['restaurant', 'cafe', 'bar', 'bakery', 'meal_takeaway', 'food'].includes(type))) {
+    return 'Restaurant';
+  }
+  if (tList.some((type) => ['airport', 'train_station', 'bus_station', 'transit_station', 'car_rental', 'subway_station', 'light_rail_station'].includes(type))) {
+    return 'Transport';
+  }
+  if (tList.some((type) => ['store', 'shopping_mall', 'supermarket', 'clothing_store', 'department_store'].includes(type))) {
+    return 'Shopping';
+  }
+  if (tList.some((type) => ['amusement_park', 'aquarium', 'zoo', 'movie_theater', 'stadium'].includes(type))) {
+    return 'Activity';
+  }
   return 'Sightseeing';
 }
 
@@ -550,7 +587,7 @@ export function TripMap({
                   address: details.formatted_address || details.name || 'Google Maps place',
                   lat: point.lat(),
                   lng: point.lng(),
-                  category: categoryFromGoogleTypes(details.types),
+                  category: categoryFromGoogleTypes(details.types, details.name),
                   placeId: event.placeId,
                   website: details.website || undefined,
                   mapUrl: details.url || `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(event.placeId)}`,
@@ -583,7 +620,7 @@ export function TripMap({
                   address: details.formatted_address || result.formatted_address || 'Google Maps place',
                   lat: detPoint.lat(),
                   lng: detPoint.lng(),
-                  category: categoryFromGoogleTypes(details.types || result.types),
+                  category: categoryFromGoogleTypes(details.types || result.types, details.name || result.formatted_address?.split(',')[0]),
                   placeId: result.place_id,
                   website: details.website || undefined,
                   mapUrl: details.url || `https://www.google.com/maps/search/?api=1&query=place_id:${encodeURIComponent(result.place_id)}`,
@@ -603,7 +640,7 @@ export function TripMap({
               address: result?.formatted_address || fallbackName,
               lat: point.lat(),
               lng: point.lng(),
-              category: categoryFromGoogleTypes(result?.types),
+              category: categoryFromGoogleTypes(result?.types, fallbackName),
               placeId: result?.place_id,
               mapUrl: `https://www.google.com/maps/search/?api=1&query=${point.lat()},${point.lng()}`,
             }, point);

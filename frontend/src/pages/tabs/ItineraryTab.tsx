@@ -1818,15 +1818,22 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   onMapViewsChange={reload}
                   onMapClick={(pl) => {
                     setEditingId(null);
+                    setEditingPlaceItem(null);
+                    setUpdateAllInSeries(false);
+                    const isAccom = isAccommodationItem(pl);
+                    const defaultCat = isAccom ? 'Accommodation' : (pl.category || '');
                     setEditing({
                       ...EMPTY_FORM,
-                      dayId: selectedDayId || '',
+                      dayId: selectedDayId || (days.length > 0 ? days[0].id : ''),
                       name: pl.name,
-                      category: pl.category,
+                      category: defaultCat,
                       address: pl.address,
                       lat: String(pl.lat),
                       lng: String(pl.lng),
                       website: pl.website || '',
+                      startTime: isAccom ? '15:00' : '',
+                      endTime: isAccom ? '10:00' : '',
+                      spanDays: isAccom ? 2 : 1,
                     });
                     setOpen(true);
                   }}

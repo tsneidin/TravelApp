@@ -5,13 +5,14 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { Modal } from '../../components/Modal';
 import { apiPost } from '../../lib/api';
 import type { GeocodedPlace, Trip } from '../../lib/types';
-import { computePlaceStopNumberMap } from '../../lib/placeUtils';
+import { computePlaceStopNumberMap, isAccommodationItem } from '../../lib/placeUtils';
+import { generateSpanId, embedSpanId, getConsecutiveDays } from '../../lib/spanUtils';
 import { formatPlaceTime } from './ItineraryTab';
 
 export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const [params] = useSearchParams();
   const [selected, setSelected] = useState<string | undefined>(params.get('focus') ?? undefined);
-  const [draft, setDraft] = useState<GeocodedPlace | null>(null);
+  const [draft, setDraft] = useState<(GeocodedPlace & { startTime?: string; endTime?: string; spanDays?: number }) | null>(null);
   const [draftDayId, setDraftDayId] = useState('');
   const [saving, setSaving] = useState(false);
   const sortedDays = useMemo(
@@ -40,15 +41,60 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
     if (!draft?.name.trim()) return;
     setSaving(true);
     try {
-      await apiPost(`/trips/${trip.id}/places`, {
-        name: draft.name.trim(),
-        address: draft.address,
-        category: draft.category,
-        lat: draft.lat,
-        lng: draft.lng,
-        website: draft.website,
-        dayId: draftDayId || undefined,
-      });
+      const isAccom = isAccommodationItem(draft);
+      const spanDays = draft.spanDays ?? 1;
+      if (spanDays > 1 && draftDayId) {
+        const targetDays = getConsecutiveDays(draftDayId, spanDays, sortedDays);
+        const spanId = generateSpanId();
+        const baseDay = sortedDays.find((d) => d.id === draftDayId);
+        const baseDate = baseDay?.date ? baseDay.date.slice(0, 10) : new Date().toISOString().slice(0, 10);
+        const placesPayload = targetDays.map((targetDay, idx) => {
+          let dayStartTime: string | null = null;
+          let dayEndTime: string | null = null;
+          const targetBaseDate = targetDay.date ? targetDay.date.slice(0, 10) : baseDate;
+          if (isAccom && targetDays.length > 1) {
+            if (idx === 0) {
+              if (draft.startTime) dayStartTime = `${targetBaseDate}T${draft.startTime}:00.000Z`;
+            } else if (idx === targetDays.length - 1) {
+              if (draft.endTime) dayEndTime = `${targetBaseDate}T${draft.endTime}:00.000Z`;
+            }
+          } else {
+            if (draft.startTime) dayStartTime = `${targetBaseDate}T${draft.startTime}:00.000Z`;
+            if (draft.endTime) dayEndTime = `${targetBaseDate}T${draft.endTime}:00.000Z`;
+          }
+          return {
+            name: draft.name.trim(),
+            address: draft.address,
+            category: draft.category,
+            lat: draft.lat,
+            lng: draft.lng,
+            website: draft.website,
+            notes: embedSpanId('', spanId),
+            dayId: targetDay.id,
+            startTime: dayStartTime,
+            endTime: dayEndTime,
+          };
+        });
+        await apiPost(`/trips/${trip.id}/places/bulk`, { places: placesPayload });
+      } else {
+        const baseDay = sortedDays.find((d) => d.id === draftDayId);
+        const baseDate = baseDay?.date ? baseDay.date.slice(0, 10) : new Date().toISOString().slice(0, 10);
+        let startTime: string | null = null;
+        let endTime: string | null = null;
+        if (draft.startTime && baseDate) startTime = `${baseDate}T${draft.startTime}:00.000Z`;
+        if (draft.endTime && baseDate) endTime = `${baseDate}T${draft.endTime}:00.000Z`;
+        await apiPost(`/trips/${trip.id}/places`, {
+          name: draft.name.trim(),
+          address: draft.address,
+          category: draft.category,
+          lat: draft.lat,
+          lng: draft.lng,
+          website: draft.website,
+          dayId: draftDayId || undefined,
+          startTime,
+          endTime,
+        });
+      }
       setDraft(null);
       setDraftDayId('');
       await reload();
@@ -78,8 +124,15 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
             onMapViewsChange={reload}
             onPlaceClick={setSelected}
             onMapClick={(place) => {
-              setDraft(place);
-              setDraftDayId('');
+              const isAccom = isAccommodationItem(place);
+              setDraft({
+                ...place,
+                category: isAccom ? 'Accommodation' : (place.category || 'Sightseeing'),
+                startTime: isAccom ? '15:00' : undefined,
+                endTime: isAccom ? '10:00' : undefined,
+                spanDays: isAccom ? 2 : 1,
+              });
+              setDraftDayId(sortedDays.length > 0 ? sortedDays[0].id : '');
             }}
             height="70vh"
           />
@@ -132,7 +185,20 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
           </div>
           <div className="field small">
             <label>Category</label>
-            <select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+            <select
+              value={draft.category}
+              onChange={(event) => {
+                const newCat = event.target.value;
+                const isAccom = isAccommodationItem({ category: newCat });
+                setDraft({
+                  ...draft,
+                  category: newCat,
+                  startTime: isAccom ? (draft.startTime || '15:00') : draft.startTime,
+                  endTime: isAccom ? (draft.endTime || '10:00') : draft.endTime,
+                  spanDays: isAccom && (!draft.spanDays || draft.spanDays <= 1) ? 2 : draft.spanDays,
+                });
+              }}
+            >
               <option>Sightseeing</option>
               <option>Restaurant</option>
               <option>Activity</option>

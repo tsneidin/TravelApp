@@ -624,7 +624,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
       address: '',
       category: 'Accommodation',
       startTime: '15:00',
-      endTime: '11:00',
+      endTime: '10:00',
       notes: '',
       website: '',
       dayId: targetDayId,
@@ -662,15 +662,24 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
         const targetDays = getConsecutiveDays(placeDraft.dayId, spanDays, days);
         const spanId = generateSpanId();
         const taggedNotes = embedSpanId(placeDraft.notes, spanId);
+        const isAccom = isAccommodationItem(placeDraft);
         const placesPayload = targetDays.map((targetDay, idx) => {
           let dayStartTime: string | null = null;
           let dayEndTime: string | null = null;
           const targetBaseDate = targetDay.date ? targetDay.date.slice(0, 10) : baseDate;
-          if (placeDraft.startTime && targetBaseDate) {
-            dayStartTime = `${targetBaseDate}T${placeDraft.startTime}:00.000Z`;
-          }
-          if (placeDraft.endTime && targetBaseDate) {
-            dayEndTime = `${targetBaseDate}T${placeDraft.endTime}:00.000Z`;
+          if (isAccom && targetDays.length > 1) {
+            if (idx === 0) {
+              if (placeDraft.startTime && targetBaseDate) dayStartTime = `${targetBaseDate}T${placeDraft.startTime}:00.000Z`;
+            } else if (idx === targetDays.length - 1) {
+              if (placeDraft.endTime && targetBaseDate) dayEndTime = `${targetBaseDate}T${placeDraft.endTime}:00.000Z`;
+            }
+          } else {
+            if (placeDraft.startTime && targetBaseDate) {
+              dayStartTime = `${targetBaseDate}T${placeDraft.startTime}:00.000Z`;
+            }
+            if (placeDraft.endTime && targetBaseDate) {
+              dayEndTime = `${targetBaseDate}T${placeDraft.endTime}:00.000Z`;
+            }
           }
           return {
             name: placeDraft.name.trim(),

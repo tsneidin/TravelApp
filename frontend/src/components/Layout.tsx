@@ -13,6 +13,7 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { Avatar } from './Avatar';
 import { UserSettingsModal } from './UserSettingsModal';
 import type { Trip } from '../lib/types';
+import { resolveDayLocation } from '../lib/placeUtils';
 
 const TRIP_TABS: { key: string; label: string }[] = [
   { key: 'itinerary', label: 'Itinerary' },
@@ -111,30 +112,6 @@ function extractCityFromLocation(raw?: string | null): string | null {
     if (clean && !/^\d+/.test(clean)) return clean;
   }
 
-  return null;
-}
-
-function isAccommodationPlace(p?: { category?: string | null; name?: string }): boolean {
-  if (!p) return false;
-  const cat = (p.category || '').toLowerCase();
-  if (cat === 'accommodation' || cat === 'hotel' || cat === 'lodging' || cat === 'stay') return true;
-  if (/\b(hotel|resort|hostel|inn|motel|b&b|bed & breakfast|albergo|apartment|villa|guesthouse|guest house)\b/i.test(p.name || '')) {
-    return true;
-  }
-  return false;
-}
-
-function getLastCityForDay(day?: { places?: { name?: string; address?: string | null; category?: string | null }[] }): string | null {
-  if (!day?.places || day.places.length === 0) return null;
-  for (let i = day.places.length - 1; i >= 0; i--) {
-    const p = day.places[i];
-    if (!isAccommodationPlace(p)) continue;
-    const fromAddr = extractCityFromLocation(p.address);
-    if (fromAddr && fromAddr.length >= 2 && fromAddr.length <= 30) return fromAddr;
-
-    const fromName = extractCityFromLocation(p.name);
-    if (fromName && fromName.length >= 2 && fromName.length <= 30) return fromName;
-  }
   return null;
 }
 
@@ -513,14 +490,10 @@ export function Layout() {
                                   deduped.push(day);
                                 }
                               }
-                                let currentCity: string | null = null;
                               return deduped.map((day, index) => {
                                 const dateStr = formatSidebarDate(day.date);
-                                const explicitCity = getLastCityForDay(day);
-                                if (explicitCity) {
-                                  currentCity = explicitCity;
-                                }
-                                const displayCity = explicitCity || currentCity || null;
+                                const resolved = resolveDayLocation(index, deduped, t.destination);
+                                const displayCity = extractCityFromLocation(resolved.name) || (resolved.name.length <= 30 ? resolved.name : null) || null;
                                 return (
                                   <Link
                                     key={day.id}

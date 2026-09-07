@@ -13,7 +13,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
-import { computePlaceStopNumberMap, cleanPlaceOrStayTitle, resolveDayLocation } from '../../lib/placeUtils';
+import { computePlaceStopNumberMap, cleanPlaceOrStayTitle, resolveDayLocation, isAccommodationItem } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
 import { DayTodoModal } from '../../components/DayTodoModal';
@@ -508,15 +508,26 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           const targetDays = getConsecutiveDays(editing.dayId, spanDays, days);
           const spanId = generateSpanId();
           const taggedNotes = embedSpanId(editing.notes, spanId);
+          const isAccom = isAccommodationItem(editing);
           const placesPayload = targetDays.map((targetDay, idx) => {
             let dayStartTime: string | null = null;
             let dayEndTime: string | null = null;
             const targetBaseDate = targetDay.date ? targetDay.date.slice(0, 10) : baseDate;
-            if (editing.startTime) {
-              dayStartTime = `${targetBaseDate}T${editing.startTime}:00.000Z`;
-            }
-            if (editing.endTime) {
-              dayEndTime = `${targetBaseDate}T${editing.endTime}:00.000Z`;
+            if (isAccom && targetDays.length > 1) {
+              if (idx === 0) {
+                // Check-in day: starts at check-in time (e.g. 15:00 / 3 PM)
+                if (editing.startTime) dayStartTime = `${targetBaseDate}T${editing.startTime}:00.000Z`;
+              } else if (idx === targetDays.length - 1) {
+                // Checkout day: ends at check-out time (e.g. 10:00 / 10 AM)
+                if (editing.endTime) dayEndTime = `${targetBaseDate}T${editing.endTime}:00.000Z`;
+              }
+            } else {
+              if (editing.startTime) {
+                dayStartTime = `${targetBaseDate}T${editing.startTime}:00.000Z`;
+              }
+              if (editing.endTime) {
+                dayEndTime = `${targetBaseDate}T${editing.endTime}:00.000Z`;
+              }
             }
             return {
               name: editing.name.trim(),
@@ -2237,14 +2248,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               placeholder="Search a place or paste a Google Maps URL…"
               autoFocus={!editingId}
               onSelect={(pl) => {
+                const isAccom = isAccommodationItem(pl);
                 setEditing((prev) => ({
                   ...prev,
                   name: pl.name,
                   address: pl.address,
-                  category: pl.category,
+                  category: pl.category || prev.category,
                   lat: String(pl.lat),
                   lng: String(pl.lng),
                   website: pl.website || prev.website,
+                  startTime: isAccom ? (prev.startTime || '15:00') : prev.startTime,
+                  endTime: isAccom ? (prev.endTime || '10:00') : prev.endTime,
+                  spanDays: isAccom && (!prev.spanDays || prev.spanDays <= 1) ? 2 : prev.spanDays,
                 }));
               }}
             />
@@ -2337,7 +2352,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           <div className={!editingId && days.length > 0 ? 'grid grid-3' : days.length > 0 ? 'grid grid-2' : ''} style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
             <div className="field small" style={{ marginBottom: 0 }}>
               <label style={{ marginBottom: 4 }}>Category</label>
-              <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
+              <select
+                value={editing.category}
+                onChange={(e) => {
+                  const newCat = e.target.value;
+                  const isAccom = isAccommodationItem({ category: newCat });
+                  setEditing((prev) => ({
+                    ...prev,
+                    category: newCat,
+                    startTime: isAccom ? (prev.startTime || '15:00') : prev.startTime,
+                    endTime: isAccom ? (prev.endTime || '10:00') : prev.endTime,
+                    spanDays: isAccom && (!prev.spanDays || prev.spanDays <= 1) ? 2 : prev.spanDays,
+                  }));
+                }}
+              >
                 <option value="">Auto-infer with AI</option>
                 <option value="Note">📝 Note / Reminder</option>
                 <option value="Sightseeing">🏛 Sightseeing</option>

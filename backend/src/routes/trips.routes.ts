@@ -219,7 +219,7 @@ tripsRouter.patch(
     if (!isOwner(trip, userId) && !getUser(req).isAdmin) {
       throw forbidden('Only the owner can edit trip settings');
     }
-    const allowed = ['name', 'destination', 'currency', 'startDate', 'endDate', 'description', 'coverUrl', 'notes'];
+    const allowed = ['name', 'destination', 'currency', 'startDate', 'endDate', 'description', 'coverUrl', 'notes', 'notesUrl'];
     const data: Record<string, unknown> = {};
     for (const k of allowed) {
       if (req.body[k] !== undefined) data[k] = req.body[k];
@@ -420,6 +420,7 @@ tripsRouter.patch(
     };
     if (req.body.label !== undefined) data.label = req.body.label;
     if (req.body.notes !== undefined) data.notes = req.body.notes;
+    if (req.body.notesUrl !== undefined) data.notesUrl = req.body.notesUrl ? String(req.body.notesUrl).trim() || null : null;
     if (req.body.location !== undefined) data.location = req.body.location ? String(req.body.location).trim() || null : null;
     if (req.body.lat !== undefined) data.lat = req.body.lat != null ? Number(req.body.lat) : null;
     if (req.body.lng !== undefined) data.lng = req.body.lng != null ? Number(req.body.lng) : null;

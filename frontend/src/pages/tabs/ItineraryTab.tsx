@@ -138,6 +138,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     id: string;
     label: string;
     notes: string;
+    noteUrl?: string;
     location?: string;
     lat?: number | null;
     lng?: number | null;
@@ -146,6 +147,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     spanDays?: number;
     activeTargetKey?: string;
     placeNotesMap?: Record<string, string>;
+    placeUrlsMap?: Record<string, string>;
   } | null>(null);
   const [journalModalState, setJournalModalState] = useState<{
     open: boolean;
@@ -738,27 +740,33 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const openTripNotes = () => {
     const orphanNotes = orphanPlaces.filter(isItemNote);
     const pNotesMap: Record<string, string> = {};
+    const pUrlsMap: Record<string, string> = {};
     orphanNotes.forEach((p: Place) => {
       pNotesMap[p.id] = p.notes || p.description || '';
+      pUrlsMap[p.id] = p.website || '';
     });
     setDayEditor({
       id: 'trip',
       label: 'Trip Notes',
       notes: trip.notes || '',
+      noteUrl: trip.notesUrl || '',
       location: '',
       defaultLocation: trip.destination || '',
       dayNumber: undefined,
       spanDays: 1,
       activeTargetKey: 'trip',
       placeNotesMap: pNotesMap,
+      placeUrlsMap: pUrlsMap,
     });
   };
 
   const openDayNotes = (day: Day, dayIndex: number) => {
     const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
     const pNotesMap: Record<string, string> = {};
+    const pUrlsMap: Record<string, string> = {};
     (day.places ?? []).filter(isItemNote).forEach((p: Place) => {
       pNotesMap[p.id] = p.notes || p.description || '';
+      pUrlsMap[p.id] = p.website || '';
     });
     const sortedDays = [...days].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
@@ -768,6 +776,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       id: day.id,
       label: customTitle,
       notes: day.notes || '',
+      noteUrl: day.notesUrl || '',
       location: day.location || '',
       lat: day.lat,
       lng: day.lng,
@@ -776,6 +785,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       spanDays: 1,
       activeTargetKey: 'day',
       placeNotesMap: pNotesMap,
+      placeUrlsMap: pUrlsMap,
     });
   };
 
@@ -813,16 +823,22 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     if (dayEditor.id === 'trip') {
       await apiPatch(`/trips/${trip.id}`, {
         notes: dayEditor.notes?.trim() || null,
+        notesUrl: dayEditor.noteUrl?.trim() || null,
       });
 
-      if (dayEditor.placeNotesMap && orphanPlaces) {
+      if (orphanPlaces) {
         const patchPromises: Promise<unknown>[] = [];
         for (const p of orphanPlaces) {
-          const editedPlaceNote = dayEditor.placeNotesMap[p.id];
-          if (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) {
+          const editedPlaceNote = dayEditor.placeNotesMap?.[p.id];
+          const editedPlaceUrl = dayEditor.placeUrlsMap?.[p.id];
+          if (
+            (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) ||
+            (editedPlaceUrl !== undefined && editedPlaceUrl !== (p.website || ''))
+          ) {
             patchPromises.push(
               apiPatch(`/trips/${trip.id}/places/${p.id}`, {
-                notes: editedPlaceNote.trim() || null,
+                ...(editedPlaceNote !== undefined ? { notes: editedPlaceNote.trim() || null } : {}),
+                ...(editedPlaceUrl !== undefined ? { website: editedPlaceUrl.trim() || null } : {}),
               })
             );
           }
@@ -843,6 +859,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const locationVal = dayEditor.location?.trim() || null;
     const latVal = dayEditor.lat != null ? dayEditor.lat : null;
     const lngVal = dayEditor.lng != null ? dayEditor.lng : null;
+    const noteUrlVal = dayEditor.noteUrl?.trim() || null;
 
     if (currentSpan > 1) {
       const targetDays = getConsecutiveDays(dayEditor.id, currentSpan, days);
@@ -852,6 +869,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           return apiPatch(`/trips/${trip.id}/days/${d.id}`, {
             ...(isStart ? { label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null } : {}),
             notes: dayEditor.notes,
+            notesUrl: noteUrlVal,
             location: locationVal,
             lat: latVal,
             lng: lngVal,
@@ -862,20 +880,26 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
         label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
         notes: dayEditor.notes,
+        notesUrl: noteUrlVal,
         location: locationVal,
         lat: latVal,
         lng: lngVal,
       });
     }
 
-    if (dayEditor.placeNotesMap && currentDay?.places) {
+    if (currentDay?.places) {
       const patchPromises: Promise<unknown>[] = [];
       for (const p of currentDay.places) {
-        const editedPlaceNote = dayEditor.placeNotesMap[p.id];
-        if (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) {
+        const editedPlaceNote = dayEditor.placeNotesMap?.[p.id];
+        const editedPlaceUrl = dayEditor.placeUrlsMap?.[p.id];
+        if (
+          (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) ||
+          (editedPlaceUrl !== undefined && editedPlaceUrl !== (p.website || ''))
+        ) {
           patchPromises.push(
             apiPatch(`/trips/${trip.id}/places/${p.id}`, {
-              notes: editedPlaceNote.trim() || null,
+              ...(editedPlaceNote !== undefined ? { notes: editedPlaceNote.trim() || null } : {}),
+              ...(editedPlaceUrl !== undefined ? { website: editedPlaceUrl.trim() || null } : {}),
             })
           );
         }
@@ -1466,7 +1490,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           )}
 
           {/* General Trip Notes Card (if present) */}
-          {trip.notes?.trim() && (
+          {(trip.notes?.trim() || trip.notesUrl?.trim()) && (
             <div
               id="trip-notes"
               className="card mb-3"
@@ -1483,15 +1507,40 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <NotebookPen size={15} style={{ color: 'var(--accent)' }} />
                   <strong style={{ fontSize: '0.95rem' }}>Trip Notes & Reference</strong>
                 </div>
-                <button
-                  type="button"
-                  className="btn xs ghost"
-                  onClick={openTripNotes}
-                  title="Edit general trip notes"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                >
-                  <Pencil size={13} /> Edit
-                </button>
+                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                  {trip.notesUrl?.trim() && (
+                    <a
+                      href={formatUrl(trip.notesUrl.trim())}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn xs ghost"
+                      title="Open trip notes link in new tab"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        color: 'var(--accent)',
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        padding: '2px 7px',
+                        borderRadius: 4,
+                      }}
+                    >
+                      <ExternalLink size={12} />
+                      <span>Open link ↗</span>
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="btn xs ghost"
+                    onClick={openTripNotes}
+                    title="Edit general trip notes"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Pencil size={13} /> Edit
+                  </button>
+                </div>
               </div>
               <div
                 className="small"
@@ -1647,10 +1696,44 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </div>
                 </div>
 
-              {day.notes && (
-                <div className="day-notes-box mt mb">
-                  <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
-                  <span>{renderTextWithLinks(day.notes)}</span>
+              {(day.notes || day.notesUrl) && (
+                <div
+                  className="day-notes-box mt mb"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
+                    <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
+                    <span style={{ wordBreak: 'break-word' }}>{renderTextWithLinks(day.notes || '')}</span>
+                  </div>
+                  {day.notesUrl?.trim() && (
+                    <a
+                      href={formatUrl(day.notesUrl.trim())}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn xs ghost"
+                      title="Open day note link in new tab"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        color: 'var(--accent)',
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        padding: '2px 7px',
+                        borderRadius: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <ExternalLink size={12} />
+                      <span>Open link ↗</span>
+                    </a>
+                  )}
                 </div>
               )}
 
@@ -2030,6 +2113,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           ? dayEditor.notes
           : (dayEditor.placeNotesMap?.[activeKey] ?? '');
 
+        const activeNoteUrl = (activeKey === 'day' || activeKey === 'trip')
+          ? (dayEditor.noteUrl ?? '')
+          : (dayEditor.placeUrlsMap?.[activeKey] ?? '');
+
         const updateActiveNoteText = (newText: string) => {
           if (activeKey === 'day' || activeKey === 'trip') {
             setDayEditor({ ...dayEditor, notes: newText });
@@ -2039,6 +2126,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               placeNotesMap: {
                 ...(dayEditor.placeNotesMap || {}),
                 [activeKey]: newText,
+              },
+            });
+          }
+        };
+
+        const updateActiveNoteUrl = (newUrl: string) => {
+          if (activeKey === 'day' || activeKey === 'trip') {
+            setDayEditor({ ...dayEditor, noteUrl: newUrl });
+          } else {
+            setDayEditor({
+              ...dayEditor,
+              placeUrlsMap: {
+                ...(dayEditor.placeUrlsMap || {}),
+                [activeKey]: newUrl,
               },
             });
           }
@@ -2232,6 +2333,45 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 </div>
               )}
             </div>
+
+            <div className="field" style={{ marginBottom: '0.8rem' }}>
+              <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <ExternalLink size={13} className="text-accent" />
+                  <span>Note URL / Link</span>
+                </label>
+                {activeNoteUrl.trim() && (
+                  <a
+                    href={formatUrl(activeNoteUrl.trim())}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn xs ghost"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 8px',
+                      color: 'var(--accent)',
+                      textDecoration: 'none',
+                      fontWeight: 600,
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      borderRadius: 4,
+                    }}
+                    title="Open link in a new tab"
+                  >
+                    <ExternalLink size={12} />
+                    <span>Open link ↗</span>
+                  </a>
+                )}
+              </div>
+              <input
+                type="url"
+                value={activeNoteUrl}
+                onChange={(event) => updateActiveNoteUrl(event.target.value)}
+                placeholder="https://… (e.g. reservation link, tickets, article or guide URL)"
+              />
+            </div>
+
             <div className="modal-actions">
               <button className="btn primary" onClick={() => void saveDayNotes()}>Save</button>
               <button className="btn" onClick={() => setDayEditor(null)}>Cancel</button>
@@ -2511,8 +2651,15 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
           <div className="field" style={{ marginBottom: '0.6rem' }}>
             <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
-              <label style={{ margin: 0 }}>
-                {editing.category === 'Note' ? 'Website / Link URL (optional)' : 'Website'}
+              <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {editing.category === 'Note' ? (
+                  <>
+                    <ExternalLink size={13} className="text-accent" />
+                    <span>Note URL</span>
+                  </>
+                ) : (
+                  <span>Website</span>
+                )}
               </label>
               {(editing.website.trim() || isUrl(editing.name)) && (
                 <a
@@ -2520,8 +2667,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn xs ghost"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', color: 'var(--accent)', textDecoration: 'none' }}
-                  title="Open website/link in new tab"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 8px',
+                    color: 'var(--accent)',
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                    background: 'rgba(56, 189, 248, 0.12)',
+                    borderRadius: 4,
+                  }}
+                  title="Open link in new tab"
                 >
                   <ExternalLink size={12} />
                   <span>Open link ↗</span>
@@ -2532,7 +2689,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               type="url"
               value={editing.website}
               onChange={(e) => setEditing({ ...editing, website: e.target.value })}
-              placeholder="https://…"
+              placeholder={editing.category === 'Note' ? 'https://… (e.g. guide, tickets or reservation link)' : 'https://…'}
             />
           </div>
 

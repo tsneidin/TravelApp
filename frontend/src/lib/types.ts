@@ -20,6 +20,7 @@ export interface Trip {
   destination: string;
   description?: string | null;
   notes?: string | null;
+  notesUrl?: string | null;
   coverUrl?: string | null;
   currency: string;
   startDate?: string | null;
@@ -69,6 +70,7 @@ export interface Day {
   label?: string | null;
   date: string;
   notes?: string | null;
+  notesUrl?: string | null;
   location?: string | null;
   lat?: number | null;
   lng?: number | null;
@@ -107,6 +109,21 @@ export interface Place {
 
 export type BookingType = 'flight' | 'hotel' | 'car' | 'activity';
 
+export interface BookingAttachment {
+  filename: string;
+  fileType?: string;
+  size?: number;
+  text?: string;
+  summary?: string;
+}
+
+export interface BookingDetails {
+  notes?: string[];
+  sourceRaw?: string;
+  attachments?: BookingAttachment[];
+  [key: string]: unknown;
+}
+
 export interface Booking {
   id: string;
   tripId: string;
@@ -116,7 +133,7 @@ export interface Booking {
   reference?: string | null;
   startAt?: string | null;
   endAt?: string | null;
-  details?: Record<string, unknown> | null;
+  details?: BookingDetails | null;
   sourceImportId?: string | null;
   createdById?: string | null;
   createdBy?: AuditUser | null;

@@ -66,6 +66,7 @@ model Trip {
   destination String
   description String?
   notes       String?
+  notesUrl    String?
   coverUrl    String?
   currency    String    @default("USD")
   startDate   DateTime?
@@ -110,6 +111,7 @@ model Day {
   label       String?
   date        DateTime
   notes       String?
+  notesUrl    String?
   location    String?
   lat         Float?
   lng         Float?

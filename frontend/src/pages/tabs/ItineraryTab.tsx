@@ -4,7 +4,7 @@ import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
   ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink,
-  ArrowUp, ArrowDown, CheckSquare
+  ArrowUp, ArrowDown, CheckSquare, Hotel
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place, JournalEntry, Day, TodoItem } from '../../lib/types';
@@ -17,6 +17,7 @@ import { computePlaceStopNumberMap, cleanPlaceOrStayTitle, resolveDayLocation, i
 import { AuditBadge } from '../../components/AuditBadge';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
 import { DayTodoModal } from '../../components/DayTodoModal';
+import { BookingModal } from '../../components/BookingModal';
 import {
   generateSpanId,
   extractSpanId,
@@ -162,6 +163,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [deletingJournalId, setDeletingJournalId] = useState<string | null>(null);
   const [deletingPlace, setDeletingPlace] = useState<Place | null>(null);
   const [deletingDayId, setDeletingDayId] = useState<string | null>(null);
+  const [addDropdownDayId, setAddDropdownDayId] = useState<string | null>(null);
+  const [bookingModalDayState, setBookingModalDayState] = useState<{ startAt: string; endAt: string } | null>(null);
   const [pendingReorder, setPendingReorder] = useState<{
     sourcePlace: Place;
     sourceDayId: string | null;
@@ -279,6 +282,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     window.addEventListener('travelapp:set_focus_day', handleSetFocus);
     return () => window.removeEventListener('travelapp:set_focus_day', handleSetFocus);
   }, []);
+
+  // Close day add menu when clicking outside
+  useEffect(() => {
+    if (!addDropdownDayId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('.day-add-dropdown-container')) {
+        setAddDropdownDayId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [addDropdownDayId]);
 
   // When a day has no locations on the map, resolve the day's fallback location using the priority cascade.
   const fallbackLocation = useMemo(() => {
@@ -815,6 +831,17 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
   const openDayTodos = (day: Day, dayIndex: number) => {
     setDayTodoModalState({ day, dayIndex });
+  };
+
+  const openAddBookingForDay = (day: Day) => {
+    const dStr = day.date ? day.date.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const checkin = `${dStr}T15:00`;
+    const nextD = new Date(`${dStr}T00:00:00`);
+    nextD.setDate(nextD.getDate() + 1);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const checkoutStr = `${nextD.getFullYear()}-${pad(nextD.getMonth() + 1)}-${pad(nextD.getDate())}`;
+    const checkout = `${checkoutStr}T10:00`;
+    setBookingModalDayState({ startAt: checkin, endAt: checkout });
   };
 
   const saveDayNotes = async () => {
@@ -1620,10 +1647,125 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         <span>{isFocused ? '🎯 Focused' : 'Focus day'}</span>
                       </button>
                     </div>
-                    <div className="row" style={{ gap: 6, marginLeft: 'auto' }}>
-                      <button type="button" className="btn sm ghost" onClick={() => openNew(day.id)}>
-                        <Plus size={14} /> Add
-                      </button>
+                    <div className="row" style={{ gap: 6, marginLeft: 'auto', position: 'relative' }}>
+                      <div className="day-add-dropdown-container" style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAddDropdownDayId(addDropdownDayId === day.id ? null : day.id);
+                          }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title="Add item, notes, journal, or booking to this day"
+                        >
+                          <Plus size={14} />
+                          <span>Add</span>
+                          <ChevronDown size={12} style={{ opacity: 0.7 }} />
+                        </button>
+
+                        {addDropdownDayId === day.id && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 4px)',
+                              right: 0,
+                              zIndex: 110,
+                              minWidth: '190px',
+                              background: 'var(--card-bg, #1a1e29)',
+                              border: '1px solid var(--border)',
+                              borderRadius: '8px',
+                              boxShadow: '0 8px 24px rgba(0,0,0,0.36)',
+                              padding: '5px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px',
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              style={{
+                                width: '100%',
+                                justifyContent: 'flex-start',
+                                textAlign: 'left',
+                                padding: '7px 10px',
+                                gap: 8,
+                                borderRadius: 6,
+                              }}
+                              onClick={() => {
+                                setAddDropdownDayId(null);
+                                openNew(day.id);
+                              }}
+                            >
+                              <MapPin size={14} style={{ color: 'var(--accent)' }} />
+                              <span>Place / Activity</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              style={{
+                                width: '100%',
+                                justifyContent: 'flex-start',
+                                textAlign: 'left',
+                                padding: '7px 10px',
+                                gap: 8,
+                                borderRadius: 6,
+                              }}
+                              onClick={() => {
+                                setAddDropdownDayId(null);
+                                openDayNotes(day, dayIndex);
+                              }}
+                            >
+                              <FileText size={14} style={{ color: '#eab308' }} />
+                              <span>Day Notes</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              style={{
+                                width: '100%',
+                                justifyContent: 'flex-start',
+                                textAlign: 'left',
+                                padding: '7px 10px',
+                                gap: 8,
+                                borderRadius: 6,
+                              }}
+                              onClick={() => {
+                                setAddDropdownDayId(null);
+                                openDayJournals(day, dayIndex);
+                              }}
+                            >
+                              <BookOpen size={14} style={{ color: '#a855f7' }} />
+                              <span>Journal Entry</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              style={{
+                                width: '100%',
+                                justifyContent: 'flex-start',
+                                textAlign: 'left',
+                                padding: '7px 10px',
+                                gap: 8,
+                                borderRadius: 6,
+                              }}
+                              onClick={() => {
+                                setAddDropdownDayId(null);
+                                openAddBookingForDay(day);
+                              }}
+                            >
+                              <Hotel size={14} style={{ color: '#10b981' }} />
+                              <span>Booking / Stay</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
                       <button type="button" className="btn sm ghost danger" onClick={() => removeDay(day.id)} title="Delete day">
                         <Trash2 size={13} />
                       </button>
@@ -2300,6 +2442,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           todos={trip.todos ?? []}
           onReload={reload}
           onNavigateToTodos={() => navigate(`/trips/${trip.id}?tab=todos`)}
+        />
+      )}
+
+      {bookingModalDayState && (
+        <BookingModal
+          tripId={trip.id}
+          initialType="hotel"
+          initialStartAt={bookingModalDayState.startAt}
+          initialEndAt={bookingModalDayState.endAt}
+          onClose={() => setBookingModalDayState(null)}
+          onSaved={async () => {
+            setBookingModalDayState(null);
+            await reload();
+          }}
         />
       )}
 

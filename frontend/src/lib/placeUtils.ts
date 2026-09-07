@@ -156,3 +156,107 @@ export function computePlaceStopNumberMap(
 
   return map;
 }
+
+export function isNoteItem(place: Place): boolean {
+  const cat = (place.category || '').toLowerCase().trim();
+  return cat === 'note' || cat === 'notes';
+}
+
+export interface ResolvedDayLocation {
+  name: string;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  source: 'explicit' | 'lodging' | 'last_activity' | 'carried_forward' | 'trip_destination' | 'none';
+}
+
+/**
+ * Resolves the location of an itinerary day following the priority cascade:
+ * 1. Day's explicit location field
+ * 2. Day's lodging / accommodation location
+ * 3. Day's last activity location
+ * 4. Carried forward from previous day
+ * 5. Trip destination
+ */
+export function resolveDayLocation(
+  dayIndex: number,
+  sortedDays: Day[],
+  tripDestination?: string | null,
+): ResolvedDayLocation {
+  if (dayIndex < 0 || dayIndex >= sortedDays.length) {
+    return tripDestination?.trim()
+      ? { name: tripDestination.trim(), address: tripDestination.trim(), source: 'trip_destination' }
+      : { name: '', source: 'none' };
+  }
+
+  const day = sortedDays[dayIndex];
+
+  // 1. Explicit day location
+  if (day.location && day.location.trim()) {
+    return {
+      name: day.location.trim(),
+      address: day.location.trim(),
+      lat: day.lat,
+      lng: day.lng,
+      source: 'explicit',
+    };
+  }
+
+  // 2. Day's lodging location
+  const places = day.places || [];
+  const lodgingPlaces = places.filter(isAccommodationItem);
+  if (lodgingPlaces.length > 0) {
+    const primaryLodging = lodgingPlaces[0];
+    const locName = cleanPlaceOrStayTitle(primaryLodging.name);
+    const locAddress = primaryLodging.address?.trim() || locName;
+    return {
+      name: locAddress,
+      address: primaryLodging.address,
+      lat: primaryLodging.lat,
+      lng: primaryLodging.lng,
+      source: 'lodging',
+    };
+  }
+
+  // 3. Day's last activity location
+  const activityPlaces = places.filter(
+    (p) =>
+      !isNoteItem(p) &&
+      (p.address?.trim() || p.name?.trim() || (p.lat != null && p.lng != null)),
+  );
+  if (activityPlaces.length > 0) {
+    const lastActivity = activityPlaces[activityPlaces.length - 1];
+    const actName = cleanPlaceOrStayTitle(lastActivity.name);
+    const actAddress = lastActivity.address?.trim() || actName;
+    return {
+      name: actAddress,
+      address: lastActivity.address,
+      lat: lastActivity.lat,
+      lng: lastActivity.lng,
+      source: 'last_activity',
+    };
+  }
+
+  // 4. Carried forward from previous day
+  if (dayIndex > 0) {
+    const prevResolved = resolveDayLocation(dayIndex - 1, sortedDays, tripDestination);
+    if (prevResolved.source !== 'none' && prevResolved.name) {
+      return {
+        ...prevResolved,
+        source: 'carried_forward',
+      };
+    }
+  }
+
+  // 5. Trip destination fallback
+  if (tripDestination && tripDestination.trim()) {
+    return {
+      name: tripDestination.trim(),
+      address: tripDestination.trim(),
+      source: 'trip_destination',
+    };
+  }
+
+  return { name: '', source: 'none' };
+}
+

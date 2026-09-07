@@ -13,7 +13,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
-import { computePlaceStopNumberMap, cleanPlaceOrStayTitle } from '../../lib/placeUtils';
+import { computePlaceStopNumberMap, cleanPlaceOrStayTitle, resolveDayLocation } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
 import { DayTodoModal } from '../../components/DayTodoModal';
@@ -137,6 +137,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     id: string;
     label: string;
     notes: string;
+    location?: string;
+    lat?: number | null;
+    lng?: number | null;
+    defaultLocation?: string;
     dayNumber?: number;
     spanDays?: number;
     activeTargetKey?: string;
@@ -273,7 +277,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     return () => window.removeEventListener('travelapp:set_focus_day', handleSetFocus);
   }, []);
 
-  // When a day has no locations, find the most recent prior day that has a location.
+  // When a day has no locations on the map, resolve the day's fallback location using the priority cascade.
   const fallbackLocation = useMemo(() => {
     if (!selectedDayId || selectedDayId === 'unassigned') {
       return trip.destination ? { address: trip.destination } : undefined;
@@ -287,35 +291,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       return trip.destination ? { address: trip.destination } : undefined;
     }
 
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      const priorDay = sortedDays[i];
-      if (priorDay.places && priorDay.places.length > 0) {
-        const validPlaces = priorDay.places.filter(
-          (p) => (p.lat != null && p.lng != null) || p.address?.trim() || p.name?.trim(),
-        );
-        if (validPlaces.length > 0) {
-          const lastPlace = validPlaces[validPlaces.length - 1];
-          if (lastPlace.lat != null && lastPlace.lng != null) {
-            return {
-              coord: { lat: lastPlace.lat, lng: lastPlace.lng },
-              name: lastPlace.name,
-              address: lastPlace.address || lastPlace.name,
-            };
-          }
-          if (lastPlace.address?.trim()) {
-            return {
-              address: lastPlace.address.trim(),
-              name: lastPlace.name,
-            };
-          }
-          if (lastPlace.name?.trim()) {
-            return {
-              address: [lastPlace.name.trim(), trip.destination].filter(Boolean).join(', '),
-              name: lastPlace.name,
-            };
-          }
-        }
-      }
+    const resolved = resolveDayLocation(currentIndex, sortedDays, trip.destination);
+    if (resolved.lat != null && resolved.lng != null) {
+      return {
+        coord: { lat: resolved.lat, lng: resolved.lng },
+        name: resolved.name,
+        address: resolved.address || resolved.name,
+      };
+    }
+    if (resolved.name) {
+      return {
+        name: resolved.name,
+        address: resolved.address || resolved.name,
+      };
     }
 
     return trip.destination ? { address: trip.destination } : undefined;
@@ -741,10 +729,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     (day.places ?? []).filter(isItemNote).forEach((p: Place) => {
       pNotesMap[p.id] = p.notes || p.description || '';
     });
+    const sortedDays = [...days].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
+    );
+    const resolved = resolveDayLocation(dayIndex, sortedDays, trip.destination);
     setDayEditor({
       id: day.id,
       label: customTitle,
       notes: day.notes || '',
+      location: day.location || '',
+      lat: day.lat,
+      lng: day.lng,
+      defaultLocation: resolved.name || trip.destination || '',
       dayNumber: dayIndex + 1,
       spanDays: 1,
       activeTargetKey: 'day',
@@ -785,6 +781,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const trimmed = dayEditor.label.trim();
     const currentSpan = dayEditor.spanDays ?? 1;
     const currentDay = days.find((d) => d.id === dayEditor.id);
+    const locationVal = dayEditor.location?.trim() || null;
+    const latVal = dayEditor.lat != null ? dayEditor.lat : null;
+    const lngVal = dayEditor.lng != null ? dayEditor.lng : null;
 
     if (currentSpan > 1) {
       const targetDays = getConsecutiveDays(dayEditor.id, currentSpan, days);
@@ -794,6 +793,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           return apiPatch(`/trips/${trip.id}/days/${d.id}`, {
             ...(isStart ? { label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null } : {}),
             notes: dayEditor.notes,
+            location: locationVal,
+            lat: latVal,
+            lng: lngVal,
           });
         }),
       );
@@ -801,6 +803,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
         label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
         notes: dayEditor.notes,
+        location: locationVal,
+        lat: latVal,
+        lng: lngVal,
       });
     }
 
@@ -1394,6 +1399,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             const dayPlaceNotes = (day.places ?? []).filter(isItemNote);
             const hasDayNotes = Boolean(day.notes?.trim());
             const totalDayNotesCount = (hasDayNotes ? 1 : 0) + dayPlaceNotes.length;
+            const resolvedLocation = resolveDayLocation(dayIndex, days, trip.destination);
 
             return (
               <div
@@ -1414,13 +1420,39 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       <button
                         type="button"
                         className="btn xs ghost muted-hover"
-                        title="Rename day or edit notes"
+                        title="Rename day, set location or edit notes"
                         onClick={() => openDayNotes(day, dayIndex)}
                         style={{ padding: '2px 4px' }}
                       >
                         <Pencil size={12} />
                       </button>
                       <span className="day-stop-count small muted">({day.places.length} stops)</span>
+                      {resolvedLocation.name && (
+                        <span
+                          className="badge"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.74rem',
+                            fontWeight: 500,
+                            padding: '2px 7px',
+                            background: resolvedLocation.source === 'explicit' ? 'rgba(56, 189, 248, 0.15)' : 'var(--panel-2)',
+                            color: resolvedLocation.source === 'explicit' ? 'var(--accent)' : 'var(--text)',
+                            border: '1px solid var(--line)',
+                            maxWidth: '220px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={`Day location (${resolvedLocation.source.replace('_', ' ')}): ${resolvedLocation.name}`}
+                        >
+                          <MapPin size={11} style={{ flexShrink: 0, color: 'var(--accent)' }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {resolvedLocation.name}
+                          </span>
+                        </span>
+                      )}
                     </div>
 
                     {/* Date right justified on the right side */}
@@ -1911,14 +1943,68 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             )}
 
             {activeKey === 'day' && (
-              <div className="field" style={{ marginBottom: '0.6rem' }}>
-                <label style={{ marginBottom: 4 }}>Day title / label</label>
-                <input
-                  value={dayEditor.label}
-                  onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
-                  placeholder="e.g. Arrival in Tokyo"
-                />
-              </div>
+              <>
+                <div className="field" style={{ marginBottom: '0.6rem' }}>
+                  <label style={{ marginBottom: 4 }}>Day title / label</label>
+                  <input
+                    value={dayEditor.label}
+                    onChange={(event) => setDayEditor({ ...dayEditor, label: event.target.value })}
+                    placeholder="e.g. Arrival in Tokyo"
+                  />
+                </div>
+
+                <div className="field" style={{ marginBottom: '0.6rem' }}>
+                  <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
+                    <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <MapPin size={13} className="text-accent" />
+                      <span>Day Location</span>
+                    </label>
+                    {dayEditor.location && (
+                      <button
+                        type="button"
+                        className="btn xs link muted"
+                        style={{ padding: 0, fontSize: '11px' }}
+                        onClick={() => setDayEditor({ ...dayEditor, location: '', lat: null, lng: null })}
+                      >
+                        Reset to default
+                      </button>
+                    )}
+                  </div>
+                  <PlaceSearchInput
+                    value={dayEditor.location ?? ''}
+                    placeholder={
+                      dayEditor.defaultLocation
+                        ? `Auto: ${dayEditor.defaultLocation} (type or search to override)`
+                        : 'Search city, neighborhood, or address…'
+                    }
+                    biasLat={tripCenter?.lat}
+                    biasLng={tripCenter?.lng}
+                    onChange={(val) => setDayEditor((prev) => (prev ? { ...prev, location: val } : prev))}
+                    onSelect={(pl) => {
+                      setDayEditor((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              location: pl.address || pl.name,
+                              lat: pl.lat,
+                              lng: pl.lng,
+                            }
+                          : prev,
+                      );
+                    }}
+                  />
+                  <div className="small muted" style={{ marginTop: 3, fontSize: '11.5px' }}>
+                    {dayEditor.location ? (
+                      <span>Custom location set for this day</span>
+                    ) : (
+                      <span>
+                        Defaulting to:{' '}
+                        <strong>{dayEditor.defaultLocation || trip.destination || 'Trip destination'}</strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
 
             <div className="field" style={{ marginBottom: '0.6rem' }}>

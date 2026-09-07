@@ -12,6 +12,8 @@ interface PlaceSearchInputProps {
   biasLng?: number;
   placeholder?: string;
   autoFocus?: boolean;
+  value?: string;
+  onChange?: (val: string) => void;
 }
 
 function getCategoryIcon(category: string) {
@@ -38,8 +40,10 @@ export function PlaceSearchInput({
   biasLng,
   placeholder = 'Search a place or paste a Google Maps URL…',
   autoFocus = false,
+  value,
+  onChange,
 }: PlaceSearchInputProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(value ?? '');
   const [results, setResults] = useState<GeocodedPlace[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -47,6 +51,12 @@ export function PlaceSearchInput({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (value !== undefined) {
+      setQuery(value);
+    }
+  }, [value]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -102,7 +112,12 @@ export function PlaceSearchInput({
 
   const handleSelect = (place: GeocodedPlace) => {
     onSelect(place);
-    setQuery('');
+    if (value !== undefined) {
+      setQuery(place.address || place.name);
+      onChange?.(place.address || place.name);
+    } else {
+      setQuery('');
+    }
     setResults([]);
     setOpen(false);
   };
@@ -134,6 +149,7 @@ export function PlaceSearchInput({
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
+            onChange?.(e.target.value);
             if (!open) setOpen(true);
           }}
           onFocus={() => {
@@ -151,9 +167,11 @@ export function PlaceSearchInput({
             className="clear-btn"
             onClick={() => {
               setQuery('');
+              onChange?.('');
               setResults([]);
               setOpen(false);
             }}
+            title="Clear search"
           >
             <X size={14} />
           </button>

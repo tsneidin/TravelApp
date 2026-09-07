@@ -68,6 +68,9 @@ export interface Day {
   label?: string | null;
   date: string;
   notes?: string | null;
+  location?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   sortOrder: number;
   places: Place[];
   createdById?: string | null;

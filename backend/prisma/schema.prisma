@@ -109,6 +109,9 @@ model Day {
   label       String?
   date        DateTime
   notes       String?
+  location    String?
+  lat         Float?
+  lng         Float?
   sortOrder   Int      @default(0)
   createdById String?
   updatedById String?

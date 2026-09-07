@@ -389,11 +389,17 @@ tripsRouter.post(
     const rawLabel = typeof req.body.label === 'string' ? req.body.label.trim() : undefined;
     const label = rawLabel && !isGenericDayLabel(rawLabel) ? rawLabel : undefined;
     const sortOrder = req.body.sortOrder ?? (await prisma.day.count({ where: { tripId } }));
+    const location = typeof req.body.location === 'string' ? req.body.location.trim() || null : undefined;
+    const lat = typeof req.body.lat === 'number' ? req.body.lat : undefined;
+    const lng = typeof req.body.lng === 'number' ? req.body.lng : undefined;
     const day = await prisma.day.create({
       data: {
         tripId,
         date,
         label,
+        location,
+        lat,
+        lng,
         sortOrder,
         createdById: user.id,
       },
@@ -414,6 +420,9 @@ tripsRouter.patch(
     };
     if (req.body.label !== undefined) data.label = req.body.label;
     if (req.body.notes !== undefined) data.notes = req.body.notes;
+    if (req.body.location !== undefined) data.location = req.body.location ? String(req.body.location).trim() || null : null;
+    if (req.body.lat !== undefined) data.lat = req.body.lat != null ? Number(req.body.lat) : null;
+    if (req.body.lng !== undefined) data.lng = req.body.lng != null ? Number(req.body.lng) : null;
     if (req.body.date !== undefined) data.date = new Date(req.body.date);
     const day = await prisma.day.update({ where: { id: dayId }, data });
     res.json({ day });

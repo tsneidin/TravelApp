@@ -4,10 +4,10 @@ import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
   Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
   ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink,
-  ArrowUp, ArrowDown, CheckSquare, Hotel
+  ArrowUp, ArrowDown, CheckSquare, Hotel, Compass
 } from 'lucide-react';
-import { apiPost, apiPatch, apiDelete } from '../../lib/api';
-import type { Trip, Place, JournalEntry, Day, TodoItem } from '../../lib/types';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
+import type { Trip, Place, JournalEntry, Day, TodoItem, GeocodedPlace } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
@@ -153,6 +153,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     newNoteTitle?: string;
     newNoteText?: string;
     newNoteUrl?: string;
+    focusLocation?: boolean;
   } | null>(null);
   const [journalModalState, setJournalModalState] = useState<{
     open: boolean;
@@ -818,6 +819,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     });
   };
 
+  const openDayLocation = (day: Day, dayIndex: number) => {
+    openDayNotes(day, dayIndex);
+    setDayEditor((prev) => (prev ? { ...prev, activeTargetKey: 'day', focusLocation: true } : prev));
+  };
+
   const openDayJournals = (day: Day, dayIndex: number) => {
     const customTitle = !isGenericDayLabel(day.label) ? `: ${day.label}` : '';
     const entriesForDay = (trip.journal ?? []).filter((j: JournalEntry) => {
@@ -917,9 +923,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const currentSpan = dayEditor.spanDays ?? 1;
     const currentDay = days.find((d) => d.id === dayEditor.id);
     const locationVal = dayEditor.location?.trim() || null;
-    const latVal = dayEditor.lat != null ? dayEditor.lat : null;
-    const lngVal = dayEditor.lng != null ? dayEditor.lng : null;
+    let latVal = dayEditor.lat != null ? dayEditor.lat : null;
+    let lngVal = dayEditor.lng != null ? dayEditor.lng : null;
     const noteUrlVal = dayEditor.noteUrl?.trim() || null;
+
+    if (locationVal && (latVal == null || lngVal == null || (latVal === 0 && lngVal === 0))) {
+      try {
+        const searchRes = await apiGet<{ places: GeocodedPlace[] }>(
+          `/places/search?q=${encodeURIComponent(locationVal)}&limit=1`,
+        );
+        if (searchRes.places?.[0] && searchRes.places[0].lat != null && searchRes.places[0].lng != null) {
+          latVal = searchRes.places[0].lat;
+          lngVal = searchRes.places[0].lng;
+        }
+      } catch {
+        // server-side fallback in PATCH /days/:dayId will also try
+      }
+    }
 
     if (currentSpan > 1) {
       const targetDays = getConsecutiveDays(dayEditor.id, currentSpan, days);
@@ -1605,9 +1625,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         <Pencil size={12} />
                       </button>
                       <span className="day-stop-count small muted">({day.places.length} stops)</span>
-                      {resolvedLocation.name && (
+                      {resolvedLocation.name ? (
                         <span
                           className="badge"
+                          onClick={() => openDayLocation(day, dayIndex)}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -1622,14 +1643,26 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
+                            cursor: 'pointer',
                           }}
-                          title={`Day location (${resolvedLocation.source.replace('_', ' ')}): ${resolvedLocation.name}`}
+                          title={`Day location (${resolvedLocation.source.replace('_', ' ')}): ${resolvedLocation.name} (click to edit)`}
                         >
                           <MapPin size={11} style={{ flexShrink: 0, color: 'var(--accent)' }} />
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {resolvedLocation.name}
                           </span>
                         </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn xs ghost muted"
+                          onClick={() => openDayLocation(day, dayIndex)}
+                          style={{ fontSize: '0.74rem', padding: '1px 6px', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                          title="Set day location"
+                        >
+                          <MapPin size={11} />
+                          <span>Set location</span>
+                        </button>
                       )}
                     </div>
 
@@ -1715,6 +1748,18 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                             >
                               <MapPin size={15} style={{ color: 'var(--accent)' }} />
                               <span>Place / Activity</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="day-add-dropdown-item"
+                              onClick={() => {
+                                setAddDropdownDayId(null);
+                                openDayLocation(day, dayIndex);
+                              }}
+                            >
+                              <Compass size={15} style={{ color: '#06b6d4' }} />
+                              <span>Day Location</span>
                             </button>
 
                             <button
@@ -2362,6 +2407,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </div>
                   <PlaceSearchInput
                     value={dayEditor.location ?? ''}
+                    autoFocus={dayEditor.focusLocation}
                     placeholder={
                       dayEditor.defaultLocation
                         ? `Auto: ${dayEditor.defaultLocation} (type or search to override)`
@@ -2375,7 +2421,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         prev
                           ? {
                               ...prev,
-                              location: pl.address || pl.name,
+                              location: pl.category === 'City' ? (pl.name || pl.address) : (pl.address || pl.name),
                               lat: pl.lat,
                               lng: pl.lng,
                             }

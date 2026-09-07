@@ -39,6 +39,13 @@ describe('classifyCategory', () => {
     expect(classifyCategory('historic', 'monument')).toBe('Sightseeing');
   });
 
+  it('maps places, cities, and towns to City', () => {
+    expect(classifyCategory('place', 'city')).toBe('City');
+    expect(classifyCategory('place', 'town')).toBe('City');
+    expect(classifyCategory('place', 'village')).toBe('City');
+    expect(classifyCategory('boundary', 'administrative')).toBe('City');
+  });
+
   it('defaults unknown tags to Sightseeing', () => {
     expect(classifyCategory('unknown', 'unknown')).toBe('Sightseeing');
     expect(classifyCategory(undefined, undefined)).toBe('Sightseeing');

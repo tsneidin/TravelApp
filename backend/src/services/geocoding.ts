@@ -20,6 +20,12 @@ export function classifyCategory(osmKey?: string, osmValue?: string): string {
   const key = (osmKey || '').toLowerCase();
   const val = (osmValue || '').toLowerCase();
 
+  // City / Town / Village / Region / Place
+  if (['place', 'boundary'].includes(key) ||
+      ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'locality', 'municipality', 'administrative'].includes(val)) {
+    return 'City';
+  }
+
   // Restaurant / Food
   if (['restaurant', 'cafe', 'fast_food', 'bar', 'pub', 'food_court', 'bistro', 'bakery', 'ice_cream'].includes(val)) {
     return 'Restaurant';
@@ -71,8 +77,10 @@ interface PhotonFeature {
     city?: string;
     town?: string;
     village?: string;
+    county?: string;
     state?: string;
     country?: string;
+    type?: string;
     osm_key?: string;
     osm_value?: string;
   };
@@ -94,13 +102,29 @@ async function searchViaPhoton(query: string, biasLat?: number, biasLng?: number
     if (lat == null || lon == null) continue;
 
     const name = props.name || props.street || query;
+    const isCityOrPlace = ['place', 'boundary'].includes(props.osm_key || '') ||
+      ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'locality', 'municipality', 'administrative'].includes(props.osm_value || '') ||
+      ['city', 'town', 'village', 'locality'].includes(props.type || '');
+
     const street = props.housenumber && props.street ? `${props.housenumber} ${props.street}` : (props.street || '');
-    const city = props.city || props.town || props.village || '';
+    const city = props.city || props.town || props.village || (isCityOrPlace ? name : '');
+    const county = props.county || '';
     const state = props.state || '';
     const country = props.country || '';
 
-    const addressParts = [street, city, state, country].filter(Boolean);
-    const address = addressParts.length > 0 ? addressParts.join(', ') : name;
+    const parts: string[] = [];
+    if (street) parts.push(street);
+    if (city && !parts.includes(city)) parts.push(city);
+    if (county && county !== city && !parts.includes(county)) parts.push(county);
+    if (state && !parts.includes(state)) parts.push(state);
+    if (country && !parts.includes(country)) parts.push(country);
+
+    // If it's a specific named place not yet in parts, prepend it
+    if (name && !parts.includes(name)) {
+      parts.unshift(name);
+    }
+
+    const address = parts.length > 0 ? parts.join(', ') : name;
 
     places.push({
       name,
@@ -204,6 +228,21 @@ export async function searchPlaces(
       console.error('[geocoding] Nominatim search also failed:', (err as Error).message);
     }
   }
+
+  // Prioritize city/administrative boundaries when query matches
+  results.sort((a, b) => {
+    const aIsCity = a.category === 'City';
+    const bIsCity = b.category === 'City';
+    const qLower = q.toLowerCase();
+    const aExact = a.name.toLowerCase() === qLower || a.address.toLowerCase().startsWith(qLower);
+    const bExact = b.name.toLowerCase() === qLower || b.address.toLowerCase().startsWith(qLower);
+
+    if (aIsCity && aExact && (!bIsCity || !bExact)) return -1;
+    if (bIsCity && bExact && (!aIsCity || !aExact)) return 1;
+    if (aIsCity && !bIsCity) return -1;
+    if (bIsCity && !aIsCity) return 1;
+    return 0;
+  });
 
   // Cache results if we found any
   if (cache.size >= MAX_CACHE_ENTRIES) {

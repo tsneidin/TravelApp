@@ -3268,6 +3268,7 @@ a.link:hover {
 .cat-icon.cat-shopping { color: #ec4899; }
 .cat-icon.cat-activity { color: #eab308; }
 .cat-icon.cat-sight { color: var(--accent); }
+.cat-icon.cat-city { color: #06b6d4; }
 
 .place-item-details {
   flex: 1;

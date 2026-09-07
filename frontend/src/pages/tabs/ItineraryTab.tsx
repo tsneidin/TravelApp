@@ -1666,100 +1666,54 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
                         {addDropdownDayId === day.id && (
                           <div
-                            style={{
-                              position: 'absolute',
-                              top: 'calc(100% + 4px)',
-                              right: 0,
-                              zIndex: 110,
-                              minWidth: '190px',
-                              background: 'var(--card-bg, #1a1e29)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '8px',
-                              boxShadow: '0 8px 24px rgba(0,0,0,0.36)',
-                              padding: '5px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '2px',
-                            }}
+                            className="day-add-dropdown-menu"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <button
                               type="button"
-                              className="btn sm ghost"
-                              style={{
-                                width: '100%',
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                padding: '7px 10px',
-                                gap: 8,
-                                borderRadius: 6,
-                              }}
+                              className="day-add-dropdown-item"
                               onClick={() => {
                                 setAddDropdownDayId(null);
                                 openNew(day.id);
                               }}
                             >
-                              <MapPin size={14} style={{ color: 'var(--accent)' }} />
+                              <MapPin size={15} style={{ color: 'var(--accent)' }} />
                               <span>Place / Activity</span>
                             </button>
 
                             <button
                               type="button"
-                              className="btn sm ghost"
-                              style={{
-                                width: '100%',
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                padding: '7px 10px',
-                                gap: 8,
-                                borderRadius: 6,
-                              }}
+                              className="day-add-dropdown-item"
                               onClick={() => {
                                 setAddDropdownDayId(null);
                                 openDayNotes(day, dayIndex);
                               }}
                             >
-                              <FileText size={14} style={{ color: '#eab308' }} />
+                              <FileText size={15} style={{ color: '#eab308' }} />
                               <span>Day Notes</span>
                             </button>
 
                             <button
                               type="button"
-                              className="btn sm ghost"
-                              style={{
-                                width: '100%',
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                padding: '7px 10px',
-                                gap: 8,
-                                borderRadius: 6,
-                              }}
+                              className="day-add-dropdown-item"
                               onClick={() => {
                                 setAddDropdownDayId(null);
                                 openDayJournals(day, dayIndex);
                               }}
                             >
-                              <BookOpen size={14} style={{ color: '#a855f7' }} />
+                              <BookOpen size={15} style={{ color: '#a855f7' }} />
                               <span>Journal Entry</span>
                             </button>
 
                             <button
                               type="button"
-                              className="btn sm ghost"
-                              style={{
-                                width: '100%',
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                padding: '7px 10px',
-                                gap: 8,
-                                borderRadius: 6,
-                              }}
+                              className="day-add-dropdown-item"
                               onClick={() => {
                                 setAddDropdownDayId(null);
                                 openAddBookingForDay(day);
                               }}
                             >
-                              <Hotel size={14} style={{ color: '#10b981' }} />
+                              <Hotel size={15} style={{ color: '#10b981' }} />
                               <span>Booking / Stay</span>
                             </button>
                           </div>

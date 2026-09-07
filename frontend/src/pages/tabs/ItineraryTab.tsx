@@ -1489,72 +1489,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             </div>
           )}
 
-          {/* General Trip Notes Card (if present) */}
-          {(trip.notes?.trim() || trip.notesUrl?.trim()) && (
-            <div
-              id="trip-notes"
-              className="card mb-3"
-              style={{
-                borderLeft: '4px solid var(--accent)',
-                background: 'var(--surface-hover)',
-                borderRadius: '8px',
-                padding: '12px 14px',
-                marginBottom: '1rem',
-              }}
-            >
-              <div className="row between" style={{ marginBottom: 6 }}>
-                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                  <NotebookPen size={15} style={{ color: 'var(--accent)' }} />
-                  <strong style={{ fontSize: '0.95rem' }}>Trip Notes & Reference</strong>
-                </div>
-                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                  {trip.notesUrl?.trim() && (
-                    <a
-                      href={formatUrl(trip.notesUrl.trim())}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn xs ghost"
-                      title="Open trip notes link in new tab"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        color: 'var(--accent)',
-                        fontWeight: 600,
-                        textDecoration: 'none',
-                        background: 'rgba(56, 189, 248, 0.12)',
-                        padding: '2px 7px',
-                        borderRadius: 4,
-                      }}
-                    >
-                      <ExternalLink size={12} />
-                      <span>Open link ↗</span>
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    className="btn xs ghost"
-                    onClick={openTripNotes}
-                    title="Edit general trip notes"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                </div>
-              </div>
-              <div
-                className="small"
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  color: 'var(--text)',
-                  lineHeight: 1.5,
-                  wordBreak: 'break-word',
-                }}
-              >
-                {renderTextWithLinks(trip.notes)}
-              </div>
-            </div>
-          )}
+          <div id="trip-notes" />
 
           {days.length === 0 && (
             <div className="empty-state">
@@ -1696,46 +1631,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </div>
                 </div>
 
-              {(day.notes || day.notesUrl) && (
-                <div
-                  className="day-notes-box mt mb"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
-                    <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
-                    <span style={{ wordBreak: 'break-word' }}>{renderTextWithLinks(day.notes || '')}</span>
-                  </div>
-                  {day.notesUrl?.trim() && (
-                    <a
-                      href={formatUrl(day.notesUrl.trim())}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn xs ghost"
-                      title="Open day note link in new tab"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        color: 'var(--accent)',
-                        fontWeight: 600,
-                        textDecoration: 'none',
-                        background: 'rgba(56, 189, 248, 0.12)',
-                        padding: '2px 7px',
-                        borderRadius: 4,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <ExternalLink size={12} />
-                      <span>Open link ↗</span>
-                    </a>
-                  )}
-                </div>
-              )}
+
 
               {day.places.length === 0 ? (
                 <div

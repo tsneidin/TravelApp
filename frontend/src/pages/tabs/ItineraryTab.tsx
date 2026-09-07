@@ -25,6 +25,7 @@ import {
   findSpannedPlaces,
   getConsecutiveDays,
 } from '../../lib/spanUtils';
+import { renderTextWithLinks, isUrl, formatUrl } from '../../lib/linkUtils';
 
 interface PlaceForm {
   dayId?: string;
@@ -841,6 +842,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     await reload();
   };
 
+  useEffect(() => {
+    const handleOpenDayNotes = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tripId?: string; dayId?: string; dayIndex?: number } | undefined;
+      if (!detail?.dayId) return;
+      const sortedDays = [...days].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
+      );
+      const targetDay = sortedDays.find((d) => d.id === detail.dayId);
+      if (targetDay) {
+        const dIdx = detail.dayIndex != null ? detail.dayIndex : sortedDays.indexOf(targetDay);
+        openDayNotes(targetDay, Math.max(0, dIdx));
+      }
+    };
+    window.addEventListener('travelapp:open_day_notes', handleOpenDayNotes);
+    return () => window.removeEventListener('travelapp:open_day_notes', handleOpenDayNotes);
+  }, [days, trip.destination]);
+
   const handleSaveJournalEntry = async (data: { id?: string; title: string; body: string; date?: string }) => {
     const targetId = data.id || journalModalState.entry?.id;
     if (targetId) {
@@ -925,6 +943,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const isSpanned = siblingPlaces.length > 1;
     const hasMeta = Boolean(locationText || categoryText || formattedTime || isSpanned);
 
+    const isNote = isItemNote(p);
+    const noteUrl = p.website || (isUrl(p.name) ? formatUrl(p.name) : isUrl(p.notes) ? formatUrl(p.notes) : null);
+
     return (
       <div
         key={p.id}
@@ -1004,14 +1025,14 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   {getCategoryIcon(p.category, p.name)}
                 </span>
                 <span className="place-title">{cleanPlaceOrStayTitle(p.name)}</span>
-                {p.website && (
+                {noteUrl && (
                   <a
-                    href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
+                    href={formatUrl(noteUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="website-ext-link"
                     onClick={(e) => e.stopPropagation()}
-                    title={`Open ${p.website} in new tab`}
+                    title={`Open link: ${noteUrl}`}
                   >
                     <ExternalLink size={12} />
                   </a>
@@ -1114,34 +1135,36 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     <span className="place-location-text">{locationText}</span>
                   </span>
                 )}
-                <a
-                  href={
-                    p.lat && p.lng
-                      ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
-                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address, trip.destination].filter(Boolean).join(', '))}`
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="place-meta-pill location"
-                  title="Open in Google Maps in a new tab"
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ textDecoration: 'none' }}
-                >
-                  <MapPin size={11} />
-                  <span>Open map</span>
-                </a>
-                {p.website && (
+                {!isNote && (
                   <a
-                    href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
+                    href={
+                      p.lat && p.lng
+                        ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
+                        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address, trip.destination].filter(Boolean).join(', '))}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="place-meta-pill location"
-                    title={`Open ${p.website} in new tab`}
+                    title="Open in Google Maps in a new tab"
                     onClick={(e) => e.stopPropagation()}
-                    style={{ textDecoration: 'none', color: 'var(--accent)' }}
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <MapPin size={11} />
+                    <span>Open map</span>
+                  </a>
+                )}
+                {noteUrl && (
+                  <a
+                    href={formatUrl(noteUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="place-meta-pill location"
+                    title={`Open link: ${noteUrl}`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ textDecoration: 'none', color: 'var(--accent)', fontWeight: 600 }}
                   >
                     <ExternalLink size={11} />
-                    <span>Website</span>
+                    <span>Open Link ↗</span>
                   </a>
                 )}
                 {isSpanned && (
@@ -1165,46 +1188,48 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     ? '🧭 Route & Step-by-Step Directions (Offline Ready)'
                     : 'Full Description'}
                 </div>
-                <div className="place-expanded-text">{p.description}</div>
+                <div className="place-expanded-text">{renderTextWithLinks(p.description)}</div>
               </div>
             ) : null}
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {p.website && (
+              {noteUrl && (
                 <a
-                  href={p.website.startsWith('http://') || p.website.startsWith('https://') ? p.website : `https://${p.website}`}
+                  href={formatUrl(noteUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn xs ghost"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--accent)', textDecoration: 'none' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <ExternalLink size={12} />
-                  <span>Visit website</span>
+                  <span>Open Link ↗</span>
                 </a>
               )}
-              <a
-                href={
-                  p.lat && p.lng
-                    ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
-                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address, trip.destination].filter(Boolean).join(', '))}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn xs ghost"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MapPin size={12} />
-                <span>Open in Google Maps ↗</span>
-              </a>
+              {!isNote && (
+                <a
+                  href={
+                    p.lat && p.lng
+                      ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
+                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address, trip.destination].filter(Boolean).join(', '))}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MapPin size={12} />
+                  <span>Open in Google Maps ↗</span>
+                </a>
+              )}
             </div>
             {p.notes?.trim() ? (
               <div className="place-expanded-section">
                 <div className="place-expanded-label">Notes</div>
-                <div className="place-expanded-text">✏️ {p.notes}</div>
+                <div className="place-expanded-text">✏️ {renderTextWithLinks(p.notes)}</div>
               </div>
             ) : null}
-            {!p.description?.trim() && !p.notes?.trim() && (
+            {!p.description?.trim() && !p.notes?.trim() && !noteUrl && (
               <div className="small muted">
                 No description or notes yet.{' '}
                 <button
@@ -1530,7 +1555,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               {day.notes && (
                 <div className="day-notes-box mt mb">
                   <NotebookPen size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--accent)' }} />
-                  <span>{day.notes}</span>
+                  <span>{renderTextWithLinks(day.notes)}</span>
                 </div>
               )}
 
@@ -2276,8 +2301,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <label style={{ marginBottom: 4 }}>Title / Place Name</label>
             <input
               value={editing.name}
-              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              placeholder="e.g. Meiji Shrine"
+              onChange={(e) => {
+                const val = e.target.value;
+                setEditing((prev) => {
+                  const isLink = isUrl(val);
+                  return {
+                    ...prev,
+                    name: val,
+                    website: isLink && !prev.website ? val.trim() : prev.website,
+                    category: isLink && !prev.category ? 'Note' : prev.category,
+                  };
+                });
+              }}
+              placeholder="e.g. Meiji Shrine, or https://…"
             />
           </div>
 
@@ -2332,18 +2368,20 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
           <div className="field" style={{ marginBottom: '0.6rem' }}>
             <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
-              <label style={{ margin: 0 }}>Website</label>
-              {editing.website.trim() && (
+              <label style={{ margin: 0 }}>
+                {editing.category === 'Note' ? 'Website / Link URL (optional)' : 'Website'}
+              </label>
+              {(editing.website.trim() || isUrl(editing.name)) && (
                 <a
-                  href={editing.website.trim().startsWith('http://') || editing.website.trim().startsWith('https://') ? editing.website.trim() : `https://${editing.website.trim()}`}
+                  href={formatUrl(editing.website.trim() || editing.name.trim())}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn xs ghost"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', color: 'var(--accent)', textDecoration: 'none' }}
-                  title="Open website in new tab"
+                  title="Open website/link in new tab"
                 >
                   <ExternalLink size={12} />
-                  <span>Open site</span>
+                  <span>Open link ↗</span>
                 </a>
               )}
             </div>

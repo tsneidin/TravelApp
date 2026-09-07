@@ -3,7 +3,7 @@ import { NavLink, Outlet, Link, useLocation, useNavigate } from 'react-router-do
 import {
   Plane, CalendarDays, Inbox, LogOut, Plus,
   ChevronRight, ChevronDown, Route, Bookmark,
-  X, PanelLeftClose, PanelLeft, Menu, Sparkles,
+  X, PanelLeftClose, PanelLeft, Menu, Sparkles, NotebookPen,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { APP_VERSION } from '../lib/version';
@@ -13,10 +13,11 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { Avatar } from './Avatar';
 import { UserSettingsModal } from './UserSettingsModal';
 import type { Trip } from '../lib/types';
-import { resolveDayLocation } from '../lib/placeUtils';
+import { resolveDayLocation, isNoteItem } from '../lib/placeUtils';
 
 const TRIP_TABS: { key: string; label: string }[] = [
   { key: 'itinerary', label: 'Itinerary' },
+  { key: 'notes', label: 'Notes' },
   { key: 'map', label: 'Map' },
   { key: 'timeline', label: 'Timeline' },
   { key: 'budget', label: 'Budget' },
@@ -167,10 +168,19 @@ export function Layout() {
     });
   };
 
-  // Collapse states for itinerary and map sub-menus
+  // Collapse states for itinerary, notes, and map sub-menus
   const [collapsedItineraries, setCollapsedItineraries] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('travelapp_collapsed_itin');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [collapsedNotes, setCollapsedNotes] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('travelapp_collapsed_notes');
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -188,9 +198,11 @@ export function Layout() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const toggleItineraryCollapse = (tripId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const toggleItineraryCollapse = (tripId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setCollapsedItineraries((prev) => {
       const next = { ...prev, [tripId]: !prev[tripId] };
       try {
@@ -200,9 +212,25 @@ export function Layout() {
     });
   };
 
-  const toggleMapCollapse = (tripId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const toggleNotesCollapse = (tripId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setCollapsedNotes((prev) => {
+      const next = { ...prev, [tripId]: !prev[tripId] };
+      try {
+        localStorage.setItem('travelapp_collapsed_notes', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const toggleMapCollapse = (tripId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setCollapsedMaps((prev) => {
       const next = { ...prev, [tripId]: !prev[tripId] };
       try {
@@ -457,14 +485,28 @@ export function Layout() {
                       <div key={tb.key}>
                         {tb.key === 'itinerary' ? (
                           <div className="side-tab-group">
-                            <div className={`side-tab side-tab-parent ${activeTab === tb.key && !activeDayId ? 'active' : ''}`}>
-                              <Link
-                                to={`/trips/${t.id}?tab=${tb.key}`}
-                                className="side-tab-link"
-                              >
+                            <div
+                              className={`side-tab side-tab-parent ${activeTab === tb.key && !activeDayId ? 'active' : ''}`}
+                              onClick={() => {
+                                if ((t.days ?? []).length > 0) {
+                                  toggleItineraryCollapse(t.id);
+                                }
+                                navigate(`/trips/${t.id}?tab=itinerary`);
+                              }}
+                              style={{ cursor: 'pointer' }}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  if ((t.days ?? []).length > 0) toggleItineraryCollapse(t.id);
+                                  navigate(`/trips/${t.id}?tab=itinerary`);
+                                }
+                              }}
+                            >
+                              <div className="side-tab-link" style={{ pointerEvents: 'none' }}>
                                 <span className="side-tab-dot" />
                                 {tb.label}
-                              </Link>
+                              </div>
                               {(t.days ?? []).length > 0 && (
                                 <button
                                   type="button"
@@ -510,17 +552,165 @@ export function Layout() {
                               });
                             })()}
                           </div>
+                        ) : tb.key === 'notes' ? (
+                          /* Notes Dropdown Sub-menu for Day Notes & Notes Items */
+                          (() => {
+                            const sortedDays = [...(t.days ?? [])].sort(
+                              (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
+                            );
+                            const totalNotesCount = sortedDays.reduce(
+                              (acc, d) => acc + (d.notes?.trim() ? 1 : 0) + (d.places ?? []).filter(isNoteItem).length,
+                              0,
+                            );
+                            return (
+                              <div className="side-tab-group">
+                                <div
+                                  className={`side-tab side-tab-parent ${activeTab === 'itinerary' && location.hash === '#notes' ? 'active' : ''}`}
+                                  onClick={() => {
+                                    if (sortedDays.length > 0) {
+                                      toggleNotesCollapse(t.id);
+                                    }
+                                    navigate(`/trips/${t.id}?tab=itinerary#notes`);
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                  role="button"
+                                  tabIndex={0}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      if (sortedDays.length > 0) toggleNotesCollapse(t.id);
+                                      navigate(`/trips/${t.id}?tab=itinerary#notes`);
+                                    }
+                                  }}
+                                >
+                                  <div className="side-tab-link" style={{ pointerEvents: 'none' }}>
+                                    <span className="side-tab-dot" />
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                      <NotebookPen size={12} style={{ opacity: 0.8 }} />
+                                      {tb.label}
+                                    </span>
+                                    {totalNotesCount > 0 && (
+                                      <span
+                                        className="side-badge"
+                                        style={{
+                                          marginLeft: 'auto',
+                                          marginRight: 4,
+                                          fontSize: '0.7rem',
+                                          padding: '1px 5px',
+                                          borderRadius: 4,
+                                          background: 'rgba(56, 189, 248, 0.15)',
+                                          color: 'var(--accent)',
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        {totalNotesCount}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {sortedDays.length > 0 && (
+                                    <button
+                                      type="button"
+                                      className="side-tab-collapse-btn"
+                                      onClick={(e) => toggleNotesCollapse(t.id, e)}
+                                      title={collapsedNotes[t.id] ? 'Expand notes' : 'Collapse notes'}
+                                      aria-label={collapsedNotes[t.id] ? 'Expand notes' : 'Collapse notes'}
+                                    >
+                                      {collapsedNotes[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                    </button>
+                                  )}
+                                </div>
+
+                                {!collapsedNotes[t.id] && sortedDays.length > 0 && (
+                                  <div className="side-notes-submenu" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    {sortedDays.map((day, index) => {
+                                      const dayNotePlaces = (day.places ?? []).filter(isNoteItem);
+                                      const dayNotesCount = (day.notes?.trim() ? 1 : 0) + dayNotePlaces.length;
+                                      const dateStr = formatSidebarDate(day.date);
+                                      const snippet = day.notes?.trim()
+                                        ? day.notes.slice(0, 18) + (day.notes.length > 18 ? '…' : '')
+                                        : dayNotePlaces.length > 0
+                                        ? dayNotePlaces[0].name
+                                        : 'Notes';
+
+                                      return (
+                                        <button
+                                          key={day.id}
+                                          type="button"
+                                          className={`side-tab side-day ${activeDayId === day.id ? 'active' : ''}`}
+                                          style={{
+                                            width: '100%',
+                                            background: 'transparent',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            fontFamily: 'inherit',
+                                          }}
+                                          onClick={() => {
+                                            navigate(`/trips/${t.id}?tab=itinerary#day-${day.id}`);
+                                            setTimeout(() => {
+                                              window.dispatchEvent(
+                                                new CustomEvent('travelapp:open_day_notes', {
+                                                  detail: { tripId: t.id, dayId: day.id, dayIndex: index },
+                                                }),
+                                              );
+                                            }, 70);
+                                          }}
+                                          title={`Day ${index + 1} (${dateStr}) Notes · Click to open notes editor`}
+                                        >
+                                          <span className="side-tab-dot" style={dayNotesCount > 0 ? { background: 'var(--accent)', opacity: 1 } : undefined} />
+                                          <span className="side-day-num">{index + 1}</span>
+                                          <span
+                                            className="side-day-city"
+                                            style={{
+                                              color: dayNotesCount > 0 ? 'var(--text)' : 'var(--muted)',
+                                              fontWeight: dayNotesCount > 0 ? 600 : 400,
+                                            }}
+                                          >
+                                            {snippet}
+                                          </span>
+                                          {dayNotesCount > 0 && (
+                                            <span
+                                              className="side-day-date"
+                                              style={{
+                                                color: 'var(--accent)',
+                                                fontWeight: 700,
+                                              }}
+                                            >
+                                              {dayNotesCount}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()
                         ) : tb.key === 'map' ? (
                           /* Map Dropdown Sub-menu for Saved Views */
                           <div className="side-tab-group side-map-group">
-                            <div className={`side-tab side-tab-parent ${activeTab === tb.key ? 'active' : ''}`}>
-                              <Link
-                                to={`/trips/${t.id}?tab=${tb.key}`}
-                                className="side-tab-link"
-                              >
+                            <div
+                              className={`side-tab side-tab-parent ${activeTab === tb.key ? 'active' : ''}`}
+                              onClick={() => {
+                                if ((t.mapViews ?? []).length > 0) {
+                                  toggleMapCollapse(t.id);
+                                }
+                                navigate(`/trips/${t.id}?tab=map`);
+                              }}
+                              style={{ cursor: 'pointer' }}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  if ((t.mapViews ?? []).length > 0) toggleMapCollapse(t.id);
+                                  navigate(`/trips/${t.id}?tab=map`);
+                                }
+                              }}
+                            >
+                              <div className="side-tab-link" style={{ pointerEvents: 'none' }}>
                                 <span className="side-tab-dot" />
                                 {tb.label}
-                              </Link>
+                              </div>
                               {(t.mapViews ?? []).length > 0 && (
                                 <button
                                   type="button"

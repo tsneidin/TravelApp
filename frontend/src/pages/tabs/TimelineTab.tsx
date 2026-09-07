@@ -12,6 +12,7 @@ import { apiPost, apiPatch } from '../../lib/api';
 import { endForStart } from '../../lib/dateRange';
 import { isAccommodationItem, isTransitItem, normalizePlaceLocationKey, cleanPlaceOrStayTitle } from '../../lib/placeUtils';
 import { extractSpanId, generateSpanId, embedSpanId, getConsecutiveDays } from '../../lib/spanUtils';
+import { renderTextWithLinks, formatUrl } from '../../lib/linkUtils';
 
 interface TimelineTabProps {
   trip: Trip;
@@ -1520,7 +1521,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="field mb-3">
                   <label>Notes</label>
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}>
-                    ✏️ {selectedItem.stay.place.notes}
+                    ✏️ {renderTextWithLinks(selectedItem.stay.place.notes)}
                   </div>
                 </div>
               )}
@@ -1529,7 +1530,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="field mb-3">
                   <label>Website</label>
                   <div>
-                    <a href={selectedItem.stay.place.website} target="_blank" rel="noreferrer" className="link small" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <a href={formatUrl(selectedItem.stay.place.website)} target="_blank" rel="noreferrer" className="link small" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       {selectedItem.stay.place.website} <ExternalLink size={12} />
                     </a>
                   </div>
@@ -1582,7 +1583,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="field mb-3">
                   <label>Route & Directions</label>
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}>
-                    {selectedItem.transit.place.description}
+                    {renderTextWithLinks(selectedItem.transit.place.description)}
                   </div>
                 </div>
               )}
@@ -1618,7 +1619,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="field mb-3">
                   <label>Description</label>
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}>
-                    {selectedItem.place.description}
+                    {renderTextWithLinks(selectedItem.place.description)}
                   </div>
                 </div>
               )}
@@ -1627,7 +1628,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="field mb-3">
                   <label>Notes</label>
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}>
-                    ✏️ {selectedItem.place.notes}
+                    ✏️ {renderTextWithLinks(selectedItem.place.notes)}
                   </div>
                 </div>
               )}

@@ -65,6 +65,7 @@ model Trip {
   name        String
   destination String
   description String?
+  notes       String?
   coverUrl    String?
   currency    String    @default("USD")
   startDate   DateTime?

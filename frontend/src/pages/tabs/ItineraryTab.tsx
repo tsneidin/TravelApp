@@ -735,6 +735,25 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     return cat === 'note' || cat === 'notes';
   };
 
+  const openTripNotes = () => {
+    const orphanNotes = orphanPlaces.filter(isItemNote);
+    const pNotesMap: Record<string, string> = {};
+    orphanNotes.forEach((p: Place) => {
+      pNotesMap[p.id] = p.notes || p.description || '';
+    });
+    setDayEditor({
+      id: 'trip',
+      label: 'Trip Notes',
+      notes: trip.notes || '',
+      location: '',
+      defaultLocation: trip.destination || '',
+      dayNumber: undefined,
+      spanDays: 1,
+      activeTargetKey: 'trip',
+      placeNotesMap: pNotesMap,
+    });
+  };
+
   const openDayNotes = (day: Day, dayIndex: number) => {
     const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
     const pNotesMap: Record<string, string> = {};
@@ -790,6 +809,34 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
   const saveDayNotes = async () => {
     if (!dayEditor) return;
+
+    if (dayEditor.id === 'trip') {
+      await apiPatch(`/trips/${trip.id}`, {
+        notes: dayEditor.notes?.trim() || null,
+      });
+
+      if (dayEditor.placeNotesMap && orphanPlaces) {
+        const patchPromises: Promise<unknown>[] = [];
+        for (const p of orphanPlaces) {
+          const editedPlaceNote = dayEditor.placeNotesMap[p.id];
+          if (editedPlaceNote !== undefined && editedPlaceNote !== (p.notes || '')) {
+            patchPromises.push(
+              apiPatch(`/trips/${trip.id}/places/${p.id}`, {
+                notes: editedPlaceNote.trim() || null,
+              })
+            );
+          }
+        }
+        if (patchPromises.length > 0) {
+          await Promise.all(patchPromises);
+        }
+      }
+
+      setDayEditor(null);
+      await reload();
+      return;
+    }
+
     const trimmed = dayEditor.label.trim();
     const currentSpan = dayEditor.spanDays ?? 1;
     const currentDay = days.find((d) => d.id === dayEditor.id);
@@ -845,7 +892,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   useEffect(() => {
     const handleOpenDayNotes = (e: Event) => {
       const detail = (e as CustomEvent).detail as { tripId?: string; dayId?: string; dayIndex?: number } | undefined;
-      if (!detail?.dayId) return;
+      if (!detail) return;
+      if (detail.dayId === 'trip' || (!detail.dayId && !days.length)) {
+        openTripNotes();
+        return;
+      }
       const sortedDays = [...days].sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
       );
@@ -853,11 +904,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       if (targetDay) {
         const dIdx = detail.dayIndex != null ? detail.dayIndex : sortedDays.indexOf(targetDay);
         openDayNotes(targetDay, Math.max(0, dIdx));
+      } else if (detail.dayId === 'trip') {
+        openTripNotes();
       }
     };
     window.addEventListener('travelapp:open_day_notes', handleOpenDayNotes);
     return () => window.removeEventListener('travelapp:open_day_notes', handleOpenDayNotes);
-  }, [days, trip.destination]);
+  }, [days, trip.destination, trip.notes, orphanPlaces]);
 
   const handleSaveJournalEntry = async (data: { id?: string; title: string; body: string; date?: string }) => {
     const targetId = data.id || journalModalState.entry?.id;
@@ -1412,6 +1465,48 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             </div>
           )}
 
+          {/* General Trip Notes Card (if present) */}
+          {trip.notes?.trim() && (
+            <div
+              id="trip-notes"
+              className="card mb-3"
+              style={{
+                borderLeft: '4px solid var(--accent)',
+                background: 'var(--surface-hover)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '1rem',
+              }}
+            >
+              <div className="row between" style={{ marginBottom: 6 }}>
+                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                  <NotebookPen size={15} style={{ color: 'var(--accent)' }} />
+                  <strong style={{ fontSize: '0.95rem' }}>Trip Notes & Reference</strong>
+                </div>
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  onClick={openTripNotes}
+                  title="Edit general trip notes"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Pencil size={13} /> Edit
+                </button>
+              </div>
+              <div
+                className="small"
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  color: 'var(--text)',
+                  lineHeight: 1.5,
+                  wordBreak: 'break-word',
+                }}
+              >
+                {renderTextWithLinks(trip.notes)}
+              </div>
+            </div>
+          )}
+
           {days.length === 0 && (
             <div className="empty-state">
               <div className="big">No days yet</div>
@@ -1664,6 +1759,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               <div className="row">
                 <button
                   type="button"
+                  className="btn sm ghost"
+                  onClick={openTripNotes}
+                  title="Edit general trip notes not tied to a day"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <NotebookPen size={13} />
+                  <span>{trip.notes?.trim() ? 'Trip notes' : '+ Trip notes'}</span>
+                </button>
+                <button
+                  type="button"
                   className={`btn sm ${selectedDayId === 'unassigned' ? 'primary' : 'ghost'}`}
                   title="Focus unassigned places on the map"
                   onClick={() => {
@@ -1878,37 +1983,55 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
 
       {dayEditor && (() => {
-        const currentDay = days.find((d) => d.id === dayEditor.id);
+        const isTripLevel = dayEditor.id === 'trip';
+        const currentDay = !isTripLevel ? days.find((d) => d.id === dayEditor.id) : undefined;
         const maxSpan = days.length > 0 ? days.length - (dayEditor.dayNumber ? dayEditor.dayNumber - 1 : 0) : 1;
         const currentSpan = dayEditor.spanDays ?? 1;
-        const targetDays = currentSpan > 1 ? getConsecutiveDays(dayEditor.id, currentSpan, days) : [];
+        const targetDays = (!isTripLevel && currentSpan > 1) ? getConsecutiveDays(dayEditor.id, currentSpan, days) : [];
 
-        const noteTargets = [
-          {
-            key: 'day',
-            label: `Day ${dayEditor.dayNumber || 1} Notes`,
-            subtitle: 'Day-level general notes',
-            type: 'day' as const,
-          },
-          ...((currentDay?.places ?? []).filter(isItemNote)).map((p, idx) => ({
-            key: p.id,
-            label: p.name || `Note #${idx + 1}`,
-            subtitle: p.address || p.category || 'Note item',
-            type: 'place' as const,
-            place: p,
-          })),
-        ];
+        const orphanNotes = (orphanPlaces ?? []).filter(isItemNote);
+        const noteTargets = isTripLevel
+          ? [
+              {
+                key: 'trip',
+                label: 'Trip Notes',
+                subtitle: 'General trip notes & reference',
+                type: 'day' as const,
+              },
+              ...orphanNotes.map((p, idx) => ({
+                key: p.id,
+                label: p.name || `Note #${idx + 1}`,
+                subtitle: p.address || p.category || 'Unassigned note item',
+                type: 'place' as const,
+                place: p,
+              })),
+            ]
+          : [
+              {
+                key: 'day',
+                label: `Day ${dayEditor.dayNumber || 1} Notes`,
+                subtitle: 'Day-level general notes',
+                type: 'day' as const,
+              },
+              ...((currentDay?.places ?? []).filter(isItemNote)).map((p, idx) => ({
+                key: p.id,
+                label: p.name || `Note #${idx + 1}`,
+                subtitle: p.address || p.category || 'Note item',
+                type: 'place' as const,
+                place: p,
+              })),
+            ];
 
-        const activeKey = dayEditor.activeTargetKey || 'day';
+        const activeKey = dayEditor.activeTargetKey || (isTripLevel ? 'trip' : 'day');
         const activeIdx = Math.max(0, noteTargets.findIndex((t) => t.key === activeKey));
         const currentTarget = noteTargets[activeIdx] || noteTargets[0];
 
-        const activeNoteText = activeKey === 'day'
+        const activeNoteText = (activeKey === 'day' || activeKey === 'trip')
           ? dayEditor.notes
           : (dayEditor.placeNotesMap?.[activeKey] ?? '');
 
         const updateActiveNoteText = (newText: string) => {
-          if (activeKey === 'day') {
+          if (activeKey === 'day' || activeKey === 'trip') {
             setDayEditor({ ...dayEditor, notes: newText });
           } else {
             setDayEditor({
@@ -1922,7 +2045,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         };
 
         return (
-          <Modal title={`Day ${dayEditor.dayNumber ?? ''} Notes${dayEditor.label ? ` — ${dayEditor.label}` : ''}`} onClose={() => setDayEditor(null)}>
+          <Modal
+            title={isTripLevel ? `Trip Notes — ${trip.name}` : `Day ${dayEditor.dayNumber ?? ''} Notes${dayEditor.label ? ` — ${dayEditor.label}` : ''}`}
+            onClose={() => setDayEditor(null)}
+          >
             {/* Pager if multiple note targets exist */}
             {noteTargets.length > 1 && (
               <div
@@ -1985,7 +2111,14 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </div>
             )}
 
-            {activeKey === 'day' && (
+            {activeKey === 'trip' && (
+              <div className="small muted" style={{ marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <NotebookPen size={14} className="text-accent" />
+                <span>General notes, reminders, or reference details for the overall trip.</span>
+              </div>
+            )}
+
+            {activeKey === 'day' && !isTripLevel && (
               <>
                 <div className="field" style={{ marginBottom: '0.6rem' }}>
                   <label style={{ marginBottom: 4 }}>Day title / label</label>
@@ -2053,9 +2186,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <div className="field" style={{ marginBottom: '0.6rem' }}>
               <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
                 <label style={{ margin: 0 }}>
-                  {activeKey === 'day' ? 'General Day notes' : `${currentTarget.label} notes`}
+                  {activeKey === 'trip'
+                    ? 'Trip Notes'
+                    : activeKey === 'day'
+                    ? 'General Day notes'
+                    : `${currentTarget.label} notes`}
                 </label>
-                {activeKey === 'day' && days.length > 1 && (
+                {activeKey === 'day' && !isTripLevel && days.length > 1 && (
                   <div className="row items-center gap-1">
                     <span className="small muted">Span to next:</span>
                     <input
@@ -2074,13 +2211,19 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 )}
               </div>
               <textarea
-                rows={6}
+                rows={isTripLevel ? 7 : 6}
                 value={activeNoteText}
                 onChange={(event) => updateActiveNoteText(event.target.value)}
-                placeholder={activeKey === 'day' ? 'General plans, reminders, weather backup, meeting details…' : `Notes, tips or details for ${currentTarget.label}…`}
+                placeholder={
+                  isTripLevel
+                    ? 'General trip reminders, packing lists, confirmation links, emergency contacts…'
+                    : activeKey === 'day'
+                    ? 'General plans, reminders, weather backup, meeting details…'
+                    : `Notes, tips or details for ${currentTarget.label}…`
+                }
                 autoFocus
               />
-              {activeKey === 'day' && currentSpan > 1 && targetDays.length > 1 && (
+              {activeKey === 'day' && !isTripLevel && currentSpan > 1 && targetDays.length > 1 && (
                 <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Calendar size={13} className="text-accent" />
                   <span>

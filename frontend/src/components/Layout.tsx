@@ -553,31 +553,48 @@ export function Layout() {
                             })()}
                           </div>
                         ) : tb.key === 'notes' ? (
-                          /* Notes Dropdown Sub-menu for Day Notes & Notes Items */
+                          /* Notes Dropdown Sub-menu for Trip Notes & Day Notes */
                           (() => {
                             const sortedDays = [...(t.days ?? [])].sort(
                               (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder,
                             );
-                            const totalNotesCount = sortedDays.reduce(
-                              (acc, d) => acc + (d.notes?.trim() ? 1 : 0) + (d.places ?? []).filter(isNoteItem).length,
-                              0,
-                            );
+                            const unassignedNotePlaces = (t.places ?? []).filter((p) => !p.dayId && isNoteItem(p));
+                            const tripNotesCount = (t.notes?.trim() ? 1 : 0) + unassignedNotePlaces.length;
+
+                            const daysWithNotes = sortedDays
+                              .map((day, index) => {
+                                const dayNotePlaces = (day.places ?? []).filter(isNoteItem);
+                                const dayNotesCount = (day.notes?.trim() ? 1 : 0) + dayNotePlaces.length;
+                                return { day, originalIndex: index, dayNotesCount, dayNotePlaces };
+                              })
+                              .filter((item) => item.dayNotesCount > 0);
+
+                            const totalNotesCount = tripNotesCount + daysWithNotes.reduce((sum, item) => sum + item.dayNotesCount, 0);
+                            const hasAnyNotes = totalNotesCount > 0;
+
                             return (
                               <div className="side-tab-group">
                                 <div
-                                  className={`side-tab side-tab-parent ${activeTab === 'itinerary' && location.hash === '#notes' ? 'active' : ''}`}
+                                  className={`side-tab side-tab-parent ${activeTab === 'itinerary' && (location.hash === '#notes' || location.hash === '#trip-notes') ? 'active' : ''}`}
                                   onClick={() => {
-                                    if (sortedDays.length > 0) {
-                                      toggleNotesCollapse(t.id);
-                                    }
+                                    toggleNotesCollapse(t.id);
                                     navigate(`/trips/${t.id}?tab=itinerary#notes`);
+                                    if (!hasAnyNotes) {
+                                      setTimeout(() => {
+                                        window.dispatchEvent(
+                                          new CustomEvent('travelapp:open_day_notes', {
+                                            detail: { tripId: t.id, dayId: 'trip' },
+                                          }),
+                                        );
+                                      }, 70);
+                                    }
                                   }}
                                   style={{ cursor: 'pointer' }}
                                   role="button"
                                   tabIndex={0}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter' || e.key === ' ') {
-                                      if (sortedDays.length > 0) toggleNotesCollapse(t.id);
+                                      toggleNotesCollapse(t.id);
                                       navigate(`/trips/${t.id}?tab=itinerary#notes`);
                                     }
                                   }}
@@ -606,30 +623,80 @@ export function Layout() {
                                       </span>
                                     )}
                                   </div>
-                                  {sortedDays.length > 0 && (
-                                    <button
-                                      type="button"
-                                      className="side-tab-collapse-btn"
-                                      onClick={(e) => toggleNotesCollapse(t.id, e)}
-                                      title={collapsedNotes[t.id] ? 'Expand notes' : 'Collapse notes'}
-                                      aria-label={collapsedNotes[t.id] ? 'Expand notes' : 'Collapse notes'}
-                                    >
-                                      {collapsedNotes[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    className="side-tab-collapse-btn"
+                                    onClick={(e) => toggleNotesCollapse(t.id, e)}
+                                    title={collapsedNotes[t.id] ? 'Expand notes' : 'Collapse notes'}
+                                    aria-label={collapsedNotes[t.id] ? 'Expand notes' : 'Collapse notes'}
+                                  >
+                                    {collapsedNotes[t.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                  </button>
                                 </div>
 
-                                {!collapsedNotes[t.id] && sortedDays.length > 0 && (
+                                {!collapsedNotes[t.id] && (
                                   <div className="side-notes-submenu" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    {sortedDays.map((day, index) => {
-                                      const dayNotePlaces = (day.places ?? []).filter(isNoteItem);
-                                      const dayNotesCount = (day.notes?.trim() ? 1 : 0) + dayNotePlaces.length;
+                                    {/* Trip-level notes row */}
+                                    {(tripNotesCount > 0 || !hasAnyNotes) && (
+                                      <button
+                                        type="button"
+                                        className="side-tab side-day"
+                                        style={{
+                                          width: '100%',
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          fontFamily: 'inherit',
+                                        }}
+                                        onClick={() => {
+                                          navigate(`/trips/${t.id}?tab=itinerary#trip-notes`);
+                                          setTimeout(() => {
+                                            window.dispatchEvent(
+                                              new CustomEvent('travelapp:open_day_notes', {
+                                                detail: { tripId: t.id, dayId: 'trip' },
+                                              }),
+                                            );
+                                          }, 70);
+                                        }}
+                                        title="General trip notes (not tied to a day) · Click to edit"
+                                      >
+                                        <span className="side-tab-dot" style={tripNotesCount > 0 ? { background: 'var(--accent)', opacity: 1 } : undefined} />
+                                        <span
+                                          className="side-day-city"
+                                          style={{
+                                            color: tripNotesCount > 0 ? 'var(--text)' : 'var(--muted)',
+                                            fontWeight: tripNotesCount > 0 ? 600 : 400,
+                                          }}
+                                        >
+                                          {t.notes?.trim()
+                                            ? t.notes.slice(0, 18) + (t.notes.length > 18 ? '…' : '')
+                                            : unassignedNotePlaces.length > 0
+                                            ? unassignedNotePlaces[0].name
+                                            : 'Trip notes'}
+                                        </span>
+                                        {tripNotesCount > 0 && (
+                                          <span
+                                            className="side-day-date"
+                                            style={{
+                                              color: 'var(--accent)',
+                                              fontWeight: 700,
+                                            }}
+                                          >
+                                            {tripNotesCount}
+                                          </span>
+                                        )}
+                                      </button>
+                                    )}
+
+                                    {/* Day-level notes rows (only days with >= 1 note) */}
+                                    {daysWithNotes.map(({ day, originalIndex, dayNotesCount, dayNotePlaces }) => {
                                       const dateStr = formatSidebarDate(day.date);
                                       const snippet = day.notes?.trim()
                                         ? day.notes.slice(0, 18) + (day.notes.length > 18 ? '…' : '')
                                         : dayNotePlaces.length > 0
                                         ? dayNotePlaces[0].name
-                                        : 'Notes';
+                                        : `Day ${originalIndex + 1}`;
 
                                       return (
                                         <button
@@ -649,35 +716,33 @@ export function Layout() {
                                             setTimeout(() => {
                                               window.dispatchEvent(
                                                 new CustomEvent('travelapp:open_day_notes', {
-                                                  detail: { tripId: t.id, dayId: day.id, dayIndex: index },
+                                                  detail: { tripId: t.id, dayId: day.id, dayIndex: originalIndex },
                                                 }),
                                               );
                                             }, 70);
                                           }}
-                                          title={`Day ${index + 1} (${dateStr}) Notes · Click to open notes editor`}
+                                          title={`Day ${originalIndex + 1} (${dateStr}) Notes · Click to open notes editor`}
                                         >
-                                          <span className="side-tab-dot" style={dayNotesCount > 0 ? { background: 'var(--accent)', opacity: 1 } : undefined} />
-                                          <span className="side-day-num">{index + 1}</span>
+                                          <span className="side-tab-dot" style={{ background: 'var(--accent)', opacity: 1 }} />
+                                          <span className="side-day-num">{originalIndex + 1}</span>
                                           <span
                                             className="side-day-city"
                                             style={{
-                                              color: dayNotesCount > 0 ? 'var(--text)' : 'var(--muted)',
-                                              fontWeight: dayNotesCount > 0 ? 600 : 400,
+                                              color: 'var(--text)',
+                                              fontWeight: 600,
                                             }}
                                           >
                                             {snippet}
                                           </span>
-                                          {dayNotesCount > 0 && (
-                                            <span
-                                              className="side-day-date"
-                                              style={{
-                                                color: 'var(--accent)',
-                                                fontWeight: 700,
-                                              }}
-                                            >
-                                              {dayNotesCount}
-                                            </span>
-                                          )}
+                                          <span
+                                            className="side-day-date"
+                                            style={{
+                                              color: 'var(--accent)',
+                                              fontWeight: 700,
+                                            }}
+                                          >
+                                            {dayNotesCount}
+                                          </span>
                                         </button>
                                       );
                                     })}

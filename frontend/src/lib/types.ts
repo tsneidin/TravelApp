@@ -19,6 +19,7 @@ export interface Trip {
   name: string;
   destination: string;
   description?: string | null;
+  notes?: string | null;
   coverUrl?: string | null;
   currency: string;
   startDate?: string | null;

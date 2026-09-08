@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
-  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen, CalendarCheck, CalendarX,
+  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen,
   ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink,
   ArrowUp, ArrowDown, CheckSquare, Hotel, Compass
 } from 'lucide-react';
@@ -43,6 +43,7 @@ interface PlaceForm {
   startTime: string;
   endTime: string;
   spanDays?: number;
+  includeInCalendar: boolean;
 }
 
 const EMPTY_FORM: PlaceForm = {
@@ -58,6 +59,7 @@ const EMPTY_FORM: PlaceForm = {
   startTime: '',
   endTime: '',
   spanDays: 1,
+  includeInCalendar: true,
 };
 
 export function extractTimeHHMM(isoOrTime?: string | null): string {
@@ -136,7 +138,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   const [busy, setBusy] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(new Set());
-  const [sourcePlace, setSourcePlace] = useState<Place | null>(null);
+  const [showSource, setShowSource] = useState(false);
   const [dayEditor, setDayEditor] = useState<{
     id: string;
     label: string;
@@ -398,6 +400,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   }, [trip.places]);
 
   const openNew = (dayId: string) => {
+    setShowSource(false);
     setEditingId(null);
     setEditingPlaceItem(null);
     setUpdateAllInSeries(false);
@@ -406,6 +409,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   };
 
   const openEdit = (p: Place) => {
+    setShowSource(false);
     setEditingId(p.id);
     setEditingPlaceItem(p);
     const siblingPlaces = findSpannedPlaces(p, allPlaces, days);
@@ -413,6 +417,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     setEditing({
       dayId: p.dayId ?? '',
       name: cleanPlaceOrStayTitle(p.name),
+      includeInCalendar: p.includeInCalendar !== false,
       category: p.category ?? '',
       address: p.address ?? '',
       lat: p.lat != null ? String(p.lat) : '',
@@ -484,6 +489,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 const sEndTime = editing.endTime ? `${sBaseDate}T${editing.endTime}:00.000Z` : null;
                 return apiPatch(`/trips/${trip.id}/places/${sibling.id}`, {
                   name: editing.name.trim(),
+                  includeInCalendar: editing.includeInCalendar,
                   category: editing.category || undefined,
                   address: editing.address || undefined,
                   lat: latVal,
@@ -499,6 +505,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           } else {
             const payload = {
               name: editing.name.trim(),
+              includeInCalendar: editing.includeInCalendar,
               category: editing.category || undefined,
               address: editing.address || undefined,
               lat: latVal,
@@ -515,6 +522,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         } else {
           const payload = {
             name: editing.name.trim(),
+            includeInCalendar: editing.includeInCalendar,
             category: editing.category || undefined,
             address: editing.address || undefined,
             lat: latVal,
@@ -1046,11 +1054,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     await reload();
   };
 
-  const setCalendarVisibility = async (place: Place, includeInCalendar: boolean) => {
-    await apiPatch(`/trips/${trip.id}/places/${place.id}`, { includeInCalendar });
-    await reload();
-  };
-
   const handlePlaceClick = (p: Place) => {
     if (activePlaceId === p.id) {
       setActivePlaceId(null);
@@ -1238,25 +1241,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   onClick={() => handlePlaceClick(p)}
                 >
                   <MapIcon size={13} />
-                </button>
-                {p.sourceText && (
-                  <button
-                    type="button"
-                    className="place-action-btn"
-                    title="View source confirmation text"
-                    onClick={() => setSourcePlace(p)}
-                  >
-                    <FileText size={13} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className={`place-action-btn ${p.includeInCalendar === false ? 'place-action-inactive' : ''}`}
-                  title={p.includeInCalendar !== false ? 'Included in trip calendar' : 'Hidden from trip calendar'}
-                  aria-label={p.includeInCalendar !== false ? `Hide ${p.name} from trip calendar` : `Include ${p.name} in trip calendar`}
-                  onClick={() => void setCalendarVisibility(p, p.includeInCalendar === false)}
-                >
-                  {p.includeInCalendar !== false ? <CalendarCheck size={13} /> : <CalendarX size={13} />}
                 </button>
                 <button
                   type="button"
@@ -2029,8 +2013,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         </div>
 
         {/* Right Sticky Map Column in Split View */}
-        {viewMode === 'split' && (
-          <div className="itinerary-right-pane">
+        {(viewMode === 'split' || mobileTab === 'map') && (
+          <div className={`itinerary-right-pane ${viewMode === 'full' ? 'mobile-only-map-pane' : ''}`}>
             <div className="itinerary-sticky-map-wrapper">
               <div className="map-pane-header">
                 <div className="map-pane-header-left">
@@ -2654,17 +2638,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
         />
       )}
 
-      {sourcePlace && (
-        <Modal title={`Source — ${sourcePlace.name}`} onClose={() => setSourcePlace(null)}>
-          <pre className="ai-raw-pre" style={{ whiteSpace: 'pre-wrap', maxHeight: '65vh', overflow: 'auto' }}>
-            {sourcePlace.sourceText}
-          </pre>
-          <div className="modal-actions">
-            <button type="button" className="btn primary" onClick={() => setSourcePlace(null)}>Close</button>
-          </div>
-        </Modal>
-      )}
-
       {deletingPlace && (() => {
         const siblingPlaces = findSpannedPlaces(deletingPlace, allPlaces, days);
         if (siblingPlaces.length > 1) {
@@ -2788,6 +2761,29 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       {/* Add / Edit Place Modal with Search Autocomplete & Multi-day Span */}
       {open && (
         <Modal title={editingId ? 'Edit place' : 'Add place'} onClose={() => setOpen(false)}>
+          {editingId && (
+          <div className="row mb">
+            <label className="row" style={{ minHeight: 44, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={editing.includeInCalendar}
+                onChange={(e) => setEditing({ ...editing, includeInCalendar: e.target.checked })}
+              />
+              Show in calendar
+            </label>
+            {editingPlaceItem?.sourceText && (
+              <button type="button" className="btn sm ghost" aria-expanded={showSource} onClick={() => setShowSource(!showSource)}>
+                <FileText size={15} /> {showSource ? 'Hide source' : 'View source'}
+              </button>
+            )}
+          </div>
+          )}
+          {showSource && editingPlaceItem?.sourceText && (
+            <pre className="ai-raw-pre" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 240, overflow: 'auto' }}>
+              {editingPlaceItem.sourceText}
+            </pre>
+          )}
+
           <div className="field" style={{ marginBottom: '0.6rem' }}>
             <label className="field-label-sparkle" style={{ marginBottom: 4 }}>
               <Sparkles size={13} className="text-accent" />

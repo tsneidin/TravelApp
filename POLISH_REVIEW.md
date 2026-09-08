@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.131
+# TravelApp usability polish, 0.0.132
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,9 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- Calendar visibility and source text moved from itinerary cards into the item edit form. Visibility changes apply on Save and are discarded on Cancel.
+- Mobile map search occupies a full-width row with action buttons and route controls below it; autocomplete stays above those controls.
+- The mobile itinerary map renders independently of desktop split-view preferences and fills the space between navigation bars.
 - Mobile day headers use one Day options button beside Add. Notes, journals, to-dos, focus, and deletion are available in a compact sheet; desktop keeps its existing controls.
 - Mobile itinerary cards keep titles readable and move their controls to a separate row with larger touch targets.
 - The mobile assistant uses the existing top-bar control, freeing the floating Add place button from overlap.
@@ -20,7 +23,7 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 - Frontend lint, type checking, and production build passed.
 - Backend lint and type checking passed; all 71 existing tests passed with a generated Prisma client and test-only environment values.
-- 23 browser tests passed using Google Chrome, with one desktop skip for a mobile-only check.
+- 28 browser tests passed using Google Chrome, with two desktop skips for mobile-only checks. The final map positioning change also passed both targeted phone tests.
 - Browser viewport sizes: 320 by 568, 390 by 844, and 1440 by 1000 pixels.
 - Browser tests cover sample populated and empty trips, all eight trip sections, date display, form failures, deletion failures, keyboard focus, and mobile navigation.
 - Reviewed generated mobile and desktop screenshots. Tests save populated-trip screenshots under `frontend/test-results/`.

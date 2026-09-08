@@ -1592,6 +1592,9 @@ tbody tr.total-row td {
 .mobile-top-bar {
   display: none;
 }
+.itinerary-right-pane.mobile-only-map-pane {
+  display: none;
+}
 .mobile-drawer-backdrop {
   display: none;
 }
@@ -2108,9 +2111,12 @@ tbody tr.total-row td {
   .itinerary-page-root.mobile-showing-map .itinerary-right-pane {
     display: block !important;
     width: 100% !important;
-    height: calc(100vh - 124px - var(--sat) - var(--sab)) !important;
-    height: calc(100dvh - 124px - var(--sat) - var(--sab)) !important;
-    position: static !important;
+    height: calc(100dvh - 108px - var(--sat) - var(--sab)) !important;
+    min-height: 0;
+    position: fixed !important;
+    top: calc(52px + var(--sat));
+    left: 0;
+    z-index: 85;
   }
   .itinerary-page-root.mobile-showing-map .itinerary-sticky-map-wrapper {
     position: static !important;
@@ -4118,19 +4124,31 @@ a.link:hover {
     width: 100vw !important;
     height: calc(100dvh - 108px - var(--sat) - var(--sab)) !important;
   }
-  .map-top-floating-bar {
-    flex-wrap: wrap;
+  .map-wrapper-container .map-top-floating-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .map-search-container {
-    flex-basis: 100%;
+  .map-top-floating-bar .map-search-container {
     max-width: none;
     min-width: 0;
+    width: 100%;
+    position: relative;
+    z-index: 2;
   }
-  .map-top-actions-group {
+  .map-top-floating-bar .map-top-actions-group {
     margin-left: auto;
+    flex-wrap: wrap;
   }
-  .map-top-action-btn {
+  .map-top-floating-bar .map-top-action-btn {
     min-height: 44px;
+  }
+  .map-search-container .place-search-field {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+  .map-wrapper-container .map-floating-route-btn,
+  .map-wrapper-container .map-transit-drawer {
+    top: 114px;
   }
 }
 

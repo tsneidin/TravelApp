@@ -190,3 +190,62 @@ test('failed deletion stays recoverable and blocks duplicate clicks', async ({ p
   expect(deleteRequests).toBe(1);
   await expect(dialog.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled();
 });
+
+test('calendar and source controls live in the item edit form', async ({ page }) => {
+  let item = { id: 'place-1', tripId: trip.id, name: 'Kyoto walking tour', category: 'activity', sortOrder: 0, includeInCalendar: true, sourceText: 'Confirmation: Kyoto walking tour, reference SAMPLE-123.' };
+  const updates: unknown[] = [];
+  await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: { ...trip, places: [item] } } }));
+  await page.route(`**/api/trips/${trip.id}/places/place-1`, async (route) => {
+    const update = route.request().postDataJSON();
+    updates.push(update);
+    item = { ...item, ...update };
+    await route.fulfill({ json: { place: item } });
+  });
+  await page.goto(`/trips/${trip.id}?tab=itinerary`);
+  const card = page.locator('.place-card-compact').first();
+  await expect(card.getByRole('button', { name: /calendar|source/i })).toHaveCount(0);
+  await card.getByRole('button', { name: 'Edit place', exact: true }).click();
+  const form = page.getByRole('dialog', { name: 'Edit place' });
+  await expect(form.getByLabel('Show in calendar')).toBeChecked();
+  await form.getByRole('button', { name: 'View source', exact: true }).click();
+  await expect(form.getByText(item.sourceText, { exact: true })).toBeVisible();
+  await form.getByLabel('Show in calendar').uncheck();
+  expect(updates).toHaveLength(0);
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  expect(updates).toHaveLength(1);
+  expect(updates[0]).toMatchObject({ includeInCalendar: false });
+  await card.getByRole('button', { name: 'Edit place', exact: true }).click();
+  await expect(form.getByLabel('Show in calendar')).not.toBeChecked();
+  await form.getByLabel('Show in calendar').check();
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(updates).toHaveLength(1);
+});
+
+test('mobile map search has its own full-width unobstructed row', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'desktop');
+  await page.route('**/api/places/search?**', (route) => route.fulfill({ json: { places: [{ name: 'Kyoto Station', address: 'Kyoto, Japan', lat: 34.985, lng: 135.759, category: 'transit' }] } }));
+  for (const tab of ['map', 'itinerary']) {
+    await page.goto(`/trips/${trip.id}?tab=${tab}`);
+    if (tab === 'itinerary') await page.getByTitle('Switch to interactive map view', { exact: true }).click();
+    const toolbar = page.locator('.map-top-floating-bar:visible').first();
+    const input = toolbar.getByPlaceholder('Search map places, hotels, landmarks…');
+    await expect(input).toBeVisible();
+    const field = (await input.boundingBox())!;
+    const bar = (await toolbar.boundingBox())!;
+    const actions = (await toolbar.locator('.map-top-actions-group').boundingBox())!;
+    expect(field.width).toBeGreaterThanOrEqual(bar.width - 1);
+    expect(actions.y).toBeGreaterThanOrEqual(field.y + field.height);
+    if (tab === 'itinerary') {
+      expect(field.y + field.height).toBeLessThan(page.viewportSize()!.height / 2);
+      const add = (await page.getByRole('button', { name: 'Add place', exact: true }).boundingBox())!;
+      expect(add.y).toBeGreaterThan(field.y + field.height);
+    }
+    await input.fill('Kyoto');
+    await expect(toolbar.getByText('Kyoto Station', { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`${tab}-search.png`) });
+    await toolbar.getByText('Kyoto Station', { exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog').locator('input[value="Kyoto Station"]')).toBeVisible();
+  }
+});

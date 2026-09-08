@@ -13,7 +13,7 @@ import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
 import { getCategoryIcon } from '../../lib/icons';
-import { computePlaceStopNumberMap, cleanPlaceOrStayTitle, resolveDayLocation, isAccommodationItem } from '../../lib/placeUtils';
+import { computePlaceStopNumberMap, cleanPlaceOrStayTitle, resolveDayLocation, isAccommodationItem, extractCityFromLocation } from '../../lib/placeUtils';
 import { AuditBadge } from '../../components/AuditBadge';
 import { JournalEntryModal } from '../../components/JournalEntryModal';
 import { DayTodoModal } from '../../components/DayTodoModal';
@@ -2411,17 +2411,21 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     placeholder={
                       dayEditor.defaultLocation
                         ? `Auto: ${dayEditor.defaultLocation} (type or search to override)`
-                        : 'Search city, neighborhood, or address…'
+                        : 'Search city, destination, or address…'
                     }
                     biasLat={tripCenter?.lat}
                     biasLng={tripCenter?.lng}
                     onChange={(val) => setDayEditor((prev) => (prev ? { ...prev, location: val } : prev))}
                     onSelect={(pl) => {
+                      const extractedCity =
+                        pl.category === 'City'
+                          ? (pl.name || pl.address)
+                          : (extractCityFromLocation(pl.address) || extractCityFromLocation(pl.name) || pl.name || pl.address);
                       setDayEditor((prev) =>
                         prev
                           ? {
                               ...prev,
-                              location: pl.category === 'City' ? (pl.name || pl.address) : (pl.address || pl.name),
+                              location: extractedCity || pl.name || pl.address || '',
                               lat: pl.lat,
                               lng: pl.lng,
                             }
@@ -2485,7 +2489,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     ? 'General plans, reminders, weather backup, meeting details…'
                     : `Notes, tips or details for ${currentTarget.label}…`
                 }
-                autoFocus={!isNewNote && activeKey === 'day'}
+                autoFocus={!isNewNote && activeKey === 'day' && !dayEditor.focusLocation}
               />
               {activeKey === 'day' && !isTripLevel && currentSpan > 1 && targetDays.length > 1 && (
                 <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>

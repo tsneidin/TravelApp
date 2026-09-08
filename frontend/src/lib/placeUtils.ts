@@ -174,11 +174,122 @@ export interface ResolvedDayLocation {
   source: 'explicit' | 'lodging' | 'last_activity' | 'carried_forward' | 'trip_destination' | 'none';
 }
 
+function cleanCityToken(tok: string): string | null {
+  if (!tok) return null;
+  let c = tok.trim();
+
+  // Strip trailing country if attached
+  c = c.replace(/,\s*(?:Italy|Italia|USA|United States|France|Spain|Germany|UK|Japan)$/i, '');
+  // Strip leading postal codes (e.g. "84091 Battipaglia SA", "73100 Lecce", "75001 Paris")
+  c = c.replace(/^(?:[A-Z]{1,2}-)?\d{4,6}\s+/, '');
+  // Strip trailing postal codes (e.g. "Chicago 60613", "IL 60613")
+  c = c.replace(/\s+\d{5}(?:-\d{4})?$/, '');
+  // Strip province codes in parentheses: "(BA)", "(BR)", "(LE)", "(TA)", etc.
+  c = c.replace(/\s*\([A-Za-z]{2}\)$/, '');
+  // Strip trailing 2-letter state / province codes (e.g. "Battipaglia SA" -> "Battipaglia", "Chicago IL" -> "Chicago")
+  c = c.replace(/\s+[A-Z]{2}$/, '');
+  // Strip leading numbers or street remnants e.g. "1060 W Addison"
+  c = c.replace(/^\d+[\s\w]*\s+/, '');
+
+  c = c.trim();
+
+  // Ignore 2-letter state/country codes or purely numeric tokens
+  if (/^[A-Za-z]{2}$/.test(c) || /^\d+$/.test(c)) return null;
+
+  // Blacklist hotel, lodging and venue words so business names are never treated as cities
+  if (
+    /\b(hotel|albergo|resort|hostel|inn|motel|tenuta|masseria|relais|chalet|palace|villa|b&b|bed & breakfast|restaurant|ristorante|bar|cafe|pizzeria|trattoria|shop|store|museum|park)\b/i.test(
+      c,
+    )
+  ) {
+    return null;
+  }
+
+  if (c.length >= 2 && c.length <= 45) {
+    return c;
+  }
+  return null;
+}
+
+function isStreetToken(t: string): boolean {
+  return /^(?:via|viale|corso|piazza|piazzale|strada|contrada|vicolo|largo|rue|calle|street|st|ave|avenue|blvd|rd|road|\d+)\b/i.test(
+    t.trim(),
+  );
+}
+
+/**
+ * Extracts a clean city name from a formatted address, location string, or place title.
+ * Returns null if the string represents a hotel name or cannot be safely parsed to a city.
+ */
+export function extractCityFromLocation(raw?: string | null): string | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  if (!s) return null;
+
+  // Ignore raw coordinates e.g. "40.853, 14.268"
+  if (/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(s)) return null;
+
+  // If contains flight / transit arrow "A -> B" or "A → B", take the destination
+  if (/→|->/.test(s)) {
+    const parts = s.split(/→|->/);
+    s = parts[parts.length - 1].trim();
+  }
+
+  // Remove airport / station suffixes
+  s = s.replace(/\s*\([A-Z]{3}\)/g, '');
+  s = s.replace(/\s+(?:International\s+)?Airport\b/gi, '');
+  s = s.replace(/\s+(?:Central\s+)?Station\b/gi, '');
+  s = s.replace(/\s+Terminal\b/gi, '');
+
+  // Strip carrier prefixes and action words
+  s = s.replace(/^Operated\s+by[^\n]*\n+/i, '');
+  s = s.replace(/^Operated\s+by\s+(?:Envoy\s+Air|SkyWest|American\s+Eagle|[A-Za-z\s]+?)\s+(?=[A-Z][a-z]+)/i, '');
+  s = s.replace(/^(?:Arrive|Arrival|Depart|Departure|From|To|At|In)\s+/i, '');
+  s = s.replace(/^[A-Za-z]\s+/i, ''); // stray single letter OCR artifact
+
+  const tokens = s.split(',').map((t) => t.trim()).filter(Boolean);
+
+  if (tokens.length >= 2) {
+    if (tokens.length === 2) {
+      if (isStreetToken(tokens[0])) {
+        const city2 = cleanCityToken(tokens[1]);
+        if (city2) return city2;
+      } else {
+        const city1 = cleanCityToken(tokens[0]);
+        if (city1) return city1;
+        const city2 = cleanCityToken(tokens[1]);
+        if (city2) return city2;
+      }
+    } else {
+      // 3+ tokens, e.g. ["Via Umberto I", "12", "73100 Lecce"] or ["Via Spineta", "84091 Battipaglia SA", "Italy"]
+      const lastIdx = /^(?:italy|italia|usa|united states|spain|france|germany|uk|japan)$/i.test(tokens[tokens.length - 1])
+        ? tokens.length - 2
+        : tokens.length - 1;
+
+      for (let i = lastIdx; i >= 0; i--) {
+        if (isStreetToken(tokens[i])) continue;
+        if (/^\d+$/.test(tokens[i])) continue;
+        const city = cleanCityToken(tokens[i]);
+        if (city) return city;
+      }
+
+      const fallback = cleanCityToken(tokens[lastIdx]);
+      if (fallback) return fallback;
+    }
+  }
+
+  if (tokens.length === 1) {
+    return cleanCityToken(tokens[0]);
+  }
+
+  return null;
+}
+
 /**
  * Resolves the location of an itinerary day following the priority cascade:
  * 1. Day's explicit location field
- * 2. Day's lodging / accommodation location
- * 3. Day's last activity location
+ * 2. Day's lodging / accommodation location (extracted city preferred)
+ * 3. Day's last activity location (extracted city preferred)
  * 4. Carried forward from previous day
  * 5. Trip destination
  */
@@ -188,8 +299,9 @@ export function resolveDayLocation(
   tripDestination?: string | null,
 ): ResolvedDayLocation {
   if (dayIndex < 0 || dayIndex >= sortedDays.length) {
-    return tripDestination?.trim()
-      ? { name: tripDestination.trim(), address: tripDestination.trim(), source: 'trip_destination' }
+    const destCity = extractCityFromLocation(tripDestination) || tripDestination?.trim();
+    return destCity
+      ? { name: destCity, address: tripDestination?.trim(), source: 'trip_destination' }
       : { name: '', source: 'none' };
   }
 
@@ -212,9 +324,16 @@ export function resolveDayLocation(
   if (lodgingPlaces.length > 0) {
     const primaryLodging = lodgingPlaces[0];
     const locName = cleanPlaceOrStayTitle(primaryLodging.name);
-    const locAddress = primaryLodging.address?.trim() || locName;
+    const locAddress = primaryLodging.address?.trim();
+    // Prefer extracted city name so the day location doesn't display hotel names
+    const extractedCity =
+      extractCityFromLocation(locAddress) ||
+      extractCityFromLocation(locName);
+
+    const displayName = extractedCity || locAddress || locName;
+
     return {
-      name: locAddress,
+      name: displayName,
       address: primaryLodging.address,
       lat: primaryLodging.lat,
       lng: primaryLodging.lng,
@@ -231,9 +350,15 @@ export function resolveDayLocation(
   if (activityPlaces.length > 0) {
     const lastActivity = activityPlaces[activityPlaces.length - 1];
     const actName = cleanPlaceOrStayTitle(lastActivity.name);
-    const actAddress = lastActivity.address?.trim() || actName;
+    const actAddress = lastActivity.address?.trim();
+    const extractedCity =
+      extractCityFromLocation(actAddress) ||
+      extractCityFromLocation(actName);
+
+    const displayName = extractedCity || actAddress || actName;
+
     return {
-      name: actAddress,
+      name: displayName,
       address: lastActivity.address,
       lat: lastActivity.lat,
       lng: lastActivity.lng,
@@ -254,8 +379,9 @@ export function resolveDayLocation(
 
   // 5. Trip destination fallback
   if (tripDestination && tripDestination.trim()) {
+    const destCity = extractCityFromLocation(tripDestination) || tripDestination.trim();
     return {
-      name: tripDestination.trim(),
+      name: destCity,
       address: tripDestination.trim(),
       source: 'trip_destination',
     };

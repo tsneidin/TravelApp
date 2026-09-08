@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.130
+# TravelApp usability polish, 0.0.131
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,7 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- Mobile day headers use one Day options button beside Add. Notes, journals, to-dos, focus, and deletion are available in a compact sheet; desktop keeps its existing controls.
 - Mobile itinerary cards keep titles readable and move their controls to a separate row with larger touch targets.
 - The mobile assistant uses the existing top-bar control, freeing the floating Add place button from overlap.
 - Timeline filters wrap on narrow screens. Mobile sheets, navigation, and map controls follow the selected theme.

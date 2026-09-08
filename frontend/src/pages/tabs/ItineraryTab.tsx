@@ -10,6 +10,7 @@ import {
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Place, JournalEntry, Day, TodoItem, GeocodedPlace } from '../../lib/types';
 import { Modal, ConfirmModal } from '../../components/Modal';
+import { MobileDayActions } from '../../components/MobileDayActions';
 import { TripMap, type PlaceWithStop } from '../../components/TripMap';
 import { PlaceSearchInput } from '../../components/PlaceSearchInput';
 import { TravelEstimate } from '../../components/TravelEstimate';
@@ -1675,8 +1676,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     </div>
                   </div>
 
-                  <div className="row between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                  <div className="row between day-toolbar" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <MobileDayActions
+                      dayNumber={dayIndex + 1}
+                      notesCount={totalDayNotesCount}
+                      journalCount={dayJournalEntries.length}
+                      todoCount={dayTodos.length}
+                      focused={isFocused}
+                      onNotes={() => openDayNotes(day, dayIndex)}
+                      onJournals={() => openDayJournals(day, dayIndex)}
+                      onTodos={() => openDayTodos(day, dayIndex)}
+                      onFocus={() => {
+                        setActivePlaceId(null);
+                        setSelectedDayId(isFocused ? null : day.id);
+                      }}
+                      onDelete={() => removeDay(day.id)}
+                    />
+                    <div className="row hide-on-mobile" style={{ gap: 6, flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         className="btn sm ghost"
@@ -1802,7 +1818,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         )}
                       </div>
 
-                      <button type="button" className="btn sm ghost danger" onClick={() => removeDay(day.id)} title="Delete day">
+                      <button type="button" className="btn sm ghost danger hide-on-mobile" onClick={() => removeDay(day.id)} title="Delete day">
                         <Trash2 size={13} />
                       </button>
                     </div>

@@ -140,6 +140,31 @@ test('populated trip stays usable on narrow screens', async ({ page }, testInfo)
         await expect(page.getByRole('button', { name: 'Add place', exact: true })).toBeInViewport();
         await expect(page.locator('.ai-fab')).toBeHidden();
         await expect(page.locator('.mobile-day-chip-sub').first()).toContainText('Mon, 10/12');
+        const toolbar = page.locator('.day-toolbar').first();
+        expect((await toolbar.boundingBox())!.height).toBeLessThanOrEqual(44);
+        await expect(toolbar.getByRole('button', { name: 'Edit day notes' })).toBeHidden();
+        const options = toolbar.getByRole('button', { name: 'Day 1 options' });
+        for (const action of ['Notes', 'Journals', 'To-dos']) {
+          await options.click();
+          const sheet = page.getByRole('dialog', { name: 'Day 1 options' });
+          await expect(sheet.getByRole('button', { name: action, exact: true })).toBeVisible();
+          await sheet.getByRole('button', { name: action, exact: true }).click();
+          await expect(sheet).toHaveCount(0);
+          await expect(page.getByRole('dialog')).toHaveCount(1);
+          await page.keyboard.press('Escape');
+          await expect(page.getByRole('dialog')).toHaveCount(0);
+        }
+        await options.click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Focus day', exact: true }).click();
+        await expect(options).toHaveClass(/primary/);
+        expect((await toolbar.boundingBox())!.height).toBeLessThanOrEqual(44);
+        await options.click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Show all days', exact: true }).click();
+        await expect(options).not.toHaveClass(/primary/);
+        await options.click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Delete day', exact: true }).click();
+        await expect(page.getByRole('dialog', { name: 'Delete day' })).toBeVisible();
+        await page.keyboard.press('Escape');
       }
     }
     await page.screenshot({ path: testInfo.outputPath(`${tab}.png`), fullPage: true });

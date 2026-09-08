@@ -171,7 +171,7 @@ aiRouter.post(
     // Format prompt for LLM including full document content
     let llmPrompt = message;
     for (const att of attachments) {
-      const cleanDocText = (att.text || '').trim();
+      const cleanDocText = (att.text || '').replace(/\0/g, '').trim();
       llmPrompt +=
         `\n\n[Attached Document: "${att.filename}" (${att.fileType || 'file'})]\n` +
         `--- DOCUMENT CONTENT ---\n` +
@@ -188,7 +188,7 @@ aiRouter.post(
       const rawSections = attachments
         .map(
           (a) =>
-            `\n\n<details><summary>View extracted text: ${a.filename}</summary>\n\n${(a.text || '').trim()}\n</details>`,
+            `\n\n<details><summary>View extracted text: ${a.filename}</summary>\n\n${(a.text || '').replace(/\0/g, '').trim()}\n</details>`,
         )
         .join('\n');
       storedContent = `${badges}\n\n${message}${rawSections}`;
@@ -208,10 +208,14 @@ aiRouter.post(
     const focusedDayId = typeof req.body.focusedDayId === 'string' ? req.body.focusedDayId.trim() : undefined;
     const { reply, actions } = await processTripChat(tripId, user.id, llmPrompt, history, focusedDayId);
 
+    // Sanitize any remaining null characters to prevent PostgreSQL UTF-8 column insertion errors
+    const safeStored = storedContent.replace(/\0/g, '');
+    const safeReply = (reply || '').replace(/\0/g, '');
+
     await prisma.chatMessage.createMany({
       data: [
-        { tripId, userId: user.id, role: 'user', content: storedContent },
-        { tripId, userId: user.id, role: 'assistant', content: reply },
+        { tripId, userId: user.id, role: 'user', content: safeStored },
+        { tripId, userId: user.id, role: 'assistant', content: safeReply },
       ],
     });
 

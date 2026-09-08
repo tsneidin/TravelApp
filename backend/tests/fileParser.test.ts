@@ -5,9 +5,25 @@ import {
   stripHtmlToText,
   parseEmlContent,
   extractDocumentText,
+  sanitizeDocumentText,
 } from '../src/services/fileParser.js';
 
 describe('fileParser service', () => {
+  describe('sanitizeDocumentText', () => {
+    it('strips null bytes and invalid control characters', () => {
+      const dirty = 'Hello\x00World\x01\x02\x08Test\x1F\x7FDone\nNext\tLine';
+      const clean = sanitizeDocumentText(dirty);
+      expect(clean).toBe('HelloWorldTestDone\nNext\tLine');
+      expect(clean).not.toContain('\x00');
+    });
+
+    it('repairs broken PDF ligatures that mapped to null bytes or replacement chars', () => {
+      const broken = 'Addi\x00onal nights un\x00l 11:00 informa\x00on at h\x00ps://example.com FunAc\x00ve reserva\x00ons';
+      const clean = sanitizeDocumentText(broken);
+      expect(clean).toBe('Additional nights until 11:00 information at https://example.com FunActive reservations');
+      expect(clean).not.toContain('\x00');
+    });
+  });
   describe('unescapeQuotedPrintable', () => {
     it('decodes hex characters and handles soft line breaks', () => {
       const qp = 'Hello=20World=21=0D=0AThis is a long line=\r\n wrapped across lines.';

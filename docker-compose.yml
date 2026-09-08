@@ -65,6 +65,8 @@ services:
       SEARCH_ENABLED: ${SEARCH_ENABLED:-true}
       SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
       SEARCH_TIMEOUT_MS: ${SEARCH_TIMEOUT_MS:-10000}
+      TIKA_URL: ${TIKA_URL:-http://192.168.86.86:9998}
+      TIKA_TIMEOUT_MS: ${TIKA_TIMEOUT_MS:-20000}
     volumes:
       - /mnt/user/appdata/travelapp/uploads:/data/uploads
     networks:

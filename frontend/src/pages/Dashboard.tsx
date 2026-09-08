@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, MapPin, ArrowRight, Users } from 'lucide-react';
 import { apiGet, apiPost } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { endForStart } from '../lib/dateRange';
+import { endForStart, formatTripDate } from '../lib/dateRange';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
 import { Modal } from '../components/Modal';
@@ -16,6 +16,7 @@ export function Dashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [createError, setCreateError] = useState('');
   const [form, setForm] = useState({
     name: '',
     destination: '',
@@ -28,6 +29,7 @@ export function Dashboard() {
   // Sidebar "+" navigates to /?new=1 — open the create dialog and clean the URL.
   useEffect(() => {
     if (searchParams.get('new') === '1') {
+      setCreateError('');
       setShowCreate(true);
       setSearchParams({}, { replace: true });
     }
@@ -49,10 +51,13 @@ export function Dashboard() {
   }, []);
 
   const create = async () => {
+    if (saving || !form.name.trim()) return;
+    setCreateError('');
     setSaving(true);
     try {
       await apiPost('/trips', {
         ...form,
+        name: form.name.trim(),
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
       });
@@ -60,7 +65,7 @@ export function Dashboard() {
       setForm({ name: '', destination: '', currency: 'USD', startDate: '', endDate: '', description: '' });
       await load();
     } catch (e) {
-      setError((e as Error).message);
+      setCreateError((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -77,7 +82,7 @@ export function Dashboard() {
           <p className="page-sub">Plan upcoming journeys or relive past ones.</p>
         </div>
         <div className="row" style={{ gap: 10, alignItems: 'center' }}>
-          <button className="btn primary" onClick={() => setShowCreate(true)}>
+          <button className="btn primary" onClick={() => { setCreateError(''); setShowCreate(true); }}>
             <Plus size={16} /> New trip
           </button>
         </div>
@@ -131,7 +136,7 @@ export function Dashboard() {
                     )}
                     {t.startDate && (
                       <span className="badge">
-                        {new Date(t.startDate).toLocaleDateString()} — {t.endDate ? new Date(t.endDate).toLocaleDateString() : '?'}
+                        {formatTripDate(t.startDate)} — {t.endDate ? formatTripDate(t.endDate) : '?'}
                       </span>
                     )}
                   </div>
@@ -143,10 +148,10 @@ export function Dashboard() {
       )}
 
       {showCreate && (
-        <Modal title="New trip" onClose={() => setShowCreate(false)}>
+        <Modal title="New trip" onClose={() => { if (!saving) setShowCreate(false); }}>
           <div className="field">
-            <label>Name</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Japan Autumn" />
+            <label htmlFor="new-trip-name">Name</label>
+            <input id="new-trip-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Japan Autumn" />
           </div>
           <div className="field">
             <label>Destination</label>
@@ -174,10 +179,10 @@ export function Dashboard() {
             <label>Description</label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes about this trip" />
           </div>
-          {error && <div className="small danger mb">{error}</div>}
+          {createError && <div role="alert" className="small danger mb">{createError}</div>}
           <div className="modal-actions">
-            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
-            <button className="btn primary" onClick={create} disabled={saving || !form.name}>
+            <button className="btn" onClick={() => setShowCreate(false)} disabled={saving}>Cancel</button>
+            <button className="btn primary" onClick={create} disabled={saving || !form.name.trim()}>
               {saving ? 'Creating…' : 'Create'}
             </button>
           </div>

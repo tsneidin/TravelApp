@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.54` — check the bottom of the left sidebar for the
+**Current version:** `0.0.130` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -197,3 +197,18 @@ npm run lint
 npm run typecheck
 npm run build
 ```
+
+Browser regression checks use sample API responses and do not require a live database:
+
+```bash
+cd frontend
+npx playwright install chromium
+npm run test:e2e
+# Or use an installed Google Chrome:
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
+```
+
+The suite covers desktop, phone, and small-phone layouts, date display in Central
+Time, dialog keyboard navigation, recoverable form errors, and populated trip
+sections. Google Maps rendering and live integrations require separate checks
+with a configured API and database.

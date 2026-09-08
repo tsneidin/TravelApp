@@ -3,6 +3,8 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+test-results/
+playwright-report/
 
 # Env / secrets
 .env

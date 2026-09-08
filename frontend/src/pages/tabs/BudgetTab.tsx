@@ -55,9 +55,9 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
   }, [trip.owner, trip.members]);
 
   const initSplitsForMembers = (
-    existingType = 'equal',
+    _existingType = 'equal',
     existingSplits?: ExpenseSplit[] | null,
-    totalAmt = 0,
+    _totalAmt = 0,
   ) => {
     const map: Record<string, MemberSplitState> = {};
     const count = allMembers.length || 1;

@@ -5,6 +5,7 @@ import {
   Camera, CheckSquare, Luggage, X, ChevronRight, GanttChartSquare
 } from 'lucide-react';
 import type { Trip } from '../lib/types';
+import { useDialog } from '../lib/useDialog';
 
 interface MobileBottomNavProps {
   tripId: string;
@@ -14,6 +15,7 @@ interface MobileBottomNavProps {
 
 export function MobileBottomNav({ tripId, activeTab, trip }: MobileBottomNavProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const sheetRef = useDialog(moreOpen, () => setMoreOpen(false));
 
   const primaryTabs = [
     { key: 'itinerary', label: 'Itinerary', icon: Calendar },
@@ -42,6 +44,7 @@ export function MobileBottomNav({ tripId, activeTab, trip }: MobileBottomNavProp
               key={tab.key}
               to={`/trips/${tripId}?tab=${tab.key}`}
               className={`mobile-nav-item ${isActive ? 'active' : ''}`}
+              aria-current={isActive ? 'page' : undefined}
             >
               <div className="mobile-nav-icon-wrap">
                 <Icon size={20} />
@@ -74,13 +77,18 @@ export function MobileBottomNav({ tripId, activeTab, trip }: MobileBottomNavProp
       {moreOpen && (
         <div className="mobile-more-overlay" onClick={() => setMoreOpen(false)}>
           <div
+            ref={sheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="more-trip-sections"
+            tabIndex={-1}
             className="mobile-more-sheet"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mobile-sheet-header">
               <div className="mobile-sheet-handle" />
               <div className="mobile-sheet-title-row">
-                <h3>More Trip Sections</h3>
+                <h3 id="more-trip-sections">More trip sections</h3>
                 <button
                   type="button"
                   className="mobile-sheet-close-btn"
@@ -101,6 +109,7 @@ export function MobileBottomNav({ tripId, activeTab, trip }: MobileBottomNavProp
                     key={tab.key}
                     to={`/trips/${tripId}?tab=${tab.key}`}
                     className={`mobile-more-item ${isActive ? 'active' : ''}`}
+                    aria-current={isActive ? 'page' : undefined}
                     onClick={() => setMoreOpen(false)}
                   >
                     <div className="mobile-more-icon-box">

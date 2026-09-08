@@ -13,6 +13,7 @@ import { AIChat } from './AIChat';
 import { MobileBottomNav } from './MobileBottomNav';
 import { Avatar } from './Avatar';
 import { UserSettingsModal } from './UserSettingsModal';
+import { useDialog } from '../lib/useDialog';
 import type { Trip } from '../lib/types';
 import { resolveDayLocation, isNoteItem, extractCityFromLocation } from '../lib/placeUtils';
 
@@ -57,6 +58,14 @@ export function Layout() {
   const activeTab = new URLSearchParams(location.search).get('tab') ?? 'itinerary';
   const activeDayId = location.hash.startsWith('#day-') ? location.hash.slice(5) : null;
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const drawerRef = useDialog<HTMLElement>(mobileDrawerOpen, () => setMobileDrawerOpen(false));
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 820px)');
+    const onResize = () => { if (!media.matches) setMobileDrawerOpen(false); };
+    media.addEventListener('change', onResize);
+    return () => media.removeEventListener('change', onResize);
+  }, []);
 
   // Current trip if inside /trips/:tripId
   const currentTrip = activeTripId ? trips.find((t) => t.id === activeTripId) : null;
@@ -222,7 +231,7 @@ export function Layout() {
       window.removeEventListener('travelapp:trip-updated', onTripUpdated);
       window.removeEventListener('travelapp:mutated', fetchTrips);
     };
-  }, [location.key]);
+  }, [location.pathname]);
 
   return (
     <div className={`app-frame ${autoHideSidebar ? 'app-frame-autohide' : ''}`}>
@@ -233,6 +242,8 @@ export function Layout() {
           className="mobile-top-btn"
           onClick={() => setMobileDrawerOpen(true)}
           aria-label="Open navigation menu"
+          aria-expanded={mobileDrawerOpen}
+          aria-controls="main-navigation"
         >
           <Menu size={20} />
         </button>
@@ -324,6 +335,12 @@ export function Layout() {
 
       {/* ---------- Left folder tree (Wanderlog-style) ---------- */}
       <aside
+        id="main-navigation"
+        ref={drawerRef}
+        role={mobileDrawerOpen ? 'dialog' : undefined}
+        aria-modal={mobileDrawerOpen ? true : undefined}
+        aria-label="Main navigation"
+        tabIndex={-1}
         className={`side-nav ${autoHideSidebar ? 'side-nav-autohide' : ''} ${sidebarPeeking ? 'side-nav-peeking' : ''} ${mobileDrawerOpen ? 'mobile-drawer-open' : ''}`}
         onMouseEnter={() => autoHideSidebar && setSidebarPeeking(true)}
         onMouseLeave={() => autoHideSidebar && setSidebarPeeking(false)}

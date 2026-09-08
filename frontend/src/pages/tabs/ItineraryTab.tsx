@@ -1,3 +1,4 @@
+import { formatTripDate } from '../../lib/dateRange';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -88,7 +89,7 @@ export function formatPlaceTime(startTime?: string | null, endTime?: string | nu
     }
     const tMatch = isoOrTime.match(/^(\d{1,2}):(\d{2})\s*([AP]M)?$/i);
     if (tMatch) {
-      let h = parseInt(tMatch[1], 10);
+      const h = parseInt(tMatch[1], 10);
       const m = tMatch[2];
       const ampm = tMatch[3] ? tMatch[3].toUpperCase() : h >= 12 ? 'PM' : 'AM';
       const h12 = h % 12 || 12;
@@ -1434,7 +1435,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           {days.map((day, idx) => {
             const isSel = selectedDayId === day.id;
             const dateStr = day.date
-              ? new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })
+              ? formatTripDate(day.date, { weekday: 'short', month: 'numeric', day: 'numeric' })
               : '';
             return (
               <button
@@ -1553,7 +1554,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       const customTitle = d?.label && !isGenericDayLabel(d.label) ? `: ${d.label}` : '';
                       return (
                         <b>
-                          Viewing Day {idx} ({d ? new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : ''}{customTitle})
+                          Viewing Day {idx} ({d ? formatTripDate(d.date, { weekday: 'short', month: 'short', day: 'numeric' }) : ''}{customTitle})
                         </b>
                       );
                     })()
@@ -1669,7 +1670,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     {/* Date right justified on the right side */}
                     <div style={{ marginLeft: 'auto' }}>
                       <span className="badge accent" style={{ fontWeight: 600 }}>
-                        {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                        {formatTripDate(day.date, { weekday: 'short', month: 'short', day: 'numeric' })}
                       </span>
                     </div>
                   </div>
@@ -2052,7 +2053,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                       {days.map((d, i) => {
                         const customTitle = !isGenericDayLabel(d.label) ? `: ${d.label}` : '';
                         const dateFormatted = d.date
-                          ? ` (${new Date(d.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`
+                          ? ` (${formatTripDate(d.date, { month: 'short', day: 'numeric' })})`
                           : '';
                         return (
                           <option key={d.id} value={d.id}>
@@ -2951,7 +2952,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <option value="">No day (unassigned)</option>
                   {days.map((d, i) => (
                     <option key={d.id} value={d.id}>
-                      {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${new Date(d.date).toLocaleDateString()})`}
+                      {`Day ${i + 1}${!isGenericDayLabel(d.label) ? `: ${d.label}` : ''} (${formatTripDate(d.date)})`}
                     </option>
                   ))}
                 </select>

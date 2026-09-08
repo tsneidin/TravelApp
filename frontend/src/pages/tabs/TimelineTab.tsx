@@ -309,7 +309,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
         const sKey = parseDateKey(b.startAt);
         const eKey = parseDateKey(b.endAt);
 
-        let startIdx = sKey && dateToIndex.has(sKey) ? dateToIndex.get(sKey)! : 0;
+        const startIdx = sKey && dateToIndex.has(sKey) ? dateToIndex.get(sKey)! : 0;
         let endIdx = eKey && dateToIndex.has(eKey) ? dateToIndex.get(eKey)! : startIdx + 1;
         if (endIdx <= startIdx) endIdx = startIdx + 1;
         endIdx = Math.min(endIdx, timelineDays.length - 1);
@@ -773,7 +773,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
       {/* Gantt Controls Bar */}
       <div className="row between mb" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         {/* Track Filters */}
-        <div style={{ display: 'flex', gap: 6, background: 'var(--panel)', padding: 4, borderRadius: 8, border: '1px solid var(--line)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, background: 'var(--panel)', padding: 4, borderRadius: 8, border: '1px solid var(--line)' }}>
           <button
             type="button"
             className={`btn sm ${trackFilter === 'all' ? 'primary' : 'ghost'}`}

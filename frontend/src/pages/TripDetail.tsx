@@ -1,22 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Users, Crown, Shield, Eye } from 'lucide-react';
 import { apiGet, apiPatch, apiDelete } from '../lib/api';
-import { endForStart } from '../lib/dateRange';
+import { endForStart, formatTripDate } from '../lib/dateRange';
 import { useAuth } from '../lib/auth';
 import type { Trip } from '../lib/types';
 import { Spinner } from '../components/Spinner';
 import { Modal, ConfirmModal } from '../components/Modal';
 import { Avatar } from '../components/Avatar';
 import { TripMembersModal } from '../components/TripMembersModal';
-import { ItineraryTab } from './tabs/ItineraryTab';
-import { MapTab } from './tabs/MapTab';
-import { TimelineTab } from './tabs/TimelineTab';
-import { BudgetTab } from './tabs/BudgetTab';
-import { PhotosJournalTab } from './tabs/PhotosJournalTab';
-import { PackingTab } from './tabs/PackingTab';
-import { TodoTab } from './tabs/TodoTab';
-import { BookingsTab } from './tabs/BookingsTab';
+const ItineraryTab = lazy(() => import('./tabs/ItineraryTab').then((module) => ({ default: module.ItineraryTab })));
+const MapTab = lazy(() => import('./tabs/MapTab').then((module) => ({ default: module.MapTab })));
+const TimelineTab = lazy(() => import('./tabs/TimelineTab').then((module) => ({ default: module.TimelineTab })));
+const BudgetTab = lazy(() => import('./tabs/BudgetTab').then((module) => ({ default: module.BudgetTab })));
+const PhotosJournalTab = lazy(() => import('./tabs/PhotosJournalTab').then((module) => ({ default: module.PhotosJournalTab })));
+const PackingTab = lazy(() => import('./tabs/PackingTab').then((module) => ({ default: module.PackingTab })));
+const TodoTab = lazy(() => import('./tabs/TodoTab').then((module) => ({ default: module.TodoTab })));
+const BookingsTab = lazy(() => import('./tabs/BookingsTab').then((module) => ({ default: module.BookingsTab })));
 
 type Tab =
   | 'itinerary'
@@ -43,9 +43,12 @@ export function TripDetail() {
   const { tripId } = useParams();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  const requestSequence = useRef(0);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const requestedTab = (searchParams.get('tab') as Tab | null) ?? 'itinerary';
   const tab = TABS.some((t) => t.key === requestedTab) ? requestedTab : 'itinerary';
   const [editOpen, setEditOpen] = useState(false);
@@ -54,20 +57,24 @@ export function TripDetail() {
   const [form, setForm] = useState({ name: '', destination: '', currency: 'USD', startDate: '', endDate: '', description: '' });
 
   const load = useCallback(async () => {
+    const request = ++requestSequence.current;
     try {
       const r = await apiGet<{ trip: Trip }>(`/trips/${tripId}`);
+      if (request !== requestSequence.current) return;
+      setError('');
       setTrip(r.trip);
       window.dispatchEvent(new CustomEvent('travelapp:trip-updated', { detail: { trip: r.trip } }));
     } catch (e) {
-      setError((e as Error).message);
+      if (request === requestSequence.current) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (request === requestSequence.current) setLoading(false);
     }
   }, [tripId]);
 
   useEffect(() => {
     setLoading(true);
     void load();
+    return () => { requestSequence.current += 1; };
   }, [load]);
 
   // Reload whenever the AI assistant modifies this trip (itinerary/bookings/budget).
@@ -81,16 +88,25 @@ export function TripDetail() {
   }, [load, tripId]);
 
   const save = async () => {
-    await apiPatch(`/trips/${tripId}`, {
-      name: form.name,
-      destination: form.destination,
-      currency: form.currency,
-      startDate: form.startDate || null,
-      endDate: form.endDate || null,
-      description: form.description,
-    });
-    setEditOpen(false);
-    await load();
+    if (saving || !form.name.trim()) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await apiPatch(`/trips/${tripId}`, {
+        name: form.name.trim(),
+        destination: form.destination,
+        currency: form.currency,
+        startDate: form.startDate || null,
+        endDate: form.endDate || null,
+        description: form.description,
+      });
+      setEditOpen(false);
+      await load();
+    } catch (e) {
+      setSaveError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const remove = () => {
@@ -110,6 +126,7 @@ export function TripDetail() {
   ];
 
   const openEdit = () => {
+    setSaveError('');
     setForm({
       name: trip.name,
       destination: trip.destination || '',
@@ -138,7 +155,7 @@ export function TripDetail() {
           </div>
           <p className="page-sub" style={{ marginTop: 4 }}>
             {trip.destination || 'Destination TBD'}
-            {trip.startDate ? ` · ${new Date(trip.startDate).toLocaleDateString()} — ${trip.endDate ? new Date(trip.endDate).toLocaleDateString() : '?'}` : ''}
+            {trip.startDate ? ` · ${formatTripDate(trip.startDate)} — ${trip.endDate ? formatTripDate(trip.endDate) : '?'}` : ''}
             {' · Created by '}
             <strong>{trip.owner?.name ?? 'you'}</strong>
           </p>
@@ -177,20 +194,22 @@ export function TripDetail() {
         </div>
       </div>
 
-      {tab === 'itinerary' && <ItineraryTab trip={trip} reload={load} />}
-      {tab === 'map' && <MapTab trip={trip} reload={load} />}
-      {tab === 'timeline' && <TimelineTab trip={trip} reload={load} />}
-      {tab === 'budget' && <BudgetTab trip={trip} reload={load} />}
-      {tab === 'photos' && <PhotosJournalTab trip={trip} reload={load} />}
-      {tab === 'todos' && <TodoTab trip={trip} reload={load} />}
-      {tab === 'packing' && <PackingTab trip={trip} reload={load} />}
-      {tab === 'bookings' && <BookingsTab trip={trip} reload={load} />}
+      <Suspense fallback={<Spinner label="Loading section…" />}>
+        {tab === 'itinerary' && <ItineraryTab trip={trip} reload={load} />}
+        {tab === 'map' && <MapTab trip={trip} reload={load} />}
+        {tab === 'timeline' && <TimelineTab trip={trip} reload={load} />}
+        {tab === 'budget' && <BudgetTab trip={trip} reload={load} />}
+        {tab === 'photos' && <PhotosJournalTab trip={trip} reload={load} />}
+        {tab === 'todos' && <TodoTab trip={trip} reload={load} />}
+        {tab === 'packing' && <PackingTab trip={trip} reload={load} />}
+        {tab === 'bookings' && <BookingsTab trip={trip} reload={load} />}
+      </Suspense>
 
       {editOpen && (
-        <Modal title="Edit trip" onClose={() => setEditOpen(false)}>
+        <Modal title="Edit trip" onClose={() => { if (!saving) setEditOpen(false); }}>
           <div className="field">
-            <label>Name</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <label htmlFor="edit-trip-name">Name</label>
+            <input id="edit-trip-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="field">
             <label>Destination</label>
@@ -218,9 +237,10 @@ export function TripDetail() {
             <label>Description</label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
+          {saveError && <p role="alert" className="danger">{saveError}</p>}
           <div className="modal-actions">
-            <button className="btn" onClick={() => setEditOpen(false)}>Cancel</button>
-            <button className="btn primary" onClick={save}>Save</button>
+            <button className="btn" onClick={() => setEditOpen(false)} disabled={saving}>Cancel</button>
+            <button className="btn primary" onClick={() => void save()} disabled={saving || !form.name.trim()}>{saving ? 'Saving…' : 'Save'}</button>
           </div>
         </Modal>
       )}

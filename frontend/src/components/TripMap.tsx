@@ -62,7 +62,7 @@ function loadGoogleMaps(): Promise<any> {
       resolve(window.google.maps);
     };
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&libraries=places&callback=${callback}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&libraries=places,marker,routes&callback=${callback}`;
     script.async = true;
     script.onerror = () => reject(new Error('Google Maps failed to load'));
     document.head.appendChild(script);
@@ -231,6 +231,7 @@ export function TripMap({
   const bikeLayerRef = useRef<any>(null);
   const trafficLayerRef = useRef<any>(null);
   const directionsRenderersRef = useRef<any[]>([]);
+  const computedRoutesRef = useRef<any[]>([]);
   const infoWindowRef = useRef<any>(null);
   const previewRef = useRef<any>(null);
   const showPreviewRef = useRef<((place: GeocodedPlace, position: any) => void) | null>(null);
@@ -343,6 +344,7 @@ export function TripMap({
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
+          mapId: import.meta.env.VITE_GOOGLE_MAP_ID || 'DEMO_MAP_ID',
         });
 
         // Initialize layers with Transit defaulted to ON
@@ -385,14 +387,13 @@ export function TripMap({
           previewRef.current?.close();
 
           if (!clickedMarkerRef.current) {
-            clickedMarkerRef.current = new maps.Marker({
+            clickedMarkerRef.current = new maps.marker.AdvancedMarkerElement({
               map: mapRef.current,
               position,
-              animation: maps.Animation?.DROP,
             });
           } else {
-            clickedMarkerRef.current.setPosition(position);
-            clickedMarkerRef.current.setMap(mapRef.current);
+            clickedMarkerRef.current.position = position;
+            clickedMarkerRef.current.map = mapRef.current;
           }
 
           const card = document.createElement('div');
@@ -658,7 +659,10 @@ export function TripMap({
         });
       }
 
-      overlaysRef.current.forEach((overlay) => overlay.setMap?.(null));
+      overlaysRef.current.forEach((overlay) => {
+        if (typeof overlay.setMap === 'function') overlay.setMap(null);
+        else overlay.map = null;
+      });
       overlaysRef.current = [];
       markersMapRef.current.clear();
 
@@ -711,10 +715,13 @@ export function TripMap({
         let entry = markerByStopKey.get(stopKey);
 
         if (!entry) {
-          const marker = new maps.Marker({
+          const pin = place.stopNumber != null
+            ? new maps.marker.PinElement({ glyph: String(place.stopNumber), glyphColor: '#fff' })
+            : undefined;
+          const marker = new maps.marker.AdvancedMarkerElement({
             map: mapRef.current,
             position: coord,
-            label: place.stopNumber != null ? { text: String(place.stopNumber), color: '#fff' } : undefined,
+            content: pin?.element,
             title: place.name,
           });
 
@@ -1067,44 +1074,48 @@ export function TripMap({
     let arrivalTime: string | undefined;
 
     route.legs?.forEach((leg: any, lIdx: number) => {
-      totalDurationSec += leg.duration?.value || 0;
-      totalDistanceM += leg.distance?.value || 0;
+      totalDurationSec += leg.durationMillis != null ? Math.round(leg.durationMillis / 1000) : (leg.duration?.value || 0);
+      totalDistanceM += leg.distanceMeters ?? leg.distance?.value ?? 0;
 
-      if (leg.departure_time?.text && !departureTime) {
-        departureTime = leg.departure_time.text;
+      if ((leg.localizedValues?.departureTime || leg.departure_time?.text) && !departureTime) {
+        departureTime = leg.localizedValues?.departureTime || leg.departure_time.text;
       }
-      if (leg.arrival_time?.text) {
-        arrivalTime = leg.arrival_time.text;
+      if (leg.localizedValues?.arrivalTime || leg.arrival_time?.text) {
+        arrivalTime = leg.localizedValues?.arrivalTime || leg.arrival_time.text;
       }
 
       if ((route.legs?.length || 1) > 1) {
         steps.push({
-          instruction: `Leg ${lIdx + 1}: ${leg.start_address?.split(',')[0]} → ${leg.end_address?.split(',')[0]} (${leg.duration?.text || ''})`,
+          instruction: `Leg ${lIdx + 1}: ${(leg.startAddress || leg.start_address || '').split(',')[0]} → ${(leg.endAddress || leg.end_address || '').split(',')[0]} (${leg.localizedValues?.duration || leg.duration?.text || ''})`,
           legTitle: `Leg ${lIdx + 1}`,
         });
       }
 
       leg.steps?.forEach((step: any) => {
-        const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-        if (step.transit) {
-          const line = step.transit.line;
-          const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
+        const cleanInstruction = (step.instructions || step.navigationInstruction?.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+        const transit = step.transitDetails || step.transit;
+        if (transit) {
+          const line = transit.transitLine || transit.line || {};
+          const vehicleName = line.vehicle?.name || line.vehicle?.type || 'Transit';
+          const lineName = line.nameShort || line.short_name || line.name || vehicleName;
           transitLines.push(lineName);
-          const depStop = step.transit.departure_stop?.name || '';
-          const arrStop = step.transit.arrival_stop?.name || '';
-          const stopsCount = step.transit.num_stops ? ` (${step.transit.num_stops} stop${step.transit.num_stops > 1 ? 's' : ''})` : '';
-          const depTime = step.transit.departure_time?.text ? ` at ${step.transit.departure_time.text}` : '';
+          const depStop = transit.stopDetails?.departureStop?.name || transit.departure_stop?.name || '';
+          const arrStop = transit.stopDetails?.arrivalStop?.name || transit.arrival_stop?.name || '';
+          const stopCount = transit.stopCount ?? transit.num_stops;
+          const stopsCount = stopCount ? ` (${stopCount} stop${stopCount > 1 ? 's' : ''})` : '';
+          const departure = transit.localizedValues?.departureTime || transit.departure_time?.text;
+          const depTime = departure ? ` at ${departure}` : '';
           steps.push({
-            instruction: `${line.vehicle?.name || 'Transit'} ${lineName}${depTime}: ${depStop} → ${arrStop}${stopsCount}`,
-            distance: step.distance?.text,
-            duration: step.duration?.text,
+            instruction: `${vehicleName} ${lineName}${depTime}: ${depStop} → ${arrStop}${stopsCount}`,
+            distance: step.localizedValues?.distance || step.distance?.text,
+            duration: step.localizedValues?.staticDuration || step.duration?.text,
             lineName,
           });
         } else {
           steps.push({
             instruction: cleanInstruction,
-            distance: step.distance?.text,
-            duration: step.duration?.text,
+            distance: step.localizedValues?.distance || step.distance?.text,
+            duration: step.localizedValues?.staticDuration || step.duration?.text,
           });
         }
       });
@@ -1114,8 +1125,8 @@ export function TripMap({
     const mins = Math.round((totalDurationSec % 3600) / 60);
     const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
     const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
-    const startAddress = route.legs?.[0]?.start_address || originFallback;
-    const endAddress = route.legs?.[route.legs.length - 1]?.end_address || destFallback;
+    const startAddress = route.legs?.[0]?.startAddress || route.legs?.[0]?.start_address || originFallback;
+    const endAddress = route.legs?.[route.legs.length - 1]?.endAddress || route.legs?.[route.legs.length - 1]?.end_address || destFallback;
 
     return {
       index,
@@ -1134,18 +1145,33 @@ export function TripMap({
     };
   };
 
+  const clearRenderedRoutes = () => {
+    directionsRenderersRef.current.forEach((item) => {
+      if (typeof item.setMap === 'function') item.setMap(null);
+      else item.map = null;
+    });
+    directionsRenderersRef.current = [];
+  };
+
+  const renderComputedRoute = async (route: any, color = '#0891b2') => {
+    if (!route || !mapRef.current) return;
+    clearRenderedRoutes();
+    const polylines = route.createPolylines();
+    polylines.forEach((polyline: any) => {
+      polyline.setOptions?.({ strokeColor: color, strokeWeight: 5, strokeOpacity: 0.85 });
+      polyline.setMap(mapRef.current);
+    });
+    const markers = await route.createWaypointAdvancedMarkers({ map: mapRef.current });
+    directionsRenderersRef.current = [...polylines, ...markers];
+    if (route.viewport) mapRef.current.fitBounds(route.viewport);
+  };
+
   const handleSelectRouteOption = (index: number) => {
     setSelectedRouteIndex(index);
     if (availableRoutes[index]) {
       setRouteResult(availableRoutes[index]);
     }
-    if (directionsRenderersRef.current[0] && typeof directionsRenderersRef.current[0].setRouteIndex === 'function') {
-      try {
-        directionsRenderersRef.current[0].setRouteIndex(index);
-      } catch (e) {
-        console.warn('setRouteIndex error:', e);
-      }
-    }
+    if (computedRoutesRef.current[index]) void renderComputedRoute(computedRoutesRef.current[index]);
   };
 
   const calculateRoute = async (
@@ -1167,153 +1193,77 @@ export function TripMap({
     setSelectedRouteIndex(0);
 
     // Clear previous directions renderers from map
-    directionsRenderersRef.current.forEach((r) => r.setMap(null));
-    directionsRenderersRef.current = [];
+    clearRenderedRoutes();
+    computedRoutesRef.current = [];
 
     try {
-      const directionsService = new window.google.maps.DirectionsService();
-      const mode = (window.google.maps.TravelMode as any)[modeKey] || window.google.maps.TravelMode.TRANSIT;
+      const { Route: GoogleRoute } = await window.google.maps.importLibrary('routes');
+      const routeRequest = (from: string, to: string, intermediates: string[] = [], alternatives = false) => ({
+        origin: from,
+        destination: to,
+        travelMode: modeKey,
+        intermediates: intermediates.map((location) => ({ location })),
+        computeAlternativeRoutes: alternatives,
+        fields: ['path', 'viewport', 'legs'],
+      });
 
       if (modeKey === 'TRANSIT' && stops.length > 0) {
-        // Multi-leg Transit calculation: request each segment sequentially/concurrently
         const allPoints = [origin, ...stops, dest];
-        const legPromises = [];
-
-        for (let i = 0; i < allPoints.length - 1; i++) {
-          const req = {
-            origin: allPoints[i],
-            destination: allPoints[i + 1],
-            travelMode: window.google.maps.TravelMode.TRANSIT,
-          };
-          legPromises.push(
-            new Promise<any>((resolve, reject) => {
-              directionsService.route(req, (res: any, status: any) => {
-                if (status === window.google.maps.DirectionsStatus.OK) resolve(res);
-                else reject(new Error(`Leg ${i + 1} (${allPoints[i]} → ${allPoints[i + 1]}): ${status}`));
-              });
-            }),
-          );
-        }
-
-        const legResults = await Promise.all(legPromises);
-
-        let totalDurationSec = 0;
-        let totalDistanceM = 0;
-        const allTransitLines: string[] = [];
-        const allSteps: { instruction: string; distance?: string; duration?: string; lineName?: string; legTitle?: string }[] = [];
-
-        legResults.forEach((res, legIdx) => {
-          const renderer = new window.google.maps.DirectionsRenderer({
-            map: mapRef.current,
-            suppressMarkers: false,
-            polylineOptions: {
-              strokeColor: ['#0891b2', '#06b6d4', '#3b82f6', '#8b5cf6', '#10b981'][legIdx % 5],
-              strokeWeight: 5,
-              strokeOpacity: 0.85,
-            },
-          });
-          renderer.setDirections(res);
-          directionsRenderersRef.current.push(renderer);
-
-          const leg = res.routes?.[0]?.legs?.[0];
-          if (leg) {
-            totalDurationSec += leg.duration?.value || 0;
-            totalDistanceM += leg.distance?.value || 0;
-
-            const legFrom = allPoints[legIdx].split(',')[0];
-            const legTo = allPoints[legIdx + 1].split(',')[0];
-            allSteps.push({
-              instruction: `Leg ${legIdx + 1}: ${legFrom} → ${legTo} (${leg.duration?.text || ''})`,
-              legTitle: `Leg ${legIdx + 1}`,
-            });
-
-            leg.steps?.forEach((step: any) => {
-              const cleanInstruction = (step.instructions || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-              if (step.transit) {
-                const line = step.transit.line;
-                const lineName = line.short_name || line.name || line.vehicle?.name || 'Transit';
-                allTransitLines.push(lineName);
-                allSteps.push({
-                  instruction: `${line.vehicle?.name || 'Transit'} ${lineName}: ${step.transit.departure_stop?.name || ''} → ${step.transit.arrival_stop?.name || ''} (${step.transit.num_stops || 1} stops)`,
-                  distance: step.distance?.text,
-                  duration: step.duration?.text,
-                  lineName,
-                });
-              } else {
-                allSteps.push({
-                  instruction: cleanInstruction,
-                  distance: step.distance?.text,
-                  duration: step.duration?.text,
-                });
-              }
-            });
-          }
+        const routeResults = await Promise.all(
+          allPoints.slice(0, -1).map((point, index) =>
+            GoogleRoute.computeRoutes(routeRequest(point, allPoints[index + 1])),
+          ),
+        );
+        const routes = routeResults.map((result: any, index: number) => {
+          const route = result.routes?.[0];
+          if (!route) throw new Error(`No route found for leg ${index + 1}.`);
+          return route;
         });
 
-        const hours = Math.floor(totalDurationSec / 3600);
-        const mins = Math.round((totalDurationSec % 3600) / 60);
-        const durText = hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
-        const distText = totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`;
+        const colors = ['#0891b2', '#06b6d4', '#3b82f6', '#8b5cf6', '#10b981'];
+        const routeObjects: any[] = [];
+        const bounds = new window.google.maps.LatLngBounds();
+        for (let index = 0; index < routes.length; index++) {
+          const route = routes[index];
+          const polylines = route.createPolylines();
+          polylines.forEach((polyline: any) => {
+            polyline.setOptions?.({ strokeColor: colors[index % colors.length], strokeWeight: 5, strokeOpacity: 0.85 });
+            polyline.setMap(mapRef.current);
+          });
+          const markers = await route.createWaypointAdvancedMarkers({ map: mapRef.current });
+          routeObjects.push(...polylines, ...markers);
+          route.path?.forEach((point: any) => bounds.extend(point));
+        }
+        directionsRenderersRef.current = routeObjects;
+        if (!bounds.isEmpty()) mapRef.current.fitBounds(bounds);
 
+        const options = routes.map((route: any, index: number) => parseGoogleRoute(route, allPoints[index], allPoints[index + 1], index));
+        const totalDurationSec = options.reduce((sum, option) => sum + option.durationValue, 0);
+        const totalDistanceM = options.reduce((sum, option) => sum + option.distanceValue, 0);
+        const allTransitLines = Array.from(new Set(options.flatMap((option) => option.transitLines)));
         const combinedOption: RouteOption = {
           index: 0,
-          summary: allTransitLines.length ? allTransitLines.join(' + ') : undefined,
-          durationText: durText,
+          summary: allTransitLines.join(' + ') || undefined,
+          durationText: totalDurationSec >= 3600 ? `${Math.floor(totalDurationSec / 3600)} hr ${Math.round((totalDurationSec % 3600) / 60)} min` : `${Math.round(totalDurationSec / 60)} min`,
           durationValue: totalDurationSec,
-          distanceText: distText,
+          distanceText: totalDistanceM >= 1000 ? `${(totalDistanceM / 1000).toFixed(1)} km` : `${totalDistanceM} m`,
           distanceValue: totalDistanceM,
           startAddress: origin,
           endAddress: dest,
-          transitLines: Array.from(new Set(allTransitLines)),
-          steps: allSteps,
-          legsCount: allPoints.length - 1,
+          transitLines: allTransitLines,
+          steps: options.flatMap((option, index) => [{ instruction: `Leg ${index + 1}: ${allPoints[index]} → ${allPoints[index + 1]}`, legTitle: `Leg ${index + 1}` }, ...option.steps]),
+          legsCount: routes.length,
         };
-
         setRouteResult(combinedOption);
         setAvailableRoutes([combinedOption]);
-        setSelectedRouteIndex(0);
       } else {
-        // Single transit query or Driving / Walking / Bicycling with waypoints
-        const request: any = {
-          origin,
-          destination: dest,
-          travelMode: mode,
-          provideRouteAlternatives: stops.length === 0,
-          waypoints: stops.map((s) => ({ location: s, stopover: true })),
-        };
-
-        const result = await new Promise<any>((resolve, reject) => {
-          directionsService.route(request, (res: any, status: any) => {
-            if (status === window.google.maps.DirectionsStatus.OK) {
-              resolve(res);
-            } else {
-              reject(new Error(`Routing calculation: ${status}`));
-            }
-          });
-        });
-
-        const renderer = new window.google.maps.DirectionsRenderer({
-          map: mapRef.current,
-          suppressMarkers: false,
-          routeIndex: 0,
-          polylineOptions: {
-            strokeColor: '#0891b2',
-            strokeWeight: 5,
-            strokeOpacity: 0.85,
-          },
-        });
-        renderer.setDirections(result);
-        directionsRenderersRef.current.push(renderer);
-
-        const routes = result.routes || [];
-        if (routes.length > 0) {
-          const parsedRoutes: RouteOption[] = routes.map((r: any, idx: number) =>
-            parseGoogleRoute(r, origin, dest, idx),
-          );
-          setAvailableRoutes(parsedRoutes);
-          setSelectedRouteIndex(0);
-          setRouteResult(parsedRoutes[0]);
-        }
+        const { routes = [] } = await GoogleRoute.computeRoutes(routeRequest(origin, dest, stops, stops.length === 0));
+        if (!routes.length) throw new Error('No route found between selected points.');
+        computedRoutesRef.current = routes;
+        await renderComputedRoute(routes[0]);
+        const parsedRoutes = routes.map((route: any, index: number) => parseGoogleRoute(route, origin, dest, index));
+        setAvailableRoutes(parsedRoutes);
+        setRouteResult(parsedRoutes[0]);
       }
     } catch (err: any) {
       setRouteError(err.message || 'No route found between selected points.');
@@ -1389,8 +1339,8 @@ export function TripMap({
   };
 
   const clearRoute = () => {
-    directionsRenderersRef.current.forEach((r) => r.setMap(null));
-    directionsRenderersRef.current = [];
+    clearRenderedRoutes();
+    computedRoutesRef.current = [];
     setRouteResult(null);
     setAvailableRoutes([]);
     setSelectedRouteIndex(0);
@@ -2331,4 +2281,3 @@ export function TripMap({
     </div>
   );
 }
-

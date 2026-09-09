@@ -49,8 +49,7 @@ export function MobileDayActions({
                 onClick={() => { setOpen(false); run(); }}
               >
                 <Icon size={18} />
-                <span>{label}</span>
-                {count !== undefined && count > 0 && <span className="badge">{count}</span>}
+                <span>{count === undefined ? label : `${label} (${count})`}</span>
               </button>
             ))}
           </div>

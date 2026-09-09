@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.133
+# TravelApp usability polish, 0.0.134
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,9 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- Replaced the segmented time picker with compact clock fields and separate desktop and mobile layouts.
+- Fixed new journal saves from days with existing entries, made the New Journal action available with one existing entry, and surfaced validation and request errors in the form.
+- Itinerary Notes and Journals actions now show their current counts in both desktop controls and the mobile day menu.
 - Calendar visibility is a compact switch at the bottom of the item form, with source text in an expandable row beneath it.
 - Title and place search share one field. Real results are selected before any custom location option, manual titles remain possible, and stale responses cannot overwrite newer queries.
 - Normal searches use Google Places Text Search when configured, preserving result order and biasing toward the trip or day location. Without a key, the existing OpenStreetMap search remains available. Provider errors are visible.
@@ -27,7 +30,7 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 - Frontend lint, type checking, and production build passed.
 - Backend lint and type checking passed; all 73 tests passed with a generated Prisma client and test-only environment values, including Google request and response handling tests.
-- 40 browser tests passed with two expected desktop skips. After the final refinements, all 17 affected browser checks passed with one expected desktop skip.
+- 46 browser tests passed with two expected desktop skips, including journal creation, count indicators, compact clock input, and mobile layout checks.
 - Browser viewport sizes: 320 by 568, 390 by 844, and 1440 by 1000 pixels.
 - Browser tests cover sample populated and empty trips, all eight trip sections, date display, form failures, deletion failures, keyboard focus, and mobile navigation.
 - Reviewed generated mobile and desktop screenshots. Tests save populated-trip screenshots under `frontend/test-results/`.

@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.133` — check the bottom of the left sidebar for the
+**Current version:** `0.0.134` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -228,3 +228,5 @@ can differ from the consumer Google Maps app.
 Set **Account & Member Settings → Profile → Time format** to **12-hour** or
 **24-hour**, then save. This preference is stored with the user account and
 applies to itinerary, map, booking, timeline, and other timestamp displays.
+Time entry uses a single clock field such as `1:05 PM` or `13:05`, with
+separately sized desktop and mobile controls.

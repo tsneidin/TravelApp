@@ -993,7 +993,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   }, [days, trip.destination, trip.notes, orphanPlaces]);
 
   const handleSaveJournalEntry = async (data: { id?: string; title: string; body: string; date?: string }) => {
-    const targetId = data.id || journalModalState.entry?.id;
+    const targetId = data.id;
     if (targetId) {
       await apiPatch(`/trips/${trip.id}/journal/${targetId}`, {
         title: data.title,
@@ -1649,7 +1649,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         title="Edit day notes"
                         onClick={() => openDayNotes(day, dayIndex)}
                       >
-                        <NotebookPen size={13} /> {totalDayNotesCount > 0 ? `Notes(${totalDayNotesCount})` : 'Notes'}
+                        <NotebookPen size={13} /> Notes ({totalDayNotesCount})
                       </button>
                       <button
                         type="button"
@@ -1658,7 +1658,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                         title="Add or view journal entries for this day"
                         onClick={() => openDayJournals(day, dayIndex)}
                       >
-                        <BookOpen size={13} /> {dayJournalEntries.length > 0 ? `Journals(${dayJournalEntries.length})` : 'Journals'}
+                        <BookOpen size={13} /> Journals ({dayJournalEntries.length})
                       </button>
                       <button
                         type="button"

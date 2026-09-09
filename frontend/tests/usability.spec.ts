@@ -144,7 +144,7 @@ test('populated trip stays usable on narrow screens', async ({ page }, testInfo)
         expect((await toolbar.boundingBox())!.height).toBeLessThanOrEqual(44);
         await expect(toolbar.getByRole('button', { name: 'Edit day notes' })).toBeHidden();
         const options = toolbar.getByRole('button', { name: 'Day 1 options' });
-        for (const action of ['Notes', 'Journals', 'To-dos']) {
+        for (const action of ['Notes (0)', 'Journals (0)', 'To-dos (0)']) {
           await options.click();
           const sheet = page.getByRole('dialog', { name: 'Day 1 options' });
           await expect(sheet.getByRole('button', { name: action, exact: true })).toBeVisible();
@@ -280,7 +280,7 @@ test('one title field supports real search results and manual titles', async ({ 
   expect(saved).toMatchObject({ name: 'Meet friends at the station', address: 'Kyoto, Japan', lat: 34.985 });
 });
 
-test('time preference controls itinerary display and editing without shifting stored time', async ({ page }) => {
+test('time preference controls itinerary display and editing without shifting stored time', async ({ page }, testInfo) => {
   for (const format of ['12', '24']) {
     await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { ...user, settings: { timeFormat: format } } } }));
     const item = { id: 'clock-place', tripId: trip.id, name: 'Afternoon tour', sortOrder: 0, includeInCalendar: true, startTime: '2026-10-12T13:05:00.000Z' };
@@ -295,9 +295,8 @@ test('time preference controls itinerary display and editing without shifting st
     await expect(card).toContainText(format === '24' ? '13:05' : '1:05 PM');
     await card.getByRole('button', { name: 'Edit place' }).click();
     const form = page.getByRole('dialog', { name: 'Edit place' });
-    await expect(form.getByRole('combobox', { name: 'Start time hour', exact: true })).toHaveValue(format === '24' ? '13' : '1');
-    if (format === '12') await expect(form.getByRole('combobox', { name: 'Start time AM or PM' })).toHaveValue('PM');
-    else await expect(form.getByRole('combobox', { name: 'Start time AM or PM' })).toHaveCount(0);
+    await expect(form.locator('.clock-field:visible').getByLabel('Start time', { exact: true })).toHaveValue(format === '24' ? '13:05' : '1:05 PM');
+    await page.screenshot({ path: testInfo.outputPath(`time-form-${format}.png`) });
     await form.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(form).toHaveCount(0);
     expect(saved?.startTime).toBe('2026-10-12T13:05:00.000Z');
@@ -329,10 +328,60 @@ test('booking date and time entry respects the saved clock format', async ({ pag
     await page.goto(`/trips/${trip.id}?tab=bookings`);
     await page.getByText('Kyoto hotel', { exact: true }).click();
     const form = page.getByRole('dialog');
-    await expect(form.getByRole('combobox', { name: 'Start hour', exact: true })).toHaveValue(format === '12' ? '1' : '13');
-    await expect(form.getByRole('combobox', { name: 'Start minute', exact: true })).toHaveValue('30');
+    await expect(form.locator('.clock-field:visible').getByLabel('Start time', { exact: true })).toHaveValue(format === '12' ? '1:30 PM' : '13:30');
     await expect(form.getByLabel('Start date', { exact: true })).toHaveValue('2026-10-12');
-    if (format === '12') await expect(form.getByRole('combobox', { name: 'Start AM or PM' })).toHaveValue('PM');
-    else await expect(form.getByRole('combobox', { name: 'Start AM or PM' })).toHaveCount(0);
   }
+});
+
+test('day controls show note and journal counts on desktop and mobile', async ({ page }, testInfo) => {
+  const note = { id: 'note-1', tripId: trip.id, dayId: 'day-1', name: 'Reservation note', category: 'Note', sortOrder: 0 };
+  const populated = {
+    ...trip,
+    days: [{ id: 'day-1', tripId: trip.id, date: trip.startDate, sortOrder: 0, notes: 'Bring tickets', places: [note] }],
+    places: [note],
+    journal: [{ id: 'journal-1', tripId: trip.id, title: 'Arrival', body: 'A good day', date: trip.startDate }],
+  };
+  await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: populated } }));
+  await page.goto(`/trips/${trip.id}?tab=itinerary`);
+  if (testInfo.project.name === 'desktop') {
+    await expect(page.getByRole('button', { name: 'Notes (2)', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Journals (1)', exact: true })).toBeVisible();
+  } else {
+    await page.getByRole('button', { name: 'Day 1 options' }).click();
+    const options = page.getByRole('dialog', { name: 'Day 1 options' });
+    await expect(options.getByRole('button', { name: 'Notes (2)', exact: true })).toBeVisible();
+    await expect(options.getByRole('button', { name: 'Journals (1)', exact: true })).toBeVisible();
+  }
+  await page.screenshot({ path: testInfo.outputPath('day-counts.png') });
+});
+
+test('new journal from an existing day creates a separate entry', async ({ page }, testInfo) => {
+  const existing = { id: 'journal-1', tripId: trip.id, title: 'Arrival', body: 'Existing entry', date: trip.startDate };
+  const populated = {
+    ...trip,
+    days: [{ id: 'day-1', tripId: trip.id, date: trip.startDate, sortOrder: 0, places: [] }],
+    journal: [existing],
+  };
+  const requests: { method: string; path: string; body: Record<string, unknown> }[] = [];
+  await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: populated } }));
+  await page.route(`**/api/trips/${trip.id}/journal**`, async (route) => {
+    requests.push({ method: route.request().method(), path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    await route.fulfill({ status: 201, json: { entry: { id: 'journal-2', ...route.request().postDataJSON() } } });
+  });
+  await page.goto(`/trips/${trip.id}?tab=itinerary`);
+  if (testInfo.project.name === 'desktop') {
+    await page.getByRole('button', { name: 'Journals (1)', exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: 'Day 1 options' }).click();
+    await page.getByRole('dialog', { name: 'Day 1 options' }).getByRole('button', { name: 'Journals (1)', exact: true }).click();
+  }
+  const form = page.getByRole('dialog', { name: 'Edit Journal Entry' });
+  await form.getByRole('button', { name: 'New Journal', exact: true }).click();
+  const newForm = page.getByRole('dialog', { name: 'New Journal Entry' });
+  await newForm.getByLabel('Title', { exact: true }).fill('Evening walk');
+  await newForm.getByLabel('Story & Notes', { exact: true }).fill('Walked through Gion.');
+  await newForm.getByRole('button', { name: 'Save Entry', exact: true }).click();
+  await expect(newForm).toHaveCount(0);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ method: 'POST', path: `/api/trips/${trip.id}/journal` });
 });

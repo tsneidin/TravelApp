@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import {
   Image as ImageIcon, Link as LinkIcon, Bold, List as ListIcon,
   Eye, EyeOff, Loader2, ChevronLeft, ChevronRight, Plus, Trash2
@@ -36,6 +36,7 @@ export function JournalEntryModal({
   tripPhotos = [],
   onPhotosUploaded,
 }: JournalEntryModalProps) {
+  const fieldId = useId();
   const allEntries = useMemo(() => {
     if (dayEntries && dayEntries.length > 0) return dayEntries;
     if (initialData?.id) return [initialData as JournalEntry];
@@ -55,6 +56,7 @@ export function JournalEntryModal({
   const [body, setBody] = useState(initialData?.body || '');
   const [date, setDate] = useState(initialData?.date ? initialData.date.slice(0, 10) : '');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
@@ -136,7 +138,15 @@ export function JournalEntryModal({
   };
 
   const handleSave = async () => {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setError('Enter a journal title.');
+      return;
+    }
+    if (!body.trim()) {
+      setError('Write something in Story & Notes before saving.');
+      return;
+    }
+    setError('');
     setBusy(true);
     try {
       await onSave({
@@ -146,6 +156,8 @@ export function JournalEntryModal({
         date: date || undefined,
       });
       onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Journal entry could not be saved. Try again.');
     } finally {
       setBusy(false);
     }
@@ -153,7 +165,7 @@ export function JournalEntryModal({
 
   return (
     <Modal title={currentId ? 'Edit Journal Entry' : 'New Journal Entry'} onClose={onClose}>
-      {allEntries.length > 1 && (
+      {allEntries.length > 0 && (
         <div
           style={{
             display: 'flex',
@@ -210,8 +222,9 @@ export function JournalEntryModal({
       )}
 
       <div className="field" style={{ marginBottom: '0.6rem' }}>
-        <label style={{ marginBottom: 4 }}>Title</label>
+        <label htmlFor={`${fieldId}-title`} style={{ marginBottom: 4 }}>Title</label>
         <input
+          id={`${fieldId}-title`}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Exploring the Ancient Temples of Rome"
@@ -220,13 +233,13 @@ export function JournalEntryModal({
       </div>
 
       <div className="field small" style={{ marginBottom: '0.6rem' }}>
-        <label style={{ marginBottom: 4 }}>Date (optional)</label>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <label htmlFor={`${fieldId}-date`} style={{ marginBottom: 4 }}>Date (optional)</label>
+        <input id={`${fieldId}-date`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
 
       <div className="field" style={{ marginBottom: '0.6rem' }}>
         <div className="row between" style={{ alignItems: 'center', marginBottom: 6 }}>
-          <label style={{ margin: 0 }}>Story & Notes</label>
+          <label htmlFor={`${fieldId}-body`} style={{ margin: 0 }}>Story & Notes</label>
           <div className="row" style={{ gap: 4 }}>
             <button
               type="button"
@@ -359,6 +372,7 @@ export function JournalEntryModal({
           </div>
         ) : (
           <textarea
+            id={`${fieldId}-body`}
             ref={textareaRef}
             rows={6}
             value={body}
@@ -420,6 +434,8 @@ export function JournalEntryModal({
         </div>
       )}
 
+      {error && <div className="form-error" role="alert">{error}</div>}
+
       <div
         style={{
           display: 'flex',
@@ -462,7 +478,7 @@ export function JournalEntryModal({
             type="button"
             className="btn primary"
             onClick={handleSave}
-            disabled={busy || !title.trim() || uploading}
+            disabled={busy || uploading}
           >
             {busy ? 'Saving…' : 'Save Entry'}
           </button>

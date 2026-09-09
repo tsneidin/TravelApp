@@ -1,5 +1,5 @@
 import { useTimeFormat, formatDateTime } from '../../lib/time';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -45,6 +45,16 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   const timeFormat = useTimeFormat();
   const formatBookingDateTime = (value?: string | null) => value ? formatDateTime(value, timeFormat) : '—';
   const bookings = trip.bookings ?? [];
+  const sortedBookings = useMemo(() => [...bookings].sort((a, b) => {
+    if (!a.startAt && !b.startAt) return a.title.localeCompare(b.title);
+    if (!a.startAt) return 1;
+    if (!b.startAt) return -1;
+    return new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+  }), [bookings]);
+  const nextBooking = useMemo(() => {
+    const now = Date.now();
+    return sortedBookings.find((booking) => booking.startAt && new Date(booking.startAt).getTime() >= now) ?? sortedBookings[0];
+  }, [sortedBookings]);
   const [open, setOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
 
@@ -87,6 +97,14 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
         </div>
       ) : (
         <>
+        <section className="mobile-booking-overview" aria-label="Booking overview">
+          <div>
+            <span className="mobile-overview-label">{nextBooking?.startAt && new Date(nextBooking.startAt).getTime() >= Date.now() ? 'Up next' : 'Trip reservations'}</span>
+            <strong>{nextBooking?.title}</strong>
+            <span>{nextBooking?.startAt ? formatBookingDateTime(nextBooking.startAt) : `${bookings.length} saved ${bookings.length === 1 ? 'booking' : 'bookings'}`}</span>
+          </div>
+          <span className="mobile-overview-count">{bookings.length}</span>
+        </section>
         <div className="panel table-wrap desktop-data-table">
           <table>
             <thead>
@@ -102,7 +120,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
               </tr>
             </thead>
             <tbody>
-              {bookings.map((b) => {
+              {sortedBookings.map((b) => {
                 const bNotes = bookingNotes(b);
                 const bAtts = bookingAttachments(b);
                 const isRaw = hasRaw(b);
@@ -208,7 +226,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           </table>
         </div>
         <div className="mobile-record-list" aria-label="Bookings and reservations">
-          {bookings.map((b) => {
+          {sortedBookings.map((b) => {
             const bNotes = bookingNotes(b);
             const bAtts = bookingAttachments(b);
             const isRaw = hasRaw(b);

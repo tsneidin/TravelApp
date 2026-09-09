@@ -113,6 +113,13 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
   const total = useMemo(() => {
     return expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   }, [expenses]);
+  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => {
+    if (!a.date && !b.date) return a.description.localeCompare(b.description);
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  }), [expenses]);
+  const largestCategoryAmount = byCategory[0]?.[1] ?? 0;
 
   // Comprehensive Member Balances & Settlements Calculation
   const settlementData = useMemo(() => {
@@ -314,6 +321,22 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
 
   return (
     <div className="budget-tab">
+      <section className="mobile-budget-overview" aria-label="Budget overview">
+        <span className="mobile-overview-label">Total trip spending</span>
+        <strong>{fmt(total)} <small>{trip.currency}</small></strong>
+        <div className="mobile-budget-overview-row">
+          <span>{expenses.length} {expenses.length === 1 ? 'expense' : 'expenses'}</span>
+          {settlementData.currentUserBalance && (
+            <span className={settlementData.currentUserBalance.netBalance < -0.005 ? 'owes' : 'owed'}>
+              {settlementData.currentUserBalance.netBalance < -0.005
+                ? `You owe ${fmt(Math.abs(settlementData.currentUserBalance.netBalance))}`
+                : settlementData.currentUserBalance.netBalance > 0.005
+                  ? `You’re owed ${fmt(settlementData.currentUserBalance.netBalance)}`
+                  : 'You’re settled up'}
+            </span>
+          )}
+        </div>
+      </section>
       {/* KPI Cards */}
       <div className="kpis">
         <div className="kpi">
@@ -405,11 +428,12 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
           ) : (
             <>
               {byCategory.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                <div className="budget-category-summary">
                   {byCategory.map(([cat, amt]) => (
-                    <span key={cat} className="badge" style={{ padding: '3px 9px', fontSize: '0.78rem' }}>
-                      {cat}: <strong>{fmt(amt)} {trip.currency}</strong>
-                    </span>
+                    <div key={cat} className="budget-category-item">
+                      <span className="budget-category-label"><span>{cat}</span><strong>{fmt(amt)} {trip.currency}</strong></span>
+                      <span className="budget-category-track"><span style={{ width: `${largestCategoryAmount ? Math.max(6, (amt / largestCategoryAmount) * 100) : 0}%` }} /></span>
+                    </div>
                   ))}
                 </div>
               )}
@@ -427,7 +451,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.map((e) => {
+                  {sortedExpenses.map((e) => {
                     const payer = e.paidBy || (allMembers.find((m) => m.id === e.paidById) ?? null);
                     const splitCount = Array.isArray(e.splits) ? e.splits.length : allMembers.length;
                     return (
@@ -494,7 +518,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
               </table>
             </div>
             <div className="mobile-record-list" aria-label="Expenses">
-              {expenses.map((e) => {
+              {sortedExpenses.map((e) => {
                 const payer = e.paidBy || (allMembers.find((m) => m.id === e.paidById) ?? null);
                 const splitCount = Array.isArray(e.splits) ? e.splits.length : allMembers.length;
                 const splitLabel = e.splitType === 'none' ? 'Payer only' : e.splitType === 'exact' ? `Exact · ${splitCount}` : e.splitType === 'percentage' ? `Percentage · ${splitCount}` : e.splitType === 'shares' ? `Shares · ${splitCount}` : `Equal · ${splitCount}`;

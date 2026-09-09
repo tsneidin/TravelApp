@@ -670,6 +670,26 @@ input[type='range']::-webkit-slider-thumb:active {
   max-height: 460px;
   border-radius: var(--radius);
 }
+.mobile-record-list {
+  display: none;
+}
+
+.budget-toolbar,
+.mobile-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.budget-view-switcher {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
 table {
   width: 100%;
   border-collapse: collapse;
@@ -809,6 +829,192 @@ tbody tr.total-row td {
 .date-time-input { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(130px, 0.65fr); gap: 8px; align-items: start; }
 .date-time-input > .time-input { min-width: 130px; }
 @media (max-width: 820px) {
+  .budget-tab .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .budget-tab .kpi {
+    min-height: 116px;
+    padding: 13px 12px 12px 15px;
+  }
+  .budget-tab .kpi .k-value {
+    font-size: 1.08rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  .budget-tab .kpi .k-sub {
+    font-size: 0.75rem;
+    line-height: 1.35;
+  }
+  .budget-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .budget-toolbar > .btn,
+  .mobile-section-header > .btn {
+    min-height: 44px;
+  }
+  .budget-view-switcher {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+  .budget-view-switcher .btn {
+    min-width: 0;
+    min-height: 44px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+  .mobile-section-header {
+    align-items: flex-start;
+  }
+  .mobile-section-header .panel-title {
+    margin: 0;
+    padding-top: 8px;
+    font-size: 0.88rem;
+    line-height: 1.35;
+  }
+  .desktop-data-table {
+    display: none;
+  }
+  .mobile-record-list {
+    display: grid;
+    gap: 12px;
+  }
+  .mobile-record-card {
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel-gradient, linear-gradient(180deg, var(--panel), var(--panel-2)));
+    box-shadow: var(--card-shadow, 0 8px 24px rgba(0, 0, 0, 0.28));
+  }
+  .mobile-record-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .mobile-record-title-wrap {
+    min-width: 0;
+    display: grid;
+    justify-items: start;
+    gap: 7px;
+  }
+  .mobile-record-type {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+  }
+  .mobile-record-title {
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 750;
+    line-height: 1.35;
+    text-align: left;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .mobile-record-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+  }
+  .icon-btn {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+  .mobile-record-amount {
+    flex: 0 0 auto;
+    color: var(--accent);
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1.35;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .mobile-record-amount small {
+    display: block;
+    color: var(--muted);
+    font-size: 0.72rem;
+  }
+  .mobile-record-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    margin: 16px 0 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .mobile-record-details > div {
+    min-width: 0;
+  }
+  .mobile-record-details dt {
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .mobile-record-details dd {
+    margin: 0;
+    color: var(--text);
+    font-size: 0.88rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .mobile-person {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .mobile-record-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .mobile-record-links .btn {
+    min-height: 40px;
+  }
+  .mobile-expense-actions .btn:not(.icon-btn) {
+    flex: 1 1 auto;
+  }
+  .mobile-record-audit {
+    margin-top: 10px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .mobile-list-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 15px;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+    color: var(--accent);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .mobile-list-total strong {
+    font-size: 1rem;
+    text-align: right;
+  }
   .clock-field-desktop { display: none; }
   .clock-field-mobile { display: block; }
   .clock-field-mobile input { min-height: 44px; font-size: 16px; }

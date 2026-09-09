@@ -72,8 +72,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   const rawText = (b: Booking) => rawBookingText(b);
 
   return (
-    <div>
-      <div className="row space-between" style={{ marginBottom: 16, alignItems: 'center' }}>
+    <div className="bookings-tab">
+      <div className="mobile-section-header">
         <h2 className="panel-title" style={{ margin: 0 }}>Bookings & Reservations</h2>
         <button className="btn sm primary" onClick={openAdd}>
           <Plus size={14} /> Add booking
@@ -86,7 +86,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <p>Add reservations manually, attach confirmation documents, or paste email confirmations.</p>
         </div>
       ) : (
-        <div className="panel table-wrap">
+        <>
+        <div className="panel table-wrap desktop-data-table">
           <table>
             <thead>
               <tr>
@@ -206,6 +207,47 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
             </tbody>
           </table>
         </div>
+        <div className="mobile-record-list" aria-label="Bookings and reservations">
+          {bookings.map((b) => {
+            const bNotes = bookingNotes(b);
+            const bAtts = bookingAttachments(b);
+            const isRaw = hasRaw(b);
+            return (
+              <article className="mobile-record-card" key={b.id}>
+                <div className="mobile-record-card-head">
+                  <div className="mobile-record-title-wrap">
+                    <span className="badge mobile-record-type">
+                      {getBookingTypeIcon(b.type)}
+                      {TYPES.find((x) => x.value === b.type)?.label ?? b.type}
+                    </span>
+                    <button className="mobile-record-title" type="button" onClick={() => openEdit(b)}>
+                      {b.title}
+                    </button>
+                  </div>
+                  <div className="mobile-record-actions">
+                    <button className="btn sm ghost icon-btn" aria-label={`Edit ${b.title}`} onClick={() => openEdit(b)}><Pencil size={16} /></button>
+                    <button className="btn sm ghost danger icon-btn" aria-label={`Delete ${b.title}`} onClick={() => remove(b)}><Trash2 size={16} /></button>
+                  </div>
+                </div>
+                <dl className="mobile-record-details">
+                  <div><dt>Provider</dt><dd>{b.provider || '—'}</dd></div>
+                  <div><dt>Confirmation</dt><dd>{b.reference || '—'}</dd></div>
+                  <div><dt>Starts / check-in</dt><dd>{formatBookingDateTime(b.startAt)}</dd></div>
+                  <div><dt>Ends / check-out</dt><dd>{formatBookingDateTime(b.endAt)}</dd></div>
+                </dl>
+                {(bNotes.length > 0 || bAtts.length > 0 || isRaw) && (
+                  <div className="mobile-record-links">
+                    {bNotes.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setViewingNotesBooking(b)}><StickyNote size={14} /> {bNotes.length} {bNotes.length === 1 ? 'note' : 'notes'}</button>}
+                    {bAtts.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setViewingAttachmentsBooking(b)}><Paperclip size={14} /> {bAtts.length} {bAtts.length === 1 ? 'document' : 'documents'}</button>}
+                    {isRaw && <button type="button" className="btn sm ghost" onClick={() => setRawBooking(b)}><FileText size={14} /> Source</button>}
+                  </div>
+                )}
+                {(b.createdBy || b.updatedBy) && <div className="mobile-record-audit"><AuditBadge createdBy={b.createdBy} createdAt={b.createdAt} updatedBy={b.updatedBy} updatedAt={b.updatedAt} /></div>}
+              </article>
+            );
+          })}
+        </div>
+        </>
       )}
 
       {open && (

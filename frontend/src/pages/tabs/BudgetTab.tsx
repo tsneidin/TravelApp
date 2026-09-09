@@ -313,7 +313,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
     Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div>
+    <div className="budget-tab">
       {/* KPI Cards */}
       <div className="kpis">
         <div className="kpi">
@@ -368,8 +368,8 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
       </div>
 
       {/* View Switcher & Action Header */}
-      <div className="row between" style={{ marginBottom: 14, alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', gap: 6, background: 'var(--panel)', padding: 4, borderRadius: 8, border: '1px solid var(--line)' }}>
+      <div className="budget-toolbar">
+        <div className="budget-view-switcher">
           <button
             type="button"
             className={`btn sm ${activeSubTab === 'list' ? 'primary' : 'ghost'}`}
@@ -413,7 +413,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                   ))}
                 </div>
               )}
-              <div className="panel table-wrap">
+              <div className="panel table-wrap desktop-data-table">
                 <table>
                 <thead>
                   <tr>
@@ -492,6 +492,36 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div className="mobile-record-list" aria-label="Expenses">
+              {expenses.map((e) => {
+                const payer = e.paidBy || (allMembers.find((m) => m.id === e.paidById) ?? null);
+                const splitCount = Array.isArray(e.splits) ? e.splits.length : allMembers.length;
+                const splitLabel = e.splitType === 'none' ? 'Payer only' : e.splitType === 'exact' ? `Exact · ${splitCount}` : e.splitType === 'percentage' ? `Percentage · ${splitCount}` : e.splitType === 'shares' ? `Shares · ${splitCount}` : `Equal · ${splitCount}`;
+                return (
+                  <article className="mobile-record-card" key={e.id}>
+                    <div className="mobile-record-card-head">
+                      <div className="mobile-record-title-wrap">
+                        <span className="badge mobile-record-type">{e.category}</span>
+                        <button className="mobile-record-title" type="button" onClick={() => openEditExpenseModal(e)}>{e.description}</button>
+                      </div>
+                      <div className="mobile-record-amount">{fmt(e.amount)} <small>{e.currency}</small></div>
+                    </div>
+                    <dl className="mobile-record-details expense-details">
+                      <div><dt>Date</dt><dd>{e.date ? new Date(e.date).toLocaleDateString() : '—'}</dd></div>
+                      <div><dt>Paid by</dt><dd className="mobile-person"><Avatar user={payer} size="sm" /> {payer?.name || '—'}</dd></div>
+                      <div><dt>Split</dt><dd>{splitLabel}</dd></div>
+                    </dl>
+                    <div className="mobile-record-links mobile-expense-actions">
+                      <button className="btn sm ghost" onClick={() => openEditExpenseModal(e)}>Edit</button>
+                      <button className="btn sm ghost" onClick={() => openNotes(e)}><StickyNote size={14} /> {e.notes ? 'Notes' : 'Add note'}</button>
+                      <button className="btn sm ghost danger icon-btn" aria-label={`Delete ${e.description}`} onClick={() => remove(e)}><Trash2 size={16} /></button>
+                    </div>
+                    <div className="mobile-record-audit"><AuditBadge createdBy={e.createdBy} createdAt={e.createdAt} /></div>
+                  </article>
+                );
+              })}
+              <div className="mobile-list-total"><span>Total</span><strong>{fmt(total)} {trip.currency}</strong></div>
             </div>
           </>
           )}

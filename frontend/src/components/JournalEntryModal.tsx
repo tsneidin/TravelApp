@@ -1,7 +1,7 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   Image as ImageIcon, Link as LinkIcon, Bold, List as ListIcon,
-  Eye, EyeOff, Loader2, ChevronLeft, ChevronRight, Plus, Trash2
+  Eye, EyeOff, Loader2, Trash2
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { JournalContent } from './JournalContent';
@@ -32,26 +32,12 @@ export function JournalEntryModal({
   onSave,
   onDelete,
   initialData,
-  dayEntries = [],
+  dayEntries: _dayEntries = [],
   tripPhotos = [],
   onPhotosUploaded,
 }: JournalEntryModalProps) {
   const fieldId = useId();
-  const allEntries = useMemo(() => {
-    if (dayEntries && dayEntries.length > 0) return dayEntries;
-    if (initialData?.id) return [initialData as JournalEntry];
-    return [];
-  }, [dayEntries, initialData]);
-
-  const [currentIndex, setCurrentIndex] = useState(() => {
-    if (initialData?.id && allEntries.length > 0) {
-      const idx = allEntries.findIndex((e) => e.id === initialData.id);
-      return idx >= 0 ? idx : 0;
-    }
-    return 0;
-  });
-
-  const [currentId, setCurrentId] = useState<string | undefined>(initialData?.id);
+  const [currentId] = useState<string | undefined>(initialData?.id);
   const [title, setTitle] = useState(initialData?.title || '');
   const [body, setBody] = useState(initialData?.body || '');
   const [date, setDate] = useState(initialData?.date ? initialData.date.slice(0, 10) : '');
@@ -70,23 +56,6 @@ export function JournalEntryModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
-
-  const loadEntry = (entry: JournalEntry, index: number) => {
-    setCurrentIndex(index);
-    setCurrentId(entry.id);
-    setTitle(entry.title || '');
-    setBody(entry.body || '');
-    if (entry.date) setDate(entry.date.slice(0, 10));
-    setShowPreview(false);
-  };
-
-  const handleCreateNew = () => {
-    setCurrentIndex(-1);
-    setCurrentId(undefined);
-    setTitle('');
-    setBody('');
-    setShowPreview(false);
-  };
 
   const insertTextAtCursor = (insertion: string) => {
     const textarea = textareaRef.current;
@@ -165,62 +134,6 @@ export function JournalEntryModal({
 
   return (
     <Modal title={currentId ? 'Edit Journal Entry' : 'New Journal Entry'} onClose={onClose}>
-      {allEntries.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '6px 10px',
-            background: 'var(--surface-hover)',
-            borderRadius: '6px',
-            border: '1px solid var(--border)',
-            marginBottom: '0.6rem',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              type="button"
-              className="btn xs ghost"
-              disabled={currentIndex <= 0}
-              onClick={() => {
-                if (currentIndex > 0) loadEntry(allEntries[currentIndex - 1], currentIndex - 1);
-              }}
-              title="Previous journal entry"
-            >
-              <ChevronLeft size={14} />
-              <span>Prev</span>
-            </button>
-            <span style={{ fontSize: '12px', fontWeight: 600 }}>
-              {currentIndex >= 0 ? `Journal ${currentIndex + 1} of ${allEntries.length}` : 'New Journal Entry'}
-            </span>
-            <button
-              type="button"
-              className="btn xs ghost"
-              disabled={currentIndex < 0 || currentIndex >= allEntries.length - 1}
-              onClick={() => {
-                if (currentIndex < allEntries.length - 1) loadEntry(allEntries[currentIndex + 1], currentIndex + 1);
-              }}
-              title="Next journal entry"
-            >
-              <span>Next</span>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            className="btn xs ghost"
-            onClick={handleCreateNew}
-            title="Create another journal entry for this date"
-            style={{ color: 'var(--accent)' }}
-          >
-            <Plus size={12} />
-            <span>New Journal</span>
-          </button>
-        </div>
-      )}
-
       <div className="field" style={{ marginBottom: '0.6rem' }}>
         <label htmlFor={`${fieldId}-title`} style={{ marginBottom: 4 }}>Title</label>
         <input

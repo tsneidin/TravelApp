@@ -3323,38 +3323,6 @@ tbody tr.total-row td {
   overflow: auto;
 }
 
-/* leaflet dark tweaks */
-.leaflet-container {
-  background: #0d1526;
-  border-radius: var(--radius);
-  font-family: inherit;
-}
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  color: var(--text);
-}
-.leaflet-popup-content a {
-  color: var(--accent);
-}
-.leaflet-bar a {
-  background: var(--card);
-  color: var(--text);
-  border-color: var(--line);
-}
-.leaflet-bar a:hover {
-  background: var(--card-2);
-  color: var(--accent);
-}
-.leaflet-control-attribution {
-  background: rgba(11, 18, 32, 0.8);
-  color: var(--muted);
-}
-.leaflet-control-attribution a {
-  color: var(--accent);
-}
-
 a.link {
   color: var(--accent);
   text-decoration: none;
@@ -3606,7 +3574,7 @@ a.link:hover {
   background: rgba(34, 211, 238, 0.05);
 }
 
-/* ---------- Leaflet Custom Numbered Pin ---------- */
+/* ---------- Custom Google Maps Numbered Pin ---------- */
 .custom-map-div-icon {
   background: transparent !important;
   border: none !important;

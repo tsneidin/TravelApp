@@ -757,7 +757,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     });
   };
 
-  const openDayNotes = (day: Day, dayIndex: number, startNewNote?: boolean) => {
+  const openDayNotes = (day: Day, dayIndex: number) => {
     const customTitle = isGenericDayLabel(day.label) ? '' : (day.label ?? '');
     const pNotesMap: Record<string, string> = {};
     const pUrlsMap: Record<string, string> = {};
@@ -782,7 +782,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       defaultLocation: resolved.name || trip.destination || '',
       dayNumber: dayIndex + 1,
       spanDays: 1,
-      activeTargetKey: startNewNote ? 'new' : 'day',
+      activeTargetKey: 'day',
       placeNotesMap: pNotesMap,
       placeUrlsMap: pUrlsMap,
       placeTitlesMap: pTitlesMap,
@@ -1545,9 +1545,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               if (!t.dueDate) return false;
               return t.dueDate.slice(0, 10) === day.date.slice(0, 10);
             });
-            const dayPlaceNotes = (day.places ?? []).filter(isItemNote);
             const hasDayNotes = Boolean(day.notes?.trim());
-            const totalDayNotesCount = (hasDayNotes ? 1 : 0) + dayPlaceNotes.length;
+            const totalDayNotesCount = hasDayNotes ? 1 : 0;
             const resolvedLocation = resolveDayLocation(dayIndex, days, trip.destination);
 
             return (
@@ -1907,33 +1906,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               </div>
             </div>
 
-            {orphanPlaces.length === 0 ? (
-              <div
-                className="small muted mt mb"
-                style={{
-                  minHeight: 48,
-                  border: '1px dashed var(--border)',
-                  borderRadius: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '8px 12px',
-                  background: dragId ? 'rgba(34, 211, 238, 0.08)' : 'transparent',
-                  transition: 'background 0.15s ease',
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const movingId = dragId || e.dataTransfer.getData('text/plain');
-                  if (movingId) void reorder(movingId, '', 0);
-                }}
-              >
-                No unassigned places. Drag places here to unschedule, or use quick add below.
-              </div>
-            ) : (
+            {orphanPlaces.length > 0 && (
               <div className="place-list">
                 {orphanPlaces.map((p, idx) => (
                   <div
@@ -2106,7 +2079,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
 
       {dayEditor && (() => {
         const isTripLevel = dayEditor.id === 'trip';
-        const currentDay = !isTripLevel ? days.find((d) => d.id === dayEditor.id) : undefined;
         const maxSpan = days.length > 0 ? days.length - (dayEditor.dayNumber ? dayEditor.dayNumber - 1 : 0) : 1;
         const currentSpan = dayEditor.spanDays ?? 1;
         const targetDays = (!isTripLevel && currentSpan > 1) ? getConsecutiveDays(dayEditor.id, currentSpan, days) : [];
@@ -2128,21 +2100,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 place: p,
               })),
             ]
-          : [
-              {
-                key: 'day',
-                label: `Day ${dayEditor.dayNumber || 1} Notes`,
-                subtitle: 'Day-level general notes',
-                type: 'day' as const,
-              },
-              ...((currentDay?.places ?? []).filter(isItemNote)).map((p, idx) => ({
-                key: p.id,
-                label: p.name || `Note #${idx + 1}`,
-                subtitle: p.address || p.category || 'Note item',
-                type: 'place' as const,
-                place: p,
-              })),
-            ];
+          : [{
+              key: 'day',
+              label: `Day ${dayEditor.dayNumber || 1} Notes`,
+              subtitle: 'Day-level general notes',
+              type: 'day' as const,
+            }];
 
         const activeKey = dayEditor.activeTargetKey || (isTripLevel ? 'trip' : 'day');
         const isNewNote = activeKey === 'new';
@@ -2310,16 +2273,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </select>
                 )}
 
-                <button
+                {isTripLevel && <button
                   type="button"
                   className="btn xs ghost"
                   onClick={handleCreateNewNote}
-                  title={isTripLevel ? 'Add a new trip note' : 'Add a new note to this day'}
+                  title="Add an unassigned note"
                   style={{ color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 >
                   <Plus size={12} />
-                  <span>New Note</span>
-                </button>
+                  <span>Unassigned note</span>
+                </button>}
               </div>
             </div>
 

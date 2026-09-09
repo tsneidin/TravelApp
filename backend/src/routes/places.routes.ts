@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler, badRequest } from '../lib/errors.js';
 import { getUser } from '../middleware/auth.js';
-import { searchPlaces } from '../services/geocoding.js';
 import { config } from '../config.js';
 import { searchGooglePlaces } from '../services/googlePlaceSearch.js';
 
@@ -62,19 +61,17 @@ placesRouter.get(
     const limit = Math.min(20, Math.max(1, Math.trunc(Number(req.query.limit) || 6)));
     if ((biasLat !== undefined && (!Number.isFinite(biasLat) || Math.abs(biasLat) > 90)) ||
         (biasLng !== undefined && (!Number.isFinite(biasLng) || Math.abs(biasLng) > 180))) throw badRequest('Invalid search location');
-    const google = Boolean(config.search.googlePlacesApiKey);
+    if (!config.search.googlePlacesApiKey) throw badRequest('Google Places is not configured. Enter place details manually.');
     let searchLat = biasLat;
     let searchLng = biasLng;
     const context = String(req.query.context || '').trim().slice(0, 200);
     if (context && (searchLat === undefined || searchLng === undefined)) {
-      const [center] = await searchPlaces(context, { limit: 1 });
+      const [center] = await searchGooglePlaces(config.search.googlePlacesApiKey, context, { limit: 1 });
       searchLat = center?.lat;
       searchLng = center?.lng;
     }
-    const places = google
-      ? await searchGooglePlaces(config.search.googlePlacesApiKey, query, { biasLat: searchLat, biasLng: searchLng, limit })
-      : await searchPlaces(query, { biasLat: searchLat, biasLng: searchLng, limit });
-    res.json({ places, provider: google ? 'Google Maps' : 'OpenStreetMap' });
+    const places = await searchGooglePlaces(config.search.googlePlacesApiKey, query, { biasLat: searchLat, biasLng: searchLng, limit });
+    res.json({ places, provider: 'Google Maps' });
   }),
 );
 
@@ -147,10 +144,8 @@ placesRouter.get(
       }
     }
 
-    const matches = googlePlace ? [] : await searchPlaces(lookup, {
-      biasLat: hasCoords ? details.lat : undefined,
-      biasLng: hasCoords ? details.lng : undefined,
-      limit: 1,
+    const matches = googlePlace || !config.search.googlePlacesApiKey ? [] : await searchGooglePlaces(config.search.googlePlacesApiKey, lookup, {
+      biasLat: hasCoords ? details.lat : undefined, biasLng: hasCoords ? details.lng : undefined, limit: 1,
     });
     const match = matches[0];
     const googleLat = googlePlace?.location?.latitude;

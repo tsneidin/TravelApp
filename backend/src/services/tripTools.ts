@@ -1054,6 +1054,12 @@ export async function executeTripTool(
         ? String(a.category)
         : inferCategoryFromText([nameStr, a.address, descStr, notes].filter(Boolean).join(' '));
 
+      if (/^notes?$/i.test(category) && dayId) {
+        const dayNote = [descStr, notes].filter(Boolean).join('\n').trim() || nameStr;
+        await prisma.day.update({ where: { id: dayId }, data: { notes: dayNote } });
+        return { action: name, summary: `Updated the single note for ${date ? toDayKey(date) : 'the selected day'}`, ok: true };
+      }
+
       const place = await prisma.place.create({
         data: {
           tripId,
@@ -1527,13 +1533,19 @@ export async function executeTripTool(
       const body = String(a.body ?? '').trim();
       if (!title || !body) return { action: name, summary: 'add_journal_entry: title and body required', ok: false };
 
+      const entryDate = toDate(a.date);
+      const existing = await prisma.journalEntry.findFirst({ where: { tripId, date: entryDate } });
+      if (existing) {
+        const entry = await prisma.journalEntry.update({ where: { id: existing.id }, data: { title, body } });
+        return { action: name, summary: `Updated journal entry "${entry.title}"`, ok: true };
+      }
       const entry = await prisma.journalEntry.create({
         data: {
           tripId,
           userId,
           title,
           body,
-          date: toDate(a.date),
+          date: entryDate,
         },
       });
       return { action: name, summary: `Added journal entry "${entry.title}"`, ok: true };
@@ -1556,6 +1568,10 @@ export async function executeTripTool(
       if (typeof a.newTitle === 'string' && a.newTitle.trim()) data.title = a.newTitle.trim();
       if (typeof a.body === 'string') data.body = a.body.trim();
       if (a.date !== undefined) data.date = toDate(a.date) ?? null;
+
+      const targetDate = data.date !== undefined ? data.date as Date | null : target.date;
+      const duplicate = await prisma.journalEntry.findFirst({ where: { tripId, date: targetDate, id: { not: target.id } } });
+      if (duplicate) return { action: name, summary: 'That day already has a journal. Edit the existing journal instead.', ok: false };
 
       const updated = await prisma.journalEntry.update({ where: { id: target.id }, data });
       return { action: name, summary: `Updated journal entry "${updated.title}"`, ok: true };

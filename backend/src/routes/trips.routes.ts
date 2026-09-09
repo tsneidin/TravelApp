@@ -5,7 +5,8 @@ import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js
 import { syncBookingToItinerary } from '../services/bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from '../services/dayReconciliation.js';
 import { inferCategoryFromText } from '../services/ai.js';
-import { searchPlaces } from '../services/geocoding.js';
+import { searchGooglePlaces } from '../services/googlePlaceSearch.js';
+import { config } from '../config.js';
 import { calculateTripSettlement, type MemberInfo } from '../services/expenseSplitting.js';
 import type { MemberRole } from '@prisma/client';
 
@@ -428,7 +429,9 @@ tripsRouter.patch(
       let lng = req.body.lng != null && req.body.lng !== '' ? Number(req.body.lng) : null;
       if (data.location && (lat == null || lng == null || (lat === 0 && lng === 0))) {
         try {
-          const matches = await searchPlaces(data.location as string, { limit: 1 });
+          const matches = config.search.googlePlacesApiKey
+            ? await searchGooglePlaces(config.search.googlePlacesApiKey, data.location as string, { limit: 1 })
+            : [];
           if (matches[0] && matches[0].lat != null && matches[0].lng != null) {
             lat = matches[0].lat;
             lng = matches[0].lng;
@@ -480,6 +483,9 @@ tripsRouter.post(
     const count = await prisma.place.count({ where: { tripId } });
     const rawCategory = typeof req.body.category === 'string' ? req.body.category.trim() : '';
     const category = rawCategory || inferCategoryFromText([req.body.name, req.body.address, req.body.description, req.body.notes].filter(Boolean).join(' '));
+    if (/^notes?$/i.test(category) && req.body.dayId) {
+      throw badRequest('A day can have only one note. Edit the day note instead of adding a note item.');
+    }
 
     const place = await prisma.place.create({
       data: {
@@ -516,6 +522,9 @@ tripsRouter.post(
       const dayIds: string[] = req.body.dayIds;
       const rawCategory = typeof req.body.category === 'string' ? req.body.category.trim() : '';
       const category = rawCategory || inferCategoryFromText([req.body.name, req.body.address, req.body.description, req.body.notes].filter(Boolean).join(' '));
+      if (/^notes?$/i.test(category) && dayIds.some((id) => id && id !== 'unassigned')) {
+        throw badRequest('A day can have only one note. Edit each day note instead of adding note items.');
+      }
 
       const createdPlaces = await prisma.$transaction(async (tx) => {
         const results = [];
@@ -558,6 +567,9 @@ tripsRouter.post(
           const rawCategory = typeof p.category === 'string' ? p.category.trim() : '';
           const category = rawCategory || inferCategoryFromText([p.name, p.address, p.description, p.notes].filter(Boolean).join(' '));
           const effectiveDayId = p.dayId === 'unassigned' ? null : p.dayId;
+          if (/^notes?$/i.test(category) && effectiveDayId) {
+            throw badRequest('A day can have only one note. Edit the day note instead of adding a note item.');
+          }
           const count = await tx.place.count({ where: { tripId, dayId: effectiveDayId } });
           const created = await tx.place.create({
             data: {

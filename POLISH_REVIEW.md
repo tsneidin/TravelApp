@@ -7,11 +7,11 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 ## Changes
 
 - Replaced the segmented time picker with compact clock fields and separate desktop and mobile layouts.
-- Fixed new journal saves from days with existing entries, made the New Journal action available with one existing entry, and surfaced validation and request errors in the form.
+- Limited journals to one overall trip journal and one journal per trip day, with validation and request errors surfaced in the form.
 - Itinerary Notes and Journals actions now show their current counts in both desktop controls and the mobile day menu.
 - Calendar visibility is a compact switch at the bottom of the item form, with source text in an expandable row beneath it.
 - Title and place search share one field. Real results are selected before any custom location option, manual titles remain possible, and stale responses cannot overwrite newer queries.
-- Normal searches use Google Places Text Search when configured, preserving result order and biasing toward the trip or day location. Without a key, the existing OpenStreetMap search remains available. Provider errors are visible.
+- Place search uses Google Places Text Search exclusively, preserving result order and biasing toward the trip or day location. Provider errors are visible and manual titles remain available.
 - Added a saved account-wide 12/24-hour preference for time input and display, including booking date/time controls. Storage and timezone conversion semantics remain unchanged.
 - Calendar visibility and source text moved from itinerary cards into the item edit form. Visibility changes apply on Save and are discarded on Cancel.
 - Mobile map search occupies a full-width row with action buttons and route controls below it; autocomplete stays above those controls.

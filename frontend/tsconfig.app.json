@@ -15,7 +15,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client", "leaflet"]
+    "types": ["vite/client"]
   },
   "include": ["src"]
 }

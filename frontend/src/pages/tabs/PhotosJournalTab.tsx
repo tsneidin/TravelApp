@@ -17,6 +17,7 @@ interface JournalForm {
 export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const photos = trip.photos ?? [];
   const journal = trip.journal ?? [];
+  const tripJournal = journal.find((entry) => !entry.date);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [jOpen, setJOpen] = useState(false);
@@ -44,6 +45,10 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
   };
 
   const openNewJournal = () => {
+    if (tripJournal) {
+      openEditJournal(tripJournal);
+      return;
+    }
     setEditingJournalId(null);
     setJForm({ title: '', body: '', date: '' });
     setJOpen(true);
@@ -124,7 +129,7 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
         <div className="row between">
           <h2 className="panel-title">Journal</h2>
           <button className="btn sm" onClick={openNewJournal}>
-            <PenSquare size={14} /> Write entry
+            <PenSquare size={14} /> {tripJournal ? 'Edit trip journal' : 'Write trip journal'}
           </button>
         </div>
         {journal.length === 0 ? (

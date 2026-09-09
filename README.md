@@ -219,11 +219,10 @@ The itinerary item form combines title entry and place search. Select a result
 to fill the address, category, coordinates, and available website, or keep a
 manual title. Google Maps URLs can also be pasted into this field.
 
-When `GOOGLE_PLACES_API_KEY` is configured, normal place searches use Google's
-Places Text Search API. Without that key, search uses the existing OpenStreetMap
-providers and identifies them in the results. A configured Google API failure
-is shown as an error instead of silently switching providers. Google API results
-can differ from the consumer Google Maps app.
+Normal place searches use Google's Places Text Search API and require
+`GOOGLE_PLACES_API_KEY`. If Google search is unavailable, travelers can still
+enter place details manually. Google API results can differ from the consumer
+Google Maps app.
 
 Set **Account & Member Settings → Profile → Time format** to **12-hour** or
 **24-hour**, then save. This preference is stored with the user account and

@@ -1,5 +1,13 @@
-import type { GeocodedPlace } from './geocoding.js';
 import { HttpError } from '../lib/errors.js';
+
+export interface GeocodedPlace {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  category: string;
+  country?: string;
+}
 
 export async function searchGooglePlaces(apiKey: string, query: string, options: { biasLat?: number; biasLng?: number; limit?: number }): Promise<(GeocodedPlace & { website?: string })[]> {
   const body: Record<string, unknown> = { textQuery: query, pageSize: Math.max(1, Math.min(20, options.limit || 6)) };

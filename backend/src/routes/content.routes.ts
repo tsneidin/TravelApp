@@ -137,6 +137,13 @@ contentRouter.post(
     const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
     requireFields(req, ['title', 'body']);
+    const entryDate = req.body.date ? new Date(req.body.date) : null;
+    const existing = await prisma.journalEntry.findFirst({ where: { tripId, date: entryDate } });
+    if (existing) {
+      throw badRequest(entryDate
+        ? 'This day already has a journal. Edit the existing journal instead.'
+        : 'This trip already has an overall journal. Edit the existing journal instead.');
+    }
     const entry = await prisma.journalEntry.create({
       data: {
         tripId,
@@ -144,7 +151,7 @@ contentRouter.post(
         createdById: user.id,
         title: req.body.title,
         body: req.body.body,
-        date: req.body.date ? new Date(req.body.date) : null,
+        date: entryDate,
       },
     });
     res.status(201).json({ entry });
@@ -157,12 +164,21 @@ contentRouter.patch(
     const { tripId, entryId } = req.params;
     const user = getUser(req);
     await requireTripAccess(req, tripId, 'editor');
+    const current = await prisma.journalEntry.findFirst({ where: { id: entryId, tripId } });
+    if (!current) throw badRequest('Journal entry not found for this trip.');
+    const nextDate = req.body.date !== undefined ? (req.body.date ? new Date(req.body.date) : null) : current.date;
+    const duplicate = await prisma.journalEntry.findFirst({ where: { tripId, date: nextDate, id: { not: entryId } } });
+    if (duplicate) {
+      throw badRequest(nextDate
+        ? 'This day already has a journal. Edit the existing journal instead.'
+        : 'This trip already has an overall journal. Edit the existing journal instead.');
+    }
     const entry = await prisma.journalEntry.update({
       where: { id: entryId },
       data: {
         title: req.body.title,
         body: req.body.body,
-        date: req.body.date !== undefined ? (req.body.date ? new Date(req.body.date) : null) : undefined,
+        date: nextDate,
         updatedById: user.id,
       },
     });

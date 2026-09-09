@@ -1,9 +1,11 @@
+import { formatTimeRange, useTimeFormat } from '../../lib/time';
+import { TimeInput } from '../../components/TimeInput';
 import { formatTripDate } from '../../lib/dateRange';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, Trash2, MapPin, GripVertical, Map as MapIcon, Pencil, FileText,
-  Columns, List, Sparkles, Navigation, NotebookPen, BookOpen,
+  Columns, List, Navigation, NotebookPen, BookOpen,
   ChevronDown, ChevronUp, Clock, ChevronLeft, ChevronRight, Calendar, ExternalLink,
   ArrowUp, ArrowDown, CheckSquare, Hotel, Compass
 } from 'lucide-react';
@@ -78,47 +80,7 @@ export function extractTimeHHMM(isoOrTime?: string | null): string {
   return '';
 }
 
-export function formatPlaceTime(startTime?: string | null, endTime?: string | null): string | null {
-  if (!startTime) return null;
-
-  const parseTime = (isoOrTime: string): string => {
-    const isoMatch = isoOrTime.match(/T(\d{2}):(\d{2})/);
-    if (isoMatch) {
-      const h = parseInt(isoMatch[1], 10);
-      const m = isoMatch[2];
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const h12 = h % 12 || 12;
-      return `${h12}:${m} ${ampm}`;
-    }
-    const tMatch = isoOrTime.match(/^(\d{1,2}):(\d{2})\s*([AP]M)?$/i);
-    if (tMatch) {
-      const h = parseInt(tMatch[1], 10);
-      const m = tMatch[2];
-      const ampm = tMatch[3] ? tMatch[3].toUpperCase() : h >= 12 ? 'PM' : 'AM';
-      const h12 = h % 12 || 12;
-      return `${h12}:${m} ${ampm}`;
-    }
-    try {
-      const d = new Date(isoOrTime);
-      if (!Number.isNaN(d.getTime())) {
-        const h = d.getUTCHours();
-        const m = String(d.getUTCMinutes()).padStart(2, '0');
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const h12 = h % 12 || 12;
-        return `${h12}:${m} ${ampm}`;
-      }
-    } catch {
-      // ignore
-    }
-    return isoOrTime;
-  };
-
-  const startFormatted = parseTime(startTime);
-  if (!endTime) return startFormatted;
-  const endFormatted = parseTime(endTime);
-  if (startFormatted === endFormatted) return startFormatted;
-  return `${startFormatted} – ${endFormatted}`;
-}
+export { formatTimeRange as formatPlaceTime } from '../../lib/time';
 
 function isGenericDayLabel(label?: string | null): boolean {
   if (!label) return true;
@@ -128,6 +90,7 @@ function isGenericDayLabel(label?: string | null): boolean {
 }
 
 export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
+  const timeFormat = useTimeFormat();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -1101,7 +1064,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       ? `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`
       : null;
 
-    const formattedTime = formatPlaceTime(p.startTime, p.endTime);
+    const formattedTime = formatTimeRange(p.startTime, p.endTime, timeFormat);
 
     const categoryText = p.category?.trim() || null;
     const siblingPlaces = findSpannedPlaces(p, allPlaces, days);
@@ -1400,6 +1363,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       </div>
     );
   };
+
+  const placeSearchDay = days.find((day) => day.id === editing.dayId);
 
   return (
     <div className={`itinerary-page-root ${mobileTab === 'map' ? 'mobile-showing-map' : 'mobile-showing-list'}`}>
@@ -2407,6 +2372,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     )}
                   </div>
                   <PlaceSearchInput
+                    allowCustom
                     value={dayEditor.location ?? ''}
                     autoFocus={dayEditor.focusLocation}
                     placeholder={
@@ -2761,39 +2727,21 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       {/* Add / Edit Place Modal with Search Autocomplete & Multi-day Span */}
       {open && (
         <Modal title={editingId ? 'Edit place' : 'Add place'} onClose={() => setOpen(false)}>
-          {editingId && (
-          <div className="row mb">
-            <label className="row" style={{ minHeight: 44, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={editing.includeInCalendar}
-                onChange={(e) => setEditing({ ...editing, includeInCalendar: e.target.checked })}
-              />
-              Show in calendar
-            </label>
-            {editingPlaceItem?.sourceText && (
-              <button type="button" className="btn sm ghost" aria-expanded={showSource} onClick={() => setShowSource(!showSource)}>
-                <FileText size={15} /> {showSource ? 'Hide source' : 'View source'}
-              </button>
-            )}
-          </div>
-          )}
-          {showSource && editingPlaceItem?.sourceText && (
-            <pre className="ai-raw-pre" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 240, overflow: 'auto' }}>
-              {editingPlaceItem.sourceText}
-            </pre>
-          )}
-
           <div className="field" style={{ marginBottom: '0.6rem' }}>
-            <label className="field-label-sparkle" style={{ marginBottom: 4 }}>
-              <Sparkles size={13} className="text-accent" />
-              <span>Search landmark, restaurant or address (auto-fill)</span>
-            </label>
+            <label htmlFor="place-title">Title / Place name</label>
             <PlaceSearchInput
-              biasLat={tripCenter?.lat}
-              biasLng={tripCenter?.lng}
-              placeholder="Search a place or paste a Google Maps URL…"
-              autoFocus={!editingId}
+              id="place-title"
+              value={editing.name}
+              selectionValue="name"
+              onChange={(name) => setEditing((prev) => ({
+                ...prev, name,
+                website: isUrl(name) && !prev.website ? name.trim() : prev.website,
+                category: isUrl(name) && !prev.category ? 'Note' : prev.category,
+              }))}
+              searchContext={placeSearchDay?.location || trip.destination}
+              biasLat={placeSearchDay?.lat ?? (placeSearchDay?.location ? undefined : tripCenter?.lat)}
+              biasLng={placeSearchDay?.lng ?? (placeSearchDay?.location ? undefined : tripCenter?.lng)}
+              placeholder="Search places or enter your own title…"
               onSelect={(pl) => {
                 const isAccom = isAccommodationItem(pl);
                 setEditing((prev) => ({
@@ -2809,26 +2757,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   spanDays: isAccom && (!prev.spanDays || prev.spanDays <= 1) ? 2 : prev.spanDays,
                 }));
               }}
-            />
-          </div>
-
-          <div className="field" style={{ marginBottom: '0.6rem' }}>
-            <label style={{ marginBottom: 4 }}>Title / Place Name</label>
-            <input
-              value={editing.name}
-              onChange={(e) => {
-                const val = e.target.value;
-                setEditing((prev) => {
-                  const isLink = isUrl(val);
-                  return {
-                    ...prev,
-                    name: val,
-                    website: isLink && !prev.website ? val.trim() : prev.website,
-                    category: isLink && !prev.category ? 'Note' : prev.category,
-                  };
-                });
-              }}
-              placeholder="e.g. Meiji Shrine, or https://…"
             />
           </div>
 
@@ -2998,16 +2926,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           <div className="grid grid-2" style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
             <div className="field small" style={{ marginBottom: 0 }}>
               <label style={{ marginBottom: 4 }}>Start / Departure Time</label>
-              <input
-                type="time"
+              <TimeInput
+                label="Start time"
                 value={editing.startTime}
                 onChange={(e) => setEditing({ ...editing, startTime: e.target.value })}
               />
             </div>
             <div className="field small" style={{ marginBottom: 0 }}>
               <label style={{ marginBottom: 4 }}>End / Arrival Time</label>
-              <input
-                type="time"
+              <TimeInput
+                label="End time"
                 value={editing.endTime}
                 onChange={(e) => setEditing({ ...editing, endTime: e.target.value })}
               />
@@ -3031,6 +2959,23 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             <label style={{ marginBottom: 4 }}>Notes</label>
             <textarea rows={2} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
           </div>
+          {editingId && (
+            <div className="item-form-options">
+              <label className="calendar-setting">
+                <span><strong>Show in calendar</strong><small>Include this item in your trip calendar.</small></span>
+                <input type="checkbox" role="switch" checked={editing.includeInCalendar}
+                  onChange={(e) => setEditing({ ...editing, includeInCalendar: e.target.checked })} />
+              </label>
+              {editingPlaceItem?.sourceText && (
+                <div className="item-source-section">
+                  <button type="button" className="item-source-toggle" aria-expanded={showSource} onClick={() => setShowSource(!showSource)}>
+                    <FileText size={16} /><span>{showSource ? 'Hide source' : 'View source'}</span><ChevronDown size={15} />
+                  </button>
+                  {showSource && <pre className="item-source-text">{editingPlaceItem.sourceText}</pre>}
+                </div>
+              )}
+            </div>
+          )}
           <div
             style={{
               display: 'flex',
@@ -3038,7 +2983,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               justifyContent: 'space-between',
               gap: '10px',
               marginTop: '12px',
-              flexWrap: 'nowrap',
+              flexWrap: 'wrap',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>

@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.132` — check the bottom of the left sidebar for the
+**Current version:** `0.0.133` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -212,3 +212,19 @@ The suite covers desktop, phone, and small-phone layouts, date display in Centra
 Time, dialog keyboard navigation, recoverable form errors, and populated trip
 sections. Google Maps rendering and live integrations require separate checks
 with a configured API and database.
+
+## Place search and clock preference
+
+The itinerary item form combines title entry and place search. Select a result
+to fill the address, category, coordinates, and available website, or keep a
+manual title. Google Maps URLs can also be pasted into this field.
+
+When `GOOGLE_PLACES_API_KEY` is configured, normal place searches use Google's
+Places Text Search API. Without that key, search uses the existing OpenStreetMap
+providers and identifies them in the results. A configured Google API failure
+is shown as an error instead of silently switching providers. Google API results
+can differ from the consumer Google Maps app.
+
+Set **Account & Member Settings → Profile → Time format** to **12-hour** or
+**24-hour**, then save. This preference is stored with the user account and
+applies to itinerary, map, booking, timeline, and other timestamp displays.

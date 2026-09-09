@@ -191,7 +191,7 @@ test('failed deletion stays recoverable and blocks duplicate clicks', async ({ p
   await expect(dialog.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled();
 });
 
-test('calendar and source controls live in the item edit form', async ({ page }) => {
+test('calendar and source controls live in the item edit form', async ({ page }, testInfo) => {
   let item = { id: 'place-1', tripId: trip.id, name: 'Kyoto walking tour', category: 'activity', sortOrder: 0, includeInCalendar: true, sourceText: 'Confirmation: Kyoto walking tour, reference SAMPLE-123.' };
   const updates: unknown[] = [];
   await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: { ...trip, places: [item] } } }));
@@ -209,6 +209,7 @@ test('calendar and source controls live in the item edit form', async ({ page })
   await expect(form.getByLabel('Show in calendar')).toBeChecked();
   await form.getByRole('button', { name: 'View source', exact: true }).click();
   await expect(form.getByText(item.sourceText, { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('item-form-footer.png') });
   await form.getByLabel('Show in calendar').uncheck();
   expect(updates).toHaveLength(0);
   await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -247,5 +248,91 @@ test('mobile map search has its own full-width unobstructed row', async ({ page 
     await toolbar.getByText('Kyoto Station', { exact: true }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('dialog').locator('input[value="Kyoto Station"]')).toBeVisible();
+  }
+});
+
+test('one title field supports real search results and manual titles', async ({ page }, testInfo) => {
+  await page.route('**/api/places/search?**', (route) => route.fulfill({ json: { provider: 'Google Maps', places: [{ name: 'Kyoto Station', address: 'Kyoto, Japan', lat: 34.985, lng: 135.759, category: 'Transport' }] } }));
+  let saved: Record<string, unknown> | undefined;
+  await page.route(`**/api/trips/${trip.id}/places`, async (route) => {
+    saved = route.request().postDataJSON();
+    await route.fulfill({ json: { place: saved } });
+  });
+  await page.goto(`/trips/${trip.id}?tab=itinerary`);
+  await page.getByRole('button', { name: 'Add place', exact: true }).click();
+  const form = page.getByRole('dialog', { name: 'Add place' });
+  const title = form.getByRole('combobox', { name: 'Title / Place name', exact: true });
+  await title.fill('Kyoto station');
+  await expect(form.getByRole('option', { name: /Kyoto Station/ })).toBeVisible();
+  await expect(form.getByText(/as location/)).toHaveCount(0);
+  await title.press('Enter');
+  await expect(title).toHaveValue('Kyoto Station');
+  await expect(form.locator('input[value="Kyoto, Japan"]')).toBeVisible();
+  await expect(form.getByRole('listbox')).toHaveCount(0);
+  await title.fill('Meet friends at the station');
+  await expect(form.getByRole('option', { name: /Kyoto Station/ })).toBeVisible();
+  await title.press('Escape');
+  await expect(form).toBeVisible();
+  await expect(title).toHaveValue('Meet friends at the station');
+  await page.screenshot({ path: testInfo.outputPath('combined-place-form.png') });
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  expect(saved).toMatchObject({ name: 'Meet friends at the station', address: 'Kyoto, Japan', lat: 34.985 });
+});
+
+test('time preference controls itinerary display and editing without shifting stored time', async ({ page }) => {
+  for (const format of ['12', '24']) {
+    await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { ...user, settings: { timeFormat: format } } } }));
+    const item = { id: 'clock-place', tripId: trip.id, name: 'Afternoon tour', sortOrder: 0, includeInCalendar: true, startTime: '2026-10-12T13:05:00.000Z' };
+    let saved: Record<string, unknown> | undefined;
+    await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: { ...trip, places: [item] } } }));
+    await page.route(`**/api/trips/${trip.id}/places/clock-place`, async (route) => {
+      saved = route.request().postDataJSON();
+      await route.fulfill({ json: { place: { ...item, ...saved } } });
+    });
+    await page.goto(`/trips/${trip.id}?tab=itinerary`);
+    const card = page.locator('.place-card-compact').first();
+    await expect(card).toContainText(format === '24' ? '13:05' : '1:05 PM');
+    await card.getByRole('button', { name: 'Edit place' }).click();
+    const form = page.getByRole('dialog', { name: 'Edit place' });
+    await expect(form.getByRole('combobox', { name: 'Start time hour', exact: true })).toHaveValue(format === '24' ? '13' : '1');
+    if (format === '12') await expect(form.getByRole('combobox', { name: 'Start time AM or PM' })).toHaveValue('PM');
+    else await expect(form.getByRole('combobox', { name: 'Start time AM or PM' })).toHaveCount(0);
+    await form.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(form).toHaveCount(0);
+    expect(saved?.startTime).toBe('2026-10-12T13:05:00.000Z');
+  }
+});
+
+test('account time format is saved with existing settings', async ({ page }, testInfo) => {
+  let profile = { ...user, settings: { timeFormat: '12', otherPreference: 'preserved' } };
+  await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: profile } }));
+  await page.route('**/api/auth/profile', async (route) => {
+    profile = { ...profile, ...route.request().postDataJSON() };
+    await route.fulfill({ json: { user: profile } });
+  });
+  await page.goto('/');
+  if (testInfo.project.name !== 'desktop') await page.getByRole('button', { name: 'Open navigation menu' }).click();
+  await page.getByTitle('Account & Member Settings', { exact: true }).click();
+  const form = page.getByRole('dialog', { name: 'Account & Member Settings' });
+  await form.getByLabel('Time format', { exact: true }).selectOption('24');
+  await form.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  await expect(form.getByText('Profile updated successfully!')).toBeVisible();
+  expect(profile.settings).toEqual({ timeFormat: '24', otherPreference: 'preserved' });
+});
+
+test('booking date and time entry respects the saved clock format', async ({ page }) => {
+  for (const format of ['12', '24']) {
+    await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { ...user, settings: { timeFormat: format } } } }));
+    const booking = { id: 'clock-booking', tripId: trip.id, type: 'hotel', title: 'Kyoto hotel', startAt: '2026-10-12T18:30:00.000Z', endAt: '2026-10-13T18:30:00.000Z' };
+    await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: { ...trip, bookings: [booking] } } }));
+    await page.goto(`/trips/${trip.id}?tab=bookings`);
+    await page.getByText('Kyoto hotel', { exact: true }).click();
+    const form = page.getByRole('dialog');
+    await expect(form.getByRole('combobox', { name: 'Start hour', exact: true })).toHaveValue(format === '12' ? '1' : '13');
+    await expect(form.getByRole('combobox', { name: 'Start minute', exact: true })).toHaveValue('30');
+    await expect(form.getByLabel('Start date', { exact: true })).toHaveValue('2026-10-12');
+    if (format === '12') await expect(form.getByRole('combobox', { name: 'Start AM or PM' })).toHaveValue('PM');
+    else await expect(form.getByRole('combobox', { name: 'Start AM or PM' })).toHaveCount(0);
   }
 });

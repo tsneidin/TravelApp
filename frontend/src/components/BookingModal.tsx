@@ -1,3 +1,4 @@
+import { DateTimeInput } from './TimeInput';
 import { useState, useRef } from 'react';
 import {
   Plus,
@@ -343,9 +344,8 @@ export function BookingModal({
         <div className="grid grid-2">
           <div className="field">
             <label>{typeConfig.startLabel}</label>
-            <input
-              type="datetime-local"
-              value={form.startAt}
+            <DateTimeInput
+              label="Start" value={form.startAt}
               onChange={(e) => {
                 const startAt = e.target.value;
                 setForm({ ...form, startAt, endAt: endForStart(startAt, form.endAt) });
@@ -354,10 +354,9 @@ export function BookingModal({
           </div>
           <div className="field">
             <label>{typeConfig.endLabel}</label>
-            <input
-              type="datetime-local"
+            <DateTimeInput
               min={form.startAt || undefined}
-              value={form.endAt}
+              label="End" value={form.endAt}
               onChange={(e) => setForm({ ...form, endAt: e.target.value })}
             />
           </div>

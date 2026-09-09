@@ -1,3 +1,4 @@
+import { useTimeFormat, formatDateTime } from '../lib/time';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Check, X, Trash2, Inbox } from 'lucide-react';
 import { apiGet, apiPost, apiDelete } from '../lib/api';
@@ -26,6 +27,7 @@ interface EmailStatus {
 }
 
 export function EmailImports() {
+  const timeFormat = useTimeFormat();
   const [status, setStatus] = useState<EmailStatus | null>(null);
   const [imports, setImports] = useState<EmailImport[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -174,7 +176,7 @@ export function EmailImports() {
                   </td>
                   <td className="small muted" style={{ textAlign: 'left' }}>{im.from}</td>
                   <td>{im.type || '—'}</td>
-                  <td>{new Date(im.createdAt).toLocaleString()}</td>
+                  <td>{formatDateTime(im.createdAt, timeFormat)}</td>
                   <td>
                     <div className="row" style={{ gap: 4 }}>
                       {im.status !== 'imported' && (
@@ -211,7 +213,7 @@ export function EmailImports() {
                 <div><b>Title:</b> {detail.parsedPayload.title ?? '—'}</div>
                 <div><b>Provider:</b> {detail.parsedPayload.provider ?? '—'}</div>
                 <div><b>Reference:</b> {detail.parsedPayload.reference ?? '—'}</div>
-                <div><b>Date:</b> {detail.parsedPayload.startAt ? new Date(detail.parsedPayload.startAt).toLocaleString() : '—'}</div>
+                <div><b>Date:</b> {detail.parsedPayload.startAt ? formatDateTime(detail.parsedPayload.startAt, timeFormat) : '—'}</div>
                 <div><b>Confidence:</b> {detail.parsedPayload.confidence ?? 0}</div>
               </div>
             </div>

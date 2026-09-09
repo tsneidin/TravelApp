@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.132
+# TravelApp usability polish, 0.0.133
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,10 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- Calendar visibility is a compact switch at the bottom of the item form, with source text in an expandable row beneath it.
+- Title and place search share one field. Real results are selected before any custom location option, manual titles remain possible, and stale responses cannot overwrite newer queries.
+- Normal searches use Google Places Text Search when configured, preserving result order and biasing toward the trip or day location. Without a key, the existing OpenStreetMap search remains available. Provider errors are visible.
+- Added a saved account-wide 12/24-hour preference for time input and display, including booking date/time controls. Storage and timezone conversion semantics remain unchanged.
 - Calendar visibility and source text moved from itinerary cards into the item edit form. Visibility changes apply on Save and are discarded on Cancel.
 - Mobile map search occupies a full-width row with action buttons and route controls below it; autocomplete stays above those controls.
 - The mobile itinerary map renders independently of desktop split-view preferences and fills the space between navigation bars.
@@ -22,8 +26,8 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 ## Verification
 
 - Frontend lint, type checking, and production build passed.
-- Backend lint and type checking passed; all 71 existing tests passed with a generated Prisma client and test-only environment values.
-- 28 browser tests passed using Google Chrome, with two desktop skips for mobile-only checks. The final map positioning change also passed both targeted phone tests.
+- Backend lint and type checking passed; all 73 tests passed with a generated Prisma client and test-only environment values, including Google request and response handling tests.
+- 40 browser tests passed with two expected desktop skips. After the final refinements, all 17 affected browser checks passed with one expected desktop skip.
 - Browser viewport sizes: 320 by 568, 390 by 844, and 1440 by 1000 pixels.
 - Browser tests cover sample populated and empty trips, all eight trip sections, date display, form failures, deletion failures, keyboard focus, and mobile navigation.
 - Reviewed generated mobile and desktop screenshots. Tests save populated-trip screenshots under `frontend/test-results/`.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import {
   Search, MapPin, Loader2, Utensils, Bed, Car, ShoppingBag,
   Sparkles, Landmark, X
@@ -15,6 +15,9 @@ interface PlaceSearchInputProps {
   value?: string;
   onChange?: (val: string) => void;
   allowCustom?: boolean;
+  id?: string;
+  selectionValue?: 'name' | 'address';
+  searchContext?: string;
 }
 
 function getCategoryIcon(category: string) {
@@ -45,8 +48,15 @@ export function PlaceSearchInput({
   autoFocus = false,
   value,
   onChange,
-  allowCustom = true,
+  allowCustom = false,
+  id,
+  selectionValue = 'address',
+  searchContext,
 }: PlaceSearchInputProps) {
+  const listId = useId();
+  const [searchEnabled, setSearchEnabled] = useState(false);
+  const [error, setError] = useState('');
+  const [provider, setProvider] = useState('');
   const [query, setQuery] = useState(value ?? '');
   const [results, setResults] = useState<GeocodedPlace[]>([]);
   const [loading, setLoading] = useState(false);
@@ -83,7 +93,9 @@ export function PlaceSearchInput({
   // Debounced search
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    let cancelled = false;
     const q = query.trim();
+    if (!searchEnabled) { setLoading(false); return; }
     if (q.length < 2) {
       setResults([]);
       setLoading(false);
@@ -91,40 +103,48 @@ export function PlaceSearchInput({
     }
 
     setLoading(true);
+    setError('');
+    setResults([]);
     timerRef.current = window.setTimeout(async () => {
       try {
         const isMapUrl = /^https:\/\/(?:maps\.app\.goo\.gl|goo\.gl|(?:www\.|maps\.)?google\.com)\//i.test(q);
         if (isMapUrl) {
           const params = new URLSearchParams({ url: q });
           const res = await apiGet<{ place: GeocodedPlace }>(`/places/resolve-map-url?${params.toString()}`);
+          if (cancelled) return;
           setResults(res.place ? [res.place] : []);
+          setProvider('');
         } else {
           const params = new URLSearchParams({ q });
+          if (searchContext) params.set('context', searchContext);
           if (biasLat != null && biasLng != null) {
             params.set('biasLat', String(biasLat));
             params.set('biasLng', String(biasLng));
           }
-          const res = await apiGet<{ places: GeocodedPlace[] }>(`/places/search?${params.toString()}`);
+          const res = await apiGet<{ places: GeocodedPlace[]; provider?: string }>(`/places/search?${params.toString()}`);
+          if (cancelled) return;
           setResults(res.places || []);
+          setProvider(res.provider || '');
         }
         setHighlightIdx(0);
-        setOpen(true);
-      } catch {
-        setResults([]);
+      } catch (e) {
+        if (!cancelled) { setResults([]); setError(e instanceof Error ? e.message : 'Place search failed. You can still enter a title manually.'); }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }, 280);
 
     return () => {
+      cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, biasLat, biasLng]);
+  }, [query, biasLat, biasLng, searchEnabled, searchContext]);
 
   const handleSelect = (place: GeocodedPlace) => {
+    setSearchEnabled(false);
     onSelect(place);
     if (value !== undefined) {
-      const displayVal = place.category === 'City' ? (place.name || place.address) : (place.address || place.name);
+      const displayVal = selectionValue === 'name' || place.category === 'City' ? (place.name || place.address) : (place.address || place.name);
       setQuery(displayVal);
       onChange?.(displayVal);
     } else {
@@ -167,6 +187,12 @@ export function PlaceSearchInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && open) {
+      e.stopPropagation();
+      e.preventDefault();
+      setOpen(false);
+      return;
+    }
     const totalItems = (allowCustom ? 1 : 0) + results.length;
     if (!open || totalItems === 0) {
       if (e.key === 'Enter' && allowCustom && query.trim().length >= 2) {
@@ -194,8 +220,6 @@ export function PlaceSearchInput({
           handleSelectCustom(query);
         }
       }
-    } else if (e.key === 'Escape') {
-      setOpen(false);
     }
   };
 
@@ -205,9 +229,17 @@ export function PlaceSearchInput({
         <Search size={16} className="search-icon muted" />
         <input
           ref={inputRef}
+          id={id}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open && query.trim().length >= 2}
+          aria-controls={listId}
+          aria-activedescendant={open && results.length ? `${listId}-${highlightIdx}` : undefined}
+          autoComplete="off"
           type="text"
           value={query}
           onChange={(e) => {
+            setSearchEnabled(true);
             setQuery(e.target.value);
             onChange?.(e.target.value);
             if (!open) setOpen(true);
@@ -226,6 +258,7 @@ export function PlaceSearchInput({
             type="button"
             className="clear-btn"
             onClick={() => {
+              setSearchEnabled(false);
               setQuery('');
               onChange?.('');
               setResults([]);
@@ -239,7 +272,7 @@ export function PlaceSearchInput({
       </div>
 
       {open && query.trim().length >= 2 && (
-        <div className="place-autocomplete-dropdown">
+        <div className="place-autocomplete-dropdown" id={listId} role="listbox">
           {allowCustom && (
             <div
               className={`place-autocomplete-item custom-location-item ${highlightIdx === 0 ? 'highlighted' : ''}`}
@@ -267,16 +300,20 @@ export function PlaceSearchInput({
           )}
 
           {loading && results.length === 0 && (
-            <div className="place-autocomplete-empty">Searching Google Maps…</div>
+            <div className="place-autocomplete-empty">Searching places…</div>
           )}
-          {!loading && results.length === 0 && !allowCustom && (
-            <div className="place-autocomplete-empty">No places found for &quot;{query}&quot;</div>
+          {error && <div className="place-autocomplete-empty" role="alert">{error}</div>}
+          {!loading && !error && results.length === 0 && !allowCustom && (
+            <div className="place-autocomplete-empty">No matches. Try adding a city, or keep your own title.</div>
           )}
           {results.map((p, idx) => {
             const itemIdx = allowCustom ? idx + 1 : idx;
             return (
               <div
                 key={`${p.name}-${p.lat}-${p.lng}-${idx}`}
+                role="option"
+                id={`${listId}-${itemIdx}`}
+                aria-selected={itemIdx === highlightIdx}
                 className={`place-autocomplete-item ${itemIdx === highlightIdx ? 'highlighted' : ''}`}
                 onClick={() => handleSelect(p)}
                 onMouseEnter={() => setHighlightIdx(itemIdx)}
@@ -295,6 +332,7 @@ export function PlaceSearchInput({
               </div>
             );
           })}
+          {provider && results.length > 0 && <div className="search-attribution">Results from {provider}</div>}
         </div>
       )}
     </div>

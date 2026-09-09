@@ -1,3 +1,5 @@
+import { DateTimeInput, TimeInput } from '../../components/TimeInput';
+import { useTimeFormat, formatDateTime, formatClock, formatTimeRange } from '../../lib/time';
 import { useMemo, useState } from 'react';
 import {
   Calendar, Clock, MapPin, Plane, Hotel, Compass, AlertCircle,
@@ -76,18 +78,7 @@ function toDatetimeLocal(val?: string | null): string {
   return `${y}-${m}-${day}T${hours}:${minutes}`;
 }
 
-function formatBookingDateTime(val?: string | null): string {
-  if (!val) return '—';
-  const d = new Date(val);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
+
 
 function detectTransitType(str: string, defaultType: TransitSpan['type'] = 'transit'): TransitSpan['type'] {
   const s = str.toLowerCase();
@@ -157,6 +148,8 @@ function getTransitColors(type: TransitSpan['type']) {
 }
 
 export function TimelineTab({ trip, reload }: TimelineTabProps) {
+  const timeFormat = useTimeFormat();
+  const formatBookingDateTime = (value?: string | null) => value ? formatDateTime(value, timeFormat) : '—';
   const [zoomLevel, setZoomLevel] = useState<'standard' | 'compact'>('standard');
   const [trackFilter, setTrackFilter] = useState<'all' | 'stays' | 'transit' | 'activities'>('all');
   const [selectedItem, setSelectedItem] = useState<{
@@ -1054,11 +1047,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                     const theme = getTransitColors(transit.type);
 
                     // Extract short time label if available
-                    let timeLabel: string | null = null;
-                    if (transit.startTime) {
-                      const m = transit.startTime.match(/(\d{1,2}:\d{2})/);
-                      if (m) timeLabel = m[1];
-                    }
+                    const timeLabel = transit.startTime ? formatClock(transit.startTime, timeFormat) : null;
 
                     return (
                       <div
@@ -1186,7 +1175,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
 
                               {place.startTime && (
                                 <div className="small muted" style={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                  <Clock size={10} /> {place.startTime} {place.endTime ? `– ${place.endTime}` : ''}
+                                  <Clock size={10} /> {formatTimeRange(place.startTime, place.endTime, timeFormat)}
                                 </div>
                               )}
                             </div>
@@ -1370,17 +1359,15 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
           <div className="grid grid-2" style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
             <div className="field small" style={{ marginBottom: 0 }}>
               <label style={{ marginBottom: 4 }}>Start / Check-in Time</label>
-              <input
-                type="time"
-                value={placeDraft.startTime}
+              <TimeInput
+                label="Start time" value={placeDraft.startTime}
                 onChange={(e) => setPlaceDraft({ ...placeDraft, startTime: e.target.value })}
               />
             </div>
             <div className="field small" style={{ marginBottom: 0 }}>
               <label style={{ marginBottom: 4 }}>End / Check-out Time</label>
-              <input
-                type="time"
-                value={placeDraft.endTime}
+              <TimeInput
+                label="End time" value={placeDraft.endTime}
                 onChange={(e) => setPlaceDraft({ ...placeDraft, endTime: e.target.value })}
               />
             </div>
@@ -1435,9 +1422,8 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
           <div className="grid grid-2">
             <div className="field">
               <label>{bookingForm.type === 'hotel' ? 'Check-in Date & Time' : bookingForm.type === 'flight' ? 'Departure Date & Time' : 'Starts (Date & Time)'}</label>
-              <input
-                type="datetime-local"
-                value={bookingForm.startAt}
+              <DateTimeInput
+                label="Start" value={bookingForm.startAt}
                 onChange={(e) => {
                   const startAt = e.target.value;
                   setBookingForm({ ...bookingForm, startAt, endAt: endForStart(startAt, bookingForm.endAt) });
@@ -1446,10 +1432,9 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
             </div>
             <div className="field">
               <label>{bookingForm.type === 'hotel' ? 'Check-out Date & Time' : bookingForm.type === 'flight' ? 'Arrival Date & Time' : 'Ends (Date & Time)'}</label>
-              <input
-                type="datetime-local"
+              <DateTimeInput
                 min={bookingForm.startAt || undefined}
-                value={bookingForm.endAt}
+                label="End" value={bookingForm.endAt}
                 onChange={(e) => setBookingForm({ ...bookingForm, endAt: e.target.value })}
               />
             </div>
@@ -1600,7 +1585,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 )}
                 {selectedItem.place.startTime && (
                   <span className="badge">
-                    <Clock size={12} style={{ marginRight: 3 }} /> {selectedItem.place.startTime} {selectedItem.place.endTime ? `– ${selectedItem.place.endTime}` : ''}
+                    <Clock size={12} style={{ marginRight: 3 }} /> {formatTimeRange(selectedItem.place.startTime, selectedItem.place.endTime, timeFormat)}
                   </span>
                 )}
               </div>

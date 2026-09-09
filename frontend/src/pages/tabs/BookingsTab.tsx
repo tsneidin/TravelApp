@@ -1,3 +1,4 @@
+import { useTimeFormat, formatDateTime } from '../../lib/time';
 import { useState } from 'react';
 import {
   Plus,
@@ -25,18 +26,7 @@ import {
   rawBookingText,
 } from '../../components/BookingModal';
 
-function formatBookingDateTime(val?: string | null): string {
-  if (!val) return '—';
-  const d = new Date(val);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
+
 
 function getBookingTypeIcon(t: BookingType) {
   switch (t) {
@@ -52,6 +42,8 @@ function getBookingTypeIcon(t: BookingType) {
 }
 
 export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
+  const timeFormat = useTimeFormat();
+  const formatBookingDateTime = (value?: string | null) => value ? formatDateTime(value, timeFormat) : '—';
   const bookings = trip.bookings ?? [];
   const [open, setOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);

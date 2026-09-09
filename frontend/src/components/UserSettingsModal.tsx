@@ -15,6 +15,7 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [activeTab, setActiveTab] = useState<'profile' | 'theme' | 'security'>('profile');
+  const [timeFormat, setTimeFormat] = useState(user?.settings?.timeFormat === '24' ? '24' : '12');
   const [name, setName] = useState(user?.name ?? '');
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(user?.avatarUrl ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -79,6 +80,7 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
       await apiPatch('/auth/profile', {
         name: name.trim(),
         avatarUrl: selectedAvatar,
+        settings: { ...user?.settings, timeFormat },
       });
       await refreshUser();
       setProfileSuccess('Profile updated successfully!');
@@ -233,6 +235,15 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
                 );
               })}
             </div>
+          </div>
+
+          <div className="field mb-3">
+            <label htmlFor="account-time-format">Time format</label>
+            <select id="account-time-format" value={timeFormat} onChange={(e) => setTimeFormat(e.target.value)}>
+              <option value="12">12-hour (2:30 PM)</option>
+              <option value="24">24-hour (14:30)</option>
+            </select>
+            <p className="small muted">Used for time entry and display throughout the app.</p>
           </div>
 
           <div className="field mb-3">

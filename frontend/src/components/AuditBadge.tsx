@@ -1,3 +1,4 @@
+import { useTimeFormat, formatDateTime } from '../lib/time';
 import { Avatar } from './Avatar';
 import type { AuditUser } from '../lib/types';
 
@@ -31,6 +32,7 @@ export function AuditBadge({
   compact = true,
   className = '',
 }: AuditBadgeProps) {
+  const timeFormat = useTimeFormat();
   if (!createdBy && !updatedBy && !createdAt) {
     return null;
   }
@@ -45,7 +47,7 @@ export function AuditBadge({
         className={`audit-tag ${className}`}
         title={`${createdBy ? `Created by ${createdBy.name}` : ''}${
           updatedBy && updatedBy.id !== createdBy?.id ? ` • Updated by ${updatedBy.name}` : ''
-        }${createdAt ? ` on ${new Date(createdAt).toLocaleString()}` : ''}`}
+        }${createdAt ? ` on ${formatDateTime(createdAt, timeFormat)}` : ''}`}
         style={{
           display: 'inline-flex',
           alignItems: 'center',

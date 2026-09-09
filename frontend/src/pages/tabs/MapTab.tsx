@@ -1,3 +1,4 @@
+import { useTimeFormat } from '../../lib/time';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MapPin, ExternalLink, Image as ImageIcon } from 'lucide-react';
@@ -7,9 +8,10 @@ import { apiPost } from '../../lib/api';
 import type { GeocodedPlace, Trip } from '../../lib/types';
 import { computePlaceStopNumberMap, isAccommodationItem } from '../../lib/placeUtils';
 import { generateSpanId, embedSpanId, getConsecutiveDays } from '../../lib/spanUtils';
-import { formatPlaceTime } from './ItineraryTab';
+import { formatTimeRange as formatPlaceTime } from '../../lib/time';
 
 export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
+  const timeFormat = useTimeFormat();
   const [params] = useSearchParams();
   const [selected, setSelected] = useState<string | undefined>(params.get('focus') ?? undefined);
   const [draft, setDraft] = useState<(GeocodedPlace & { startTime?: string; endTime?: string; spanDays?: number }) | null>(null);
@@ -159,7 +161,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
                       {day > 0 ? `Day ${day} · ` : ''}{place.name}
                     </div>
                     <div className="sub"><MapPin size={11} /> {place.address || 'Location resolved from item name'}</div>
-                    <div className="small muted">{[place.category, formatPlaceTime(place.startTime, place.endTime), place.notes].filter(Boolean).join(' · ').slice(0, 220)}</div>
+                    <div className="small muted">{[place.category, formatPlaceTime(place.startTime, place.endTime, timeFormat), place.notes].filter(Boolean).join(' · ').slice(0, 220)}</div>
                     <div className="row mt" style={{ gap: 6 }}>
                       {place.website && <a className="btn sm ghost" href={place.website} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><ExternalLink size={11} /> Info</a>}
                       <a className="btn sm ghost" href={googleUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><MapPin size={11} /> Google Maps</a>

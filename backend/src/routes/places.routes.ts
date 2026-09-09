@@ -3,6 +3,7 @@ import { asyncHandler, badRequest } from '../lib/errors.js';
 import { getUser } from '../middleware/auth.js';
 import { searchPlaces } from '../services/geocoding.js';
 import { config } from '../config.js';
+import { searchGooglePlaces } from '../services/googlePlaceSearch.js';
 
 export const placesRouter = Router();
 
@@ -58,10 +59,22 @@ placesRouter.get(
 
     const biasLat = req.query.biasLat != null && req.query.biasLat !== '' ? Number(req.query.biasLat) : undefined;
     const biasLng = req.query.biasLng != null && req.query.biasLng !== '' ? Number(req.query.biasLng) : undefined;
-    const limit = req.query.limit ? Number(req.query.limit) : 6;
-
-    const places = await searchPlaces(query, { biasLat, biasLng, limit });
-    res.json({ places });
+    const limit = Math.min(20, Math.max(1, Math.trunc(Number(req.query.limit) || 6)));
+    if ((biasLat !== undefined && (!Number.isFinite(biasLat) || Math.abs(biasLat) > 90)) ||
+        (biasLng !== undefined && (!Number.isFinite(biasLng) || Math.abs(biasLng) > 180))) throw badRequest('Invalid search location');
+    const google = Boolean(config.search.googlePlacesApiKey);
+    let searchLat = biasLat;
+    let searchLng = biasLng;
+    const context = String(req.query.context || '').trim().slice(0, 200);
+    if (context && (searchLat === undefined || searchLng === undefined)) {
+      const [center] = await searchPlaces(context, { limit: 1 });
+      searchLat = center?.lat;
+      searchLng = center?.lng;
+    }
+    const places = google
+      ? await searchGooglePlaces(config.search.googlePlacesApiKey, query, { biasLat: searchLat, biasLng: searchLng, limit })
+      : await searchPlaces(query, { biasLat: searchLat, biasLng: searchLng, limit });
+    res.json({ places, provider: google ? 'Google Maps' : 'OpenStreetMap' });
   }),
 );
 

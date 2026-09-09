@@ -5035,3 +5035,33 @@ a.link:hover {
 .day-add-dropdown-item:active {
   transform: translateY(1px);
 }
+/* A single editing and reading surface for itinerary notes. */
+.unified-note-editor {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  outline: none;
+  cursor: text;
+}
+
+.unified-note-editor:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.unified-note-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.unified-note-editor a {
+  cursor: pointer;
+}

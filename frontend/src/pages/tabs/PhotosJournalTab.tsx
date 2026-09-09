@@ -181,6 +181,12 @@ export function PhotosJournalTab({ trip, reload }: { trip: Trip; reload: () => P
           isOpen={jOpen}
           onClose={() => setJOpen(false)}
           onSave={handleSaveJournal}
+          onDelete={async (id) => {
+            await apiDelete(`/trips/${trip.id}/journal/${id}`);
+            setJOpen(false);
+            setEditingJournalId(null);
+            await reload();
+          }}
           initialData={jForm}
           tripPhotos={trip.photos}
           onPhotosUploaded={reload}

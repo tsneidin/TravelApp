@@ -82,6 +82,64 @@ export function extractTimeHHMM(isoOrTime?: string | null): string {
 
 export { formatTimeRange as formatPlaceTime } from '../../lib/time';
 
+function UnifiedNoteEditor({
+  value,
+  onChange,
+  placeholder,
+  minHeight,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  minHeight: number;
+  autoFocus?: boolean;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) editorRef.current?.focus();
+  }, [autoFocus]);
+
+  return (
+    <div
+      ref={editorRef}
+      className="unified-note-editor"
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      aria-label="Note text"
+      data-placeholder={placeholder}
+      style={{ minHeight }}
+      onBlur={(event) => onChange(event.currentTarget.innerText.replace(/\n$/, ''))}
+      onClick={(event) => {
+        const link = (event.target as HTMLElement).closest('a');
+        if (!link) return;
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(link.href, '_blank', 'noopener,noreferrer');
+      }}
+      onPaste={(event) => {
+        event.preventDefault();
+        const text = event.clipboardData.getData('text/plain');
+        const selection = window.getSelection();
+        if (!selection?.rangeCount) return;
+        selection.deleteFromDocument();
+        const range = selection.getRangeAt(0);
+        const node = document.createTextNode(text);
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }}
+    >
+      {renderTextWithLinks(value)}
+    </div>
+  );
+}
+
 function isGenericDayLabel(label?: string | null): boolean {
   if (!label) return true;
   const trimmed = label.trim();
@@ -2172,6 +2230,17 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           });
         };
 
+        const handleDeleteActiveNote = async () => {
+          if (!window.confirm('Remove this note?')) return;
+          if (activeKey === 'trip') {
+            await apiPatch(`/trips/${trip.id}`, { notes: null, notesUrl: null });
+          } else if (activeKey === 'day') {
+            await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, { notes: null, notesUrl: null });
+          }
+          setDayEditor(null);
+          await reload();
+        };
+
         return (
           <Modal
             title={
@@ -2338,10 +2407,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </div>
                 )}
               </div>
-              <textarea
-                rows={isTripLevel ? 12 : 10}
+              <UnifiedNoteEditor
                 value={activeNoteText}
-                onChange={(event) => updateActiveNoteText(event.target.value)}
+                onChange={updateActiveNoteText}
                 placeholder={
                   isNewNote
                     ? 'Capture notes, memories, reference links, recommendations, or thoughts…'
@@ -2352,24 +2420,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     : `Notes, tips or details for ${currentTarget.label}…`
                 }
                 autoFocus={!isNewNote && activeKey === 'day' && !dayEditor.focusLocation}
-                style={{ minHeight: isTripLevel ? 280 : 240, resize: 'vertical' }}
+                minHeight={isTripLevel ? 280 : 240}
               />
-              {/(https?:\/\/|www\.)\S+/i.test(activeNoteText) && (
-                <div
-                  className="small"
-                  style={{
-                    marginTop: 8,
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    background: 'var(--surface-hover)',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                  }}
-                >
-                  {renderTextWithLinks(activeNoteText)}
-                </div>
-              )}
               {activeKey === 'day' && !isTripLevel && currentSpan > 1 && targetDays.length > 1 && (
                 <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Calendar size={13} className="text-accent" />
@@ -2390,6 +2442,16 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               }}
             >
               <div>
+                {(activeKey === 'trip' || activeKey === 'day') && activeNoteText.trim() && (
+                  <button
+                    type="button"
+                    className="btn danger ghost"
+                    onClick={() => void handleDeleteActiveNote()}
+                  >
+                    <Trash2 size={13} />
+                    <span>Remove note</span>
+                  </button>
+                )}
                 {currentTarget.type === 'place' && currentTarget.place && (
                   <button
                     type="button"

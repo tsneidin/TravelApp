@@ -385,9 +385,11 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       address: p.address ?? '',
       lat: p.lat != null ? String(p.lat) : '',
       lng: p.lng != null ? String(p.lng) : '',
-      website: p.website ?? '',
+      website: isItemNote(p) ? '' : (p.website ?? ''),
       description: p.description ?? '',
-      notes: stripSpanId(p.notes),
+      notes: isItemNote(p)
+        ? mergeLegacyNoteLink(stripSpanId(p.notes), p.website)
+        : stripSpanId(p.notes),
       startTime: extractTimeHHMM(p.startTime),
       endTime: extractTimeHHMM(p.endTime),
       spanDays: 1,
@@ -731,21 +733,28 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     return cat === 'note' || cat === 'notes';
   };
 
+  const mergeLegacyNoteLink = (text?: string | null, url?: string | null) => {
+    const noteText = text?.trim() || '';
+    const legacyUrl = url?.trim() || '';
+    if (!legacyUrl || noteText.includes(legacyUrl)) return noteText;
+    return noteText ? `${noteText}\n\n${legacyUrl}` : legacyUrl;
+  };
+
   const openTripNotes = () => {
     const orphanNotes = orphanPlaces.filter(isItemNote);
     const pNotesMap: Record<string, string> = {};
     const pUrlsMap: Record<string, string> = {};
     const pTitlesMap: Record<string, string> = {};
     orphanNotes.forEach((p: Place) => {
-      pNotesMap[p.id] = p.notes || p.description || '';
-      pUrlsMap[p.id] = p.website || '';
+      pNotesMap[p.id] = mergeLegacyNoteLink(p.notes || p.description, p.website);
+      pUrlsMap[p.id] = '';
       pTitlesMap[p.id] = p.name || '';
     });
     setDayEditor({
       id: 'trip',
       label: 'Trip Notes',
-      notes: trip.notes || '',
-      noteUrl: trip.notesUrl || '',
+      notes: mergeLegacyNoteLink(trip.notes, trip.notesUrl),
+      noteUrl: '',
       location: '',
       defaultLocation: trip.destination || '',
       dayNumber: undefined,
@@ -763,8 +772,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const pUrlsMap: Record<string, string> = {};
     const pTitlesMap: Record<string, string> = {};
     (day.places ?? []).filter(isItemNote).forEach((p: Place) => {
-      pNotesMap[p.id] = p.notes || p.description || '';
-      pUrlsMap[p.id] = p.website || '';
+      pNotesMap[p.id] = mergeLegacyNoteLink(p.notes || p.description, p.website);
+      pUrlsMap[p.id] = '';
       pTitlesMap[p.id] = p.name || '';
     });
     const sortedDays = [...days].sort(
@@ -774,8 +783,8 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     setDayEditor({
       id: day.id,
       label: customTitle,
-      notes: day.notes || '',
-      noteUrl: day.notesUrl || '',
+      notes: mergeLegacyNoteLink(day.notes, day.notesUrl),
+      noteUrl: '',
       location: day.location || '',
       lat: day.lat,
       lng: day.lng,
@@ -843,14 +852,13 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     if (dayEditor.activeTargetKey === 'new') {
       const noteName = dayEditor.newNoteTitle?.trim() || 'Note';
       const noteText = dayEditor.newNoteText?.trim() || '';
-      const noteUrl = dayEditor.newNoteUrl?.trim() || null;
-      if (noteText || noteName !== 'Note' || noteUrl) {
+      if (noteText || noteName !== 'Note') {
         await apiPost(`/trips/${trip.id}/places`, {
           dayId: dayEditor.id === 'trip' ? null : dayEditor.id,
           name: noteName,
           category: 'Note',
           description: noteText,
-          website: noteUrl,
+          website: null,
         });
       }
     }
@@ -859,7 +867,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     if (dayEditor.id === 'trip') {
       await apiPatch(`/trips/${trip.id}`, {
         notes: dayEditor.notes?.trim() || null,
-        notesUrl: dayEditor.noteUrl?.trim() || null,
+        notesUrl: null,
       });
 
       if (orphanPlaces) {
@@ -898,7 +906,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     const locationVal = dayEditor.location?.trim() || null;
     let latVal = dayEditor.lat != null ? dayEditor.lat : null;
     let lngVal = dayEditor.lng != null ? dayEditor.lng : null;
-    const noteUrlVal = dayEditor.noteUrl?.trim() || null;
 
     if (locationVal && (latVal == null || lngVal == null || (latVal === 0 && lngVal === 0))) {
       try {
@@ -922,7 +929,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           return apiPatch(`/trips/${trip.id}/days/${d.id}`, {
             ...(isStart ? { label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null } : {}),
             notes: dayEditor.notes,
-            notesUrl: noteUrlVal,
+            notesUrl: null,
             location: locationVal,
             lat: latVal,
             lng: lngVal,
@@ -933,7 +940,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
         label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
         notes: dayEditor.notes,
-        notesUrl: noteUrlVal,
+        notesUrl: null,
         location: locationVal,
         lat: latVal,
         lng: lngVal,
@@ -2120,12 +2127,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           ? dayEditor.notes
           : (dayEditor.placeNotesMap?.[activeKey] ?? '');
 
-        const activeNoteUrl = isNewNote
-          ? (dayEditor.newNoteUrl ?? '')
-          : (activeKey === 'day' || activeKey === 'trip')
-          ? (dayEditor.noteUrl ?? '')
-          : (dayEditor.placeUrlsMap?.[activeKey] ?? '');
-
         const activeNoteTitle = isNewNote
           ? (dayEditor.newNoteTitle ?? '')
           : (currentTarget.type === 'place' && currentTarget.place)
@@ -2143,22 +2144,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               placeNotesMap: {
                 ...(dayEditor.placeNotesMap || {}),
                 [activeKey]: newText,
-              },
-            });
-          }
-        };
-
-        const updateActiveNoteUrl = (newUrl: string) => {
-          if (isNewNote) {
-            setDayEditor({ ...dayEditor, newNoteUrl: newUrl });
-          } else if (activeKey === 'day' || activeKey === 'trip') {
-            setDayEditor({ ...dayEditor, noteUrl: newUrl });
-          } else {
-            setDayEditor({
-              ...dayEditor,
-              placeUrlsMap: {
-                ...(dayEditor.placeUrlsMap || {}),
-                [activeKey]: newUrl,
               },
             });
           }
@@ -2184,7 +2169,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             activeTargetKey: 'new',
             newNoteTitle: '',
             newNoteText: '',
-            newNoteUrl: '',
           });
         };
 
@@ -2196,77 +2180,26 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 : `Day ${dayEditor.dayNumber ?? ''} Notes${dayEditor.label ? ` — ${dayEditor.label}` : ''}`
             }
             onClose={() => setDayEditor(null)}
+            wide
           >
-            {/* Top Toolbar matching JournalEntryModal with Prev, Note X of Y, Next, and + New Note */}
-            <div
+            {(noteTargets.length > 1 || isNewNote || isTripLevel) && <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px 10px',
-                background: 'var(--surface-hover)',
-                borderRadius: '6px',
-                border: '1px solid var(--border)',
+                justifyContent: 'flex-end',
+                gap: 8,
                 marginBottom: '0.8rem',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn xs ghost"
-                  disabled={!isNewNote && activeIdx <= 0}
-                  onClick={() => {
-                    if (isNewNote) {
-                      setDayEditor({
-                        ...dayEditor,
-                        activeTargetKey: noteTargets[noteTargets.length - 1].key,
-                      });
-                    } else if (activeIdx > 0) {
-                      setDayEditor({
-                        ...dayEditor,
-                        activeTargetKey: noteTargets[activeIdx - 1].key,
-                      });
-                    }
-                  }}
-                  title="Previous note"
-                >
-                  <ChevronLeft size={14} />
-                  <span>Prev</span>
-                </button>
-                <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                  {isNewNote
-                    ? 'New Note'
-                    : `Note ${activeIdx + 1} of ${noteTargets.length}: ${currentTarget.label}`}
-                </span>
-                <button
-                  type="button"
-                  className="btn xs ghost"
-                  disabled={isNewNote || activeIdx >= noteTargets.length - 1}
-                  onClick={() => {
-                    if (!isNewNote && activeIdx < noteTargets.length - 1) {
-                      setDayEditor({
-                        ...dayEditor,
-                        activeTargetKey: noteTargets[activeIdx + 1].key,
-                      });
-                    }
-                  }}
-                  title="Next note"
-                >
-                  <span>Next</span>
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {noteTargets.length > 1 && (
+                {(noteTargets.length > 1 || isNewNote) && (
                   <select
                     value={activeKey}
                     onChange={(e) => setDayEditor({ ...dayEditor, activeTargetKey: e.target.value })}
                     style={{ fontSize: '12px', padding: '2px 6px', maxWidth: '160px' }}
                   >
-                    {noteTargets.map((t, idx) => (
+                    {noteTargets.map((t) => (
                       <option key={t.key} value={t.key}>
-                        {`${idx + 1}. ${t.label}`}
+                        {t.label}
                       </option>
                     ))}
                     {isNewNote && <option value="new">+ New Note (draft)</option>}
@@ -2283,8 +2216,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   <Plus size={12} />
                   <span>Unassigned note</span>
                 </button>}
-              </div>
-            </div>
+            </div>}
 
             {/* Note Title if new note or place note */}
             {(isNewNote || (currentTarget.type === 'place' && currentTarget.place)) && (
@@ -2407,7 +2339,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                 )}
               </div>
               <textarea
-                rows={isTripLevel ? 7 : 6}
+                rows={isTripLevel ? 12 : 10}
                 value={activeNoteText}
                 onChange={(event) => updateActiveNoteText(event.target.value)}
                 placeholder={
@@ -2420,7 +2352,24 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                     : `Notes, tips or details for ${currentTarget.label}…`
                 }
                 autoFocus={!isNewNote && activeKey === 'day' && !dayEditor.focusLocation}
+                style={{ minHeight: isTripLevel ? 280 : 240, resize: 'vertical' }}
               />
+              {/(https?:\/\/|www\.)\S+/i.test(activeNoteText) && (
+                <div
+                  className="small"
+                  style={{
+                    marginTop: 8,
+                    padding: '10px 12px',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--surface-hover)',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {renderTextWithLinks(activeNoteText)}
+                </div>
+              )}
               {activeKey === 'day' && !isTripLevel && currentSpan > 1 && targetDays.length > 1 && (
                 <div className="small muted" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Calendar size={13} className="text-accent" />
@@ -2429,44 +2378,6 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   </span>
                 </div>
               )}
-            </div>
-
-            <div className="field" style={{ marginBottom: '0.8rem' }}>
-              <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <ExternalLink size={13} className="text-accent" />
-                  <span>Note URL / Link</span>
-                </label>
-                {activeNoteUrl.trim() && (
-                  <a
-                    href={formatUrl(activeNoteUrl.trim())}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn xs ghost"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '2px 8px',
-                      color: 'var(--accent)',
-                      textDecoration: 'none',
-                      fontWeight: 600,
-                      background: 'rgba(56, 189, 248, 0.12)',
-                      borderRadius: 4,
-                    }}
-                    title="Open link in a new tab"
-                  >
-                    <ExternalLink size={12} />
-                    <span>Open link ↗</span>
-                  </a>
-                )}
-              </div>
-              <input
-                type="url"
-                value={activeNoteUrl}
-                onChange={(event) => updateActiveNoteUrl(event.target.value)}
-                placeholder="https://… (e.g. reservation link, tickets, article or guide URL)"
-              />
             </div>
 
             <div
@@ -2736,7 +2647,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             />
           </div>
 
-          <div className="field" style={{ marginBottom: '0.6rem' }}>
+          {editing.category !== 'Note' && <div className="field" style={{ marginBottom: '0.6rem' }}>
             <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
               <label style={{ margin: 0 }}>Address or Coordinates</label>
               {(editing.address.trim() || editing.name.trim() || (editing.lat && editing.lng)) && (
@@ -2770,19 +2681,12 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               }}
               placeholder="Street, city or 40.7128, -74.0060"
             />
-          </div>
+          </div>}
 
-          <div className="field" style={{ marginBottom: '0.6rem' }}>
+          {editing.category !== 'Note' && <div className="field" style={{ marginBottom: '0.6rem' }}>
             <div className="row between" style={{ alignItems: 'center', marginBottom: 4 }}>
               <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {editing.category === 'Note' ? (
-                  <>
-                    <ExternalLink size={13} className="text-accent" />
-                    <span>Note URL</span>
-                  </>
-                ) : (
-                  <span>Website</span>
-                )}
+                <span>Website</span>
               </label>
               {(editing.website.trim() || isUrl(editing.name)) && (
                 <a
@@ -2812,9 +2716,9 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
               type="url"
               value={editing.website}
               onChange={(e) => setEditing({ ...editing, website: e.target.value })}
-              placeholder={editing.category === 'Note' ? 'https://… (e.g. guide, tickets or reservation link)' : 'https://…'}
+              placeholder="https://…"
             />
-          </div>
+          </div>}
 
           {/* Category, Day, and Span across days on the same horizontal row */}
           <div className={!editingId && days.length > 0 ? 'grid grid-3' : days.length > 0 ? 'grid grid-2' : ''} style={{ gap: '0.75rem', marginBottom: '0.6rem' }}>
@@ -2828,6 +2732,10 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
                   setEditing((prev) => ({
                     ...prev,
                     category: newCat,
+                    notes: newCat === 'Note'
+                      ? mergeLegacyNoteLink(prev.notes, prev.website)
+                      : prev.notes,
+                    website: newCat === 'Note' ? '' : prev.website,
                     startTime: isAccom ? (prev.startTime || '15:00') : prev.startTime,
                     endTime: isAccom ? (prev.endTime || '10:00') : prev.endTime,
                     spanDays: isAccom && (!prev.spanDays || prev.spanDays <= 1) ? 2 : prev.spanDays,

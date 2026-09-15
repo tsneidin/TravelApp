@@ -199,22 +199,11 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                             <Paperclip size={12} /> {bAtts.length}
                           </button>
                         ) : null}
-                        {isRaw ? (
-                          <button
-                            type="button"
-                            className="btn sm ghost"
-                            style={{ padding: '2px 5px' }}
-                            title="View raw source text"
-                            onClick={() => setRawBooking(b)}
-                          >
-                            <FileText size={12} />
-                          </button>
-                        ) : null}
-                        {bNotes.length === 0 && bAtts.length === 0 && !isRaw && '—'}
+                        {bNotes.length === 0 && bAtts.length === 0 && '—'}
                       </div>
                     </td>
-                    <td>
-                      <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <div className="row" style={{ gap: 4, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                         <button
                           className="btn sm ghost"
                           title="Edit booking"

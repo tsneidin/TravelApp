@@ -20,7 +20,21 @@ export async function searchGooglePlaces(apiKey: string, query: string, options:
       'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.primaryType,places.websiteUri' },
     body: JSON.stringify(body),
   }).catch(() => { throw new HttpError(503, 'Google place search could not connect. Try again or enter a title manually.'); });
-  if (!response.ok) throw new HttpError(503, 'Google place search is unavailable. Try again or enter a title manually.');
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const errData = await response.json?.() as { error?: { message?: string; status?: string } } | undefined;
+      detail = errData?.error?.message || '';
+      console.error(`[GooglePlaces] API error ${response.status} (${errData?.error?.status || 'UNKNOWN'}):`, detail);
+    } catch {
+      const rawText = await response.text?.().catch(() => '') ?? '';
+      console.error(`[GooglePlaces] API error ${response.status}:`, rawText);
+    }
+    const msg = detail
+      ? `Google place search is unavailable (${detail}). Try again or enter a title manually.`
+      : 'Google place search is unavailable. Try again or enter a title manually.';
+    throw new HttpError(503, msg);
+  }
   const data = await response.json() as { places?: { displayName?: { text?: string }; formattedAddress?: string; location?: { latitude?: number; longitude?: number }; primaryType?: string; websiteUri?: string }[] };
   return (data.places || []).filter((p) => Number.isFinite(p.location?.latitude) && Number.isFinite(p.location?.longitude)).map((p) => {
     const type = p.primaryType || '';

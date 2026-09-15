@@ -205,6 +205,7 @@ tripsRouter.get(
         endAt: booking.endAt ?? undefined,
         totalAmount: confirmedPrice,
         currency,
+        preferFallbackPrice: details.priceManuallySet === true,
       });
     }
 

@@ -2509,6 +2509,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
       {bookingModalDayState && (
         <BookingModal
           tripId={trip.id}
+          defaultCurrency={trip.currency}
           initialType="hotel"
           initialStartAt={bookingModalDayState.startAt}
           initialEndAt={bookingModalDayState.endAt}

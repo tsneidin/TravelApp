@@ -33,6 +33,8 @@ export interface BookingForm {
   reference: string;
   startAt: string;
   endAt: string;
+  price: string;
+  currency: string;
   notes: string[];
   attachments: BookingAttachment[];
   sourceRaw: string;
@@ -80,12 +82,34 @@ export function rawBookingText(booking: Booking): string {
   return '';
 }
 
+function bookingDetail(booking: Booking | null | undefined, key: string): unknown {
+  return booking?.details && typeof booking.details === 'object'
+    ? (booking.details as Record<string, unknown>)[key]
+    : undefined;
+}
+
+function parsePriceInput(value: string): number | undefined {
+  let normalized = value.trim().replace(/[\s']/g, '').replace(/[^\d.,-]/g, '');
+  if (!normalized) return undefined;
+  const comma = normalized.lastIndexOf(',');
+  const dot = normalized.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    const decimal = comma > dot ? ',' : '.';
+    normalized = normalized.replace(decimal === ',' ? /\./g : /,/g, '').replace(decimal, '.');
+  } else if (comma >= 0) {
+    normalized = /,\d{1,2}$/.test(normalized) ? normalized.replace(',', '.') : normalized.replace(/,/g, '');
+  }
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
 export interface BookingModalProps {
   tripId: string;
   booking?: Booking | null;
   initialType?: BookingType;
   initialStartAt?: string;
   initialEndAt?: string;
+  defaultCurrency?: string;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }
@@ -96,6 +120,7 @@ export function BookingModal({
   initialType = 'hotel',
   initialStartAt = '',
   initialEndAt = '',
+  defaultCurrency = 'USD',
   onClose,
   onSaved,
 }: BookingModalProps) {
@@ -116,6 +141,8 @@ export function BookingModal({
         reference: booking.reference || '',
         startAt: toDatetimeLocal(booking.startAt),
         endAt: toDatetimeLocal(booking.endAt),
+        price: typeof bookingDetail(booking, 'confirmedPrice') === 'number' ? String(bookingDetail(booking, 'confirmedPrice')) : '',
+        currency: typeof bookingDetail(booking, 'currency') === 'string' ? String(bookingDetail(booking, 'currency')) : defaultCurrency,
         notes: [...bookingNotes(booking)],
         attachments: [...bookingAttachments(booking)],
         sourceRaw: rawBookingText(booking),
@@ -128,6 +155,8 @@ export function BookingModal({
       reference: '',
       startAt: initialStartAt ? toDatetimeLocal(initialStartAt) : '',
       endAt: initialEndAt ? toDatetimeLocal(initialEndAt) : '',
+      price: '',
+      currency: defaultCurrency,
       notes: [],
       attachments: [],
       sourceRaw: '',
@@ -254,12 +283,25 @@ export function BookingModal({
       if (newNote.trim()) {
         finalNotes.push(newNote.trim());
       }
-      const details = {
+      const details: Record<string, unknown> = {
         ...existingDetails,
         notes: finalNotes,
         attachments: form.attachments,
         sourceRaw: form.sourceRaw.trim() ? form.sourceRaw.trim() : undefined,
       };
+      const parsedPrice = parsePriceInput(form.price);
+      if (form.price.trim() && (!parsedPrice || parsedPrice <= 0)) {
+        alert('Enter a valid positive booking price.');
+        return;
+      }
+      const originalPrice = bookingDetail(booking, 'confirmedPrice');
+      const originalCurrency = bookingDetail(booking, 'currency');
+      const priceChanged = parsedPrice !== originalPrice || form.currency !== (originalCurrency || defaultCurrency);
+      if (parsedPrice) {
+        details.confirmedPrice = parsedPrice;
+        details.currency = form.currency;
+        if (priceChanged) details.priceManuallySet = true;
+      }
 
       if (booking) {
         await apiPatch(`/trips/${tripId}/bookings/${booking.id}`, {
@@ -359,6 +401,27 @@ export function BookingModal({
               label="End" value={form.endAt}
               onChange={(e) => setForm({ ...form, endAt: e.target.value })}
             />
+          </div>
+        </div>
+
+        <div className="grid grid-2">
+          <div className="field">
+            <label htmlFor="booking-total-price">Total Price</label>
+            <input
+              id="booking-total-price"
+              value={form.price}
+              inputMode="decimal"
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              placeholder="e.g. 39,98 or 39.98"
+            />
+          </div>
+          <div className="field small">
+            <label htmlFor="booking-currency">Currency</label>
+            <select id="booking-currency" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+              {['EUR', 'USD', 'GBP', 'JPY', 'CAD', 'AUD'].map((currency) => (
+                <option key={currency} value={currency}>{currency}</option>
+              ))}
+            </select>
           </div>
         </div>
 

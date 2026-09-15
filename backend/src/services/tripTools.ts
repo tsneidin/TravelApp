@@ -1,5 +1,5 @@
 import { prisma } from '../db.js';
-import { syncBookingToItinerary } from './bookingHelper.js';
+import { normalizeCurrencyCode, parseLocalizedAmount, syncBookingToItinerary } from './bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from './dayReconciliation.js';
 import { fetchSuggestions, type Suggestion } from './suggestions.js';
 import { inferCategoryFromText } from './categoryClassifier.js';
@@ -1171,12 +1171,13 @@ export async function executeTripTool(
       const type = BOOKING_TYPES.includes(rawType as BookingType) ? (rawType as BookingType) : null;
       const title = String(a.title ?? '').trim();
       if (!type || !title) return { action: name, summary: 'add_booking: valid type and title required', ok: false };
-      const confirmedPrice = typeof a.price === 'number' ? a.price : parseFloat(String(a.price ?? ''));
+      const confirmedPrice = typeof a.price === 'number' ? a.price : parseLocalizedAmount(String(a.price ?? ''));
+      const bookingCurrency = normalizeCurrencyCode(a.currency ? String(a.currency) : undefined);
       const details = ctx.sourceText
         ? {
             sourceRaw: ctx.sourceText.slice(0, 12_000),
-            ...(Number.isFinite(confirmedPrice) && confirmedPrice > 0 ? { confirmedPrice } : {}),
-            ...(a.currency ? { currency: String(a.currency).toUpperCase() } : {}),
+            ...(confirmedPrice !== undefined && Number.isFinite(confirmedPrice) && confirmedPrice > 0 ? { confirmedPrice } : {}),
+            ...(bookingCurrency ? { currency: bookingCurrency } : {}),
           }
         : undefined;
 
@@ -1223,7 +1224,7 @@ export async function executeTripTool(
           startAt: toDate(a.startAt),
           endAt: toDate(a.endAt),
           totalAmount: confirmedPrice,
-          currency: a.currency ? String(a.currency).trim() : undefined,
+          currency: bookingCurrency,
           legs: structuredLegs,
           address: a.address ? String(a.address).trim() : undefined,
           notes: a.notes ? String(a.notes).trim() : undefined,
@@ -1249,7 +1250,7 @@ export async function executeTripTool(
       const ref = typeof a.reference === 'string' ? a.reference.trim() : '';
       const titleQuery = typeof a.title === 'string' ? a.title.trim() : '';
 
-      let target = bookingId ? await prisma.booking.findUnique({ where: { id: bookingId } }) : null;
+      let target = bookingId ? await prisma.booking.findFirst({ where: { id: bookingId, tripId } }) : null;
       if (!target && ref) {
         target = await prisma.booking.findFirst({ where: { tripId, reference: { equals: ref, mode: 'insensitive' } } });
       }
@@ -1269,8 +1270,43 @@ export async function executeTripTool(
         data.type = String(a.type).toLowerCase() as BookingType;
       }
 
+      const priceProvided = a.price !== undefined;
+      const correctedPrice = typeof a.price === 'number' ? a.price : parseLocalizedAmount(String(a.price ?? ''));
+      if (priceProvided && (!Number.isFinite(correctedPrice) || correctedPrice! <= 0)) {
+        return { action: name, summary: 'update_booking: price must be a positive amount', ok: false };
+      }
+      const currencyProvided = typeof a.currency === 'string' && a.currency.trim().length > 0;
+      const correctedCurrency = normalizeCurrencyCode(currencyProvided ? String(a.currency) : undefined);
+      if (currencyProvided && !correctedCurrency) {
+        return { action: name, summary: 'update_booking: currency must be a valid three-letter currency code', ok: false };
+      }
+      const existingDetails = target.details && typeof target.details === 'object' && !Array.isArray(target.details)
+        ? target.details as Record<string, unknown>
+        : {};
+      const updatedDetails: Record<string, unknown> = {
+        ...existingDetails,
+        ...(priceProvided ? { confirmedPrice: correctedPrice, priceManuallySet: true } : {}),
+        ...(correctedCurrency ? { currency: correctedCurrency } : {}),
+      };
+      if (priceProvided || currencyProvided) data.details = updatedDetails;
+
       const updated = await prisma.booking.update({ where: { id: target.id }, data });
-      return { action: name, summary: `Updated booking "${updated.title}"`, ok: true, bookingId: updated.id };
+      const effectivePrice = typeof updatedDetails.confirmedPrice === 'number' ? updatedDetails.confirmedPrice : undefined;
+      if ((priceProvided || currencyProvided) && effectivePrice && effectivePrice > 0) {
+        const sourceRaw = typeof updatedDetails.sourceRaw === 'string' ? updatedDetails.sourceRaw : '';
+        await syncBookingToItinerary(tripId, userId, updated.id, sourceRaw, updated.title, {
+          type: updated.type,
+          provider: updated.provider ?? undefined,
+          reference: updated.reference ?? undefined,
+          startAt: updated.startAt ?? undefined,
+          endAt: updated.endAt ?? undefined,
+          totalAmount: effectivePrice,
+          currency: typeof updatedDetails.currency === 'string' ? updatedDetails.currency : undefined,
+          preferFallbackPrice: true,
+        });
+      }
+      const priceSummary = priceProvided ? ` and updated its linked budget expense to ${correctedPrice}` : '';
+      return { action: name, summary: `Updated booking "${updated.title}"${priceSummary}`, ok: true, bookingId: updated.id };
     }
 
     if (name === 'delete_booking') {
@@ -1318,11 +1354,16 @@ export async function executeTripTool(
 
     if (name === 'add_expense') {
       const desc = String(a.description ?? '').trim();
-      const amount = typeof a.amount === 'number' ? a.amount : parseFloat(String(a.amount ?? ''));
+      const amount = (typeof a.amount === 'number' ? a.amount : parseLocalizedAmount(String(a.amount ?? ''))) ?? Number.NaN;
       if (!desc || !Number.isFinite(amount)) return { action: name, summary: 'add_expense: description and amount required', ok: false };
       const cat = String(a.category ?? 'other').toLowerCase();
       const category: ExpenseCategory = EXPENSE_CATEGORIES.includes(cat as ExpenseCategory) ? (cat as ExpenseCategory) : 'other';
-      const currency = a.currency ? String(a.currency).toUpperCase().trim() : 'USD';
+      const expenseCurrencyProvided = typeof a.currency === 'string' && a.currency.trim().length > 0;
+      const normalizedExpenseCurrency = normalizeCurrencyCode(expenseCurrencyProvided ? String(a.currency) : undefined);
+      if (expenseCurrencyProvided && !normalizedExpenseCurrency) {
+        return { action: name, summary: 'add_expense: currency must be a valid three-letter currency code', ok: false };
+      }
+      const currency = normalizedExpenseCurrency || 'USD';
       const date = toDate(a.date);
       const notes = a.notes ? String(a.notes).trim() : undefined;
       const candidates = await prisma.expense.findMany({ where: { tripId, amount } });

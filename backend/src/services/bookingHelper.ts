@@ -1,7 +1,7 @@
 import { prisma } from '../db.js';
 import type { BookingType } from '@prisma/client';
 import { cleanAirportCity, toDayKey, reconcileTripDays } from './dayReconciliation.js';
-import { isLikelyDuplicateExpense, isTransportReceipt } from './expenseDeduplication.js';
+import { hasMatchingReceiptIdentifier, isLikelyDuplicateExpense, isTransportReceipt } from './expenseDeduplication.js';
 
 export interface ExtractedFlightLeg {
   carrier: string;
@@ -71,6 +71,59 @@ export function sanitizeReceiptText(text: string): string {
     .join('\n');
 }
 
+/** Parse US and European money formats without treating a decimal comma as thousands. */
+export function parseLocalizedAmount(value: string): number | undefined {
+  let normalized = value.trim().replace(/[\s\u00a0']/g, '').replace(/[^\d.,-]/g, '');
+  if (!normalized) return undefined;
+
+  const comma = normalized.lastIndexOf(',');
+  const dot = normalized.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    const decimal = comma > dot ? ',' : '.';
+    const thousands = decimal === ',' ? /\./g : /,/g;
+    normalized = normalized.replace(thousands, '').replace(decimal, '.');
+  } else {
+    const separator = comma >= 0 ? ',' : dot >= 0 ? '.' : '';
+    if (separator) {
+      const parts = normalized.split(separator);
+      const fraction = parts.at(-1) || '';
+      normalized = fraction.length === 1 || fraction.length === 2
+        ? `${parts.slice(0, -1).join('')}.${fraction}`
+        : parts.join('');
+    }
+  }
+
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+const ISO_CURRENCIES = new Set([
+  'AED', 'ARS', 'AUD', 'BGN', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'COP', 'CZK', 'DKK',
+  'EGP', 'EUR', 'GBP', 'HKD', 'HRK', 'HUF', 'IDR', 'ILS', 'INR', 'ISK', 'JPY', 'KRW',
+  'MAD', 'MXN', 'MYR', 'NOK', 'NZD', 'PEN', 'PHP', 'PLN', 'RON', 'SAR', 'SEK', 'SGD',
+  'THB', 'TRY', 'USD', 'VND', 'ZAR',
+]);
+
+/** Normalize common currency names and symbols, rejecting OCR fragments as codes. */
+export function normalizeCurrencyCode(value: string | null | undefined): string | undefined {
+  const text = value?.trim().toUpperCase();
+  if (!text) return undefined;
+  if (text === '€' || /^(?:EURO|EUROS)$/.test(text)) return 'EUR';
+  if (text === '£' || text === 'POUND' || text === 'POUNDS') return 'GBP';
+  if (text === '¥' || text === 'YEN') return 'JPY';
+  if (text === '$' || text === 'DOLLAR' || text === 'DOLLARS') return 'USD';
+  return ISO_CURRENCIES.has(text) ? text : undefined;
+}
+
+function detectCurrency(...values: Array<string | undefined>): string | undefined {
+  const text = values.filter(Boolean).join(' ').toUpperCase();
+  if (text.includes('€') || /\bEUR(?:O|OS)?\b/.test(text)) return 'EUR';
+  if (text.includes('£') || /\bGBP\b/.test(text)) return 'GBP';
+  if (text.includes('¥') || /\b(?:JPY|YEN)\b/.test(text)) return 'JPY';
+  if (text.includes('$') || /\bUSD\b/.test(text)) return 'USD';
+  return undefined;
+}
+
 const MONTH_PREFIXES = [
   'jan', 'feb', 'mar', 'apr', 'may', 'jun',
   'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
@@ -120,7 +173,7 @@ export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   // Extract confirmation code (e.g. NVDWQZ)
   let reference: string | undefined;
   const refMatch =
-    /(?:confirmation\s*(?:code|number|#)?|record\s*locator|pnr|reservation\s*code)[\s:]*([A-Z0-9]{5,8})\b/i.exec(
+    /(?:confirmation\s*(?:code|number|#)?|booking\s*(?:code|number|#)?|record\s*locator|pnr|reservation\s*code)[\s:]*([A-Z0-9]{5,20})\b/i.exec(
       text,
     );
   if (refMatch) {
@@ -130,12 +183,12 @@ export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   // Extract total amount & currency
   let totalAmount: number | undefined;
   let currency = 'USD';
-  const priceMatch = /(?:total(?:\s*paid)?|flight\s*subtotal)[\s:]*[$€£¥]?\s*([\d,]+\.\d{2})\s*([A-Z]{3})?/i.exec(
+  const priceMatch = /(?:total(?:\s*paid)?|flight\s*subtotal)[\s:]*([€$£¥]?)\s*([0-9](?:[0-9 .,'\u00a0]*[0-9])?)\s*(EUR(?:O|OS)?|USD|GBP|JPY|[€$£¥])?/i.exec(
     text,
   );
   if (priceMatch) {
-    totalAmount = parseFloat(priceMatch[1].replace(/,/g, ''));
-    if (priceMatch[2]) currency = priceMatch[2].toUpperCase();
+    totalAmount = parseLocalizedAmount(priceMatch[2]);
+    currency = detectCurrency(priceMatch[1], priceMatch[3], text) || 'USD';
   }
 
   // Detect airline / provider
@@ -340,16 +393,12 @@ export function extractHotelInfo(rawText: string): ExtractedBookingInfo {
   let totalAmount: number | undefined;
   let currency = 'USD';
   const totalMatch =
-    /(?:Total(?:\s*paid)?|Grand\s*total)[\s:]*([€$£¥]?)\s*([\d,]+(?:\.\d{2})?)\s*([A-Z]{3})?/i.exec(
+    /(?:Total(?:\s*paid)?|Grand\s*total)[\s:]*([€$£¥]?)\s*([0-9](?:[0-9 .,'\u00a0]*[0-9])?)\s*(EUR(?:O|OS)?|USD|GBP|JPY|[€$£¥])?/i.exec(
       text,
     );
   if (totalMatch) {
-    if (totalMatch[1] === '€' || totalMatch[3] === 'EUR') currency = 'EUR';
-    else if (totalMatch[1] === '£' || totalMatch[3] === 'GBP') currency = 'GBP';
-    else if (totalMatch[1] === '¥' || totalMatch[3] === 'JPY') currency = 'JPY';
-    else if (totalMatch[3]) currency = totalMatch[3].toUpperCase();
-
-    totalAmount = parseFloat(totalMatch[2].replace(/,/g, ''));
+    currency = detectCurrency(totalMatch[1], totalMatch[3], text) || 'USD';
+    totalAmount = parseLocalizedAmount(totalMatch[2]);
   }
 
   // 6. Property Title
@@ -386,7 +435,8 @@ export function extractBookingInfo(rawText: string): ExtractedBookingInfo {
   }
 
   const hotelInfo = extractHotelInfo(rawText);
-  if (hotelInfo.startDate || hotelInfo.reference || hotelInfo.address || hotelInfo.totalAmount) {
+  const hasLodgingLanguage = /\b(?:hotel|hostel|resort|apartment|airbnb|vrbo|villa|accommodation|property address|check[ -]?in|check[ -]?out)\b/i.test(rawText);
+  if (hasLodgingLanguage || hotelInfo.address || hotelInfo.checkInTimeStr || hotelInfo.checkOutTimeStr) {
     return hotelInfo;
   }
 
@@ -404,6 +454,7 @@ export interface BookingSyncFallback {
   legs?: ExtractedFlightLeg[];
   address?: string;
   notes?: string;
+  preferFallbackPrice?: boolean;
 }
 
 export async function syncBookingToItinerary(
@@ -457,11 +508,14 @@ export async function syncBookingToItinerary(
   if (!info.endDate && fallback.endAt) info.endDate = fallback.endAt;
   if (!info.address && fallback.address) info.address = fallback.address;
   if (!info.notes && fallback.notes) info.notes = fallback.notes;
-  if ((!info.totalAmount || info.totalAmount <= 0) && fallback.totalAmount && fallback.totalAmount > 0) {
+  if (fallback.preferFallbackPrice && fallback.totalAmount && fallback.totalAmount > 0) {
+    info.totalAmount = fallback.totalAmount;
+  } else if ((!info.totalAmount || info.totalAmount <= 0) && fallback.totalAmount && fallback.totalAmount > 0) {
     info.totalAmount = fallback.totalAmount;
   }
-  if (fallback.currency && (!info.currency || info.currency === 'USD')) {
-    info.currency = fallback.currency.toUpperCase();
+  const fallbackCurrency = normalizeCurrencyCode(fallback.currency);
+  if (fallbackCurrency && (fallback.preferFallbackPrice || !info.currency || info.currency === 'USD')) {
+    info.currency = fallbackCurrency;
   }
 
   let daysAdded = 0;
@@ -781,17 +835,67 @@ export async function syncBookingToItinerary(
     const expenseDescription = `${descProvider} ${info.reference ? `(${info.reference})` : ''}`.trim();
     const expenseDate = info.startDate || new Date();
     const expenseCurrency = info.currency || 'USD';
-    const expenseCandidates = await prisma.expense.findMany({ where: { tripId, amount: info.totalAmount } });
-    const existingExpense = expenseCandidates.find((expense) => isLikelyDuplicateExpense(expense, {
+    const incomingExpense = {
       description: expenseDescription,
       notes: rawSourceText,
       amount: info.totalAmount!,
       currency: expenseCurrency,
       date: expenseDate,
-    }));
+    };
+    const booking = await prisma.booking.findFirst({ where: { id: bookingId, tripId } });
+    const bookingDetails = booking?.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
+      ? booking.details as Record<string, unknown>
+      : {};
+    const linkedExpenseId = typeof bookingDetails.expenseId === 'string' ? bookingDetails.expenseId : '';
+    const expenseCandidates = await prisma.expense.findMany({ where: { tripId }, orderBy: { createdAt: 'asc' } });
+    const linkedExpense = linkedExpenseId
+      ? expenseCandidates.find((expense) => expense.id === linkedExpenseId)
+      : undefined;
+    const referenceMatches = expenseCandidates.filter((expense) => hasMatchingReceiptIdentifier(expense, incomingExpense));
+    const normalizeDescription = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const providerKey = normalizeDescription(descProvider);
+    const bookingCandidates = await prisma.booking.findMany({
+      where: { tripId },
+      select: { id: true, provider: true },
+    });
+    const providerIsUnique = providerKey.length > 0 && bookingCandidates.every((candidate) =>
+      candidate.id === bookingId || normalizeDescription(candidate.provider || '') !== providerKey,
+    );
+    const providerMatches = providerIsUnique
+      ? expenseCandidates.filter((expense) => {
+          const description = normalizeDescription(expense.description);
+          if (description !== providerKey && description !== normalizeDescription(expenseDescription)) return false;
+          if (!expense.date) return true;
+          return Math.abs(expense.date.getTime() - expenseDate.getTime()) <= 2 * 24 * 60 * 60 * 1000;
+        })
+      : [];
+    const existingExpense = linkedExpense
+      || referenceMatches[0]
+      || providerMatches[0]
+      || expenseCandidates.find((expense) => isLikelyDuplicateExpense(expense, incomingExpense));
 
-    if (!existingExpense) {
-      await prisma.expense.create({
+    let expenseId: string;
+
+    if (existingExpense) {
+      await prisma.expense.update({
+        where: { id: existingExpense.id },
+        data: {
+          amount: info.totalAmount,
+          currency: expenseCurrency,
+          category: expenseCategory,
+          date: expenseDate,
+        },
+      });
+      expenseId = existingExpense.id;
+      const duplicateIds = [...referenceMatches, ...providerMatches]
+        .filter((expense) => expense.id !== existingExpense.id)
+        .map((expense) => expense.id)
+        .filter((id, index, ids) => ids.indexOf(id) === index);
+      if (duplicateIds.length > 0) {
+        await prisma.expense.deleteMany({ where: { tripId, id: { in: duplicateIds } } });
+      }
+    } else {
+      const createdExpense = await prisma.expense.create({
         data: {
           tripId,
           userId,
@@ -802,7 +906,15 @@ export async function syncBookingToItinerary(
           date: expenseDate,
         },
       });
+      expenseId = createdExpense.id;
       expenseAdded = true;
+    }
+
+    if (booking && bookingDetails.expenseId !== expenseId) {
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: { details: { ...bookingDetails, expenseId } },
+      });
     }
   }
 

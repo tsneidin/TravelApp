@@ -6,6 +6,7 @@ import { asyncHandler, badRequest, notFound } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
 import { config } from '../config.js';
+import { syncBookingToItinerary } from '../services/bookingHelper.js';
 
 export const contentRouter = Router();
 
@@ -379,7 +380,23 @@ contentRouter.post(
         details: req.body.details,
       },
     });
-    res.status(201).json({ booking });
+    const details = booking.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
+      ? booking.details as Record<string, unknown>
+      : {};
+    const confirmedPrice = typeof details.confirmedPrice === 'number' ? details.confirmedPrice : undefined;
+    if (confirmedPrice && confirmedPrice > 0) {
+      await syncBookingToItinerary(tripId, user.id, booking.id, typeof details.sourceRaw === 'string' ? details.sourceRaw : '', booking.title, {
+        type: booking.type,
+        provider: booking.provider ?? undefined,
+        reference: booking.reference ?? undefined,
+        startAt: booking.startAt ?? undefined,
+        endAt: booking.endAt ?? undefined,
+        totalAmount: confirmedPrice,
+        currency: typeof details.currency === 'string' ? details.currency : undefined,
+        preferFallbackPrice: details.priceManuallySet === true,
+      });
+    }
+    res.status(201).json({ booking: await prisma.booking.findUnique({ where: { id: booking.id } }) });
   }),
 );
 
@@ -402,7 +419,23 @@ contentRouter.patch(
         updatedById: user.id,
       },
     });
-    res.json({ booking });
+    const details = booking.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
+      ? booking.details as Record<string, unknown>
+      : {};
+    const confirmedPrice = typeof details.confirmedPrice === 'number' ? details.confirmedPrice : undefined;
+    if (confirmedPrice && confirmedPrice > 0) {
+      await syncBookingToItinerary(tripId, booking.userId ?? user.id, booking.id, typeof details.sourceRaw === 'string' ? details.sourceRaw : '', booking.title, {
+        type: booking.type,
+        provider: booking.provider ?? undefined,
+        reference: booking.reference ?? undefined,
+        startAt: booking.startAt ?? undefined,
+        endAt: booking.endAt ?? undefined,
+        totalAmount: confirmedPrice,
+        currency: typeof details.currency === 'string' ? details.currency : undefined,
+        preferFallbackPrice: details.priceManuallySet === true,
+      });
+    }
+    res.json({ booking: await prisma.booking.findUnique({ where: { id: booking.id } }) });
   }),
 );
 

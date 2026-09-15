@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLikelyDuplicateExpense, isTransportReceipt } from '../src/services/expenseDeduplication.js';
+import { hasMatchingReceiptIdentifier, isLikelyDuplicateExpense, isTransportReceipt } from '../src/services/expenseDeduplication.js';
 
 describe('expense receipt deduplication', () => {
   it('matches the same ITABUS receipt even when AI chose different descriptions', () => {
@@ -22,5 +22,12 @@ describe('expense receipt deduplication', () => {
 
   it('recognizes bus receipts as transport bookings', () => {
     expect(isTransportReceipt('ITABUS', 'Napoli to Bari')).toBe(true);
+  });
+
+  it('links the same receipt when a corrected amount no longer matches', () => {
+    expect(hasMatchingReceiptIdentifier(
+      { description: 'ITABUS (TEST12345)', amount: 3998, currency: 'USD' },
+      { description: 'ITABUS', notes: 'Booking number TEST12345', amount: 39.98, currency: 'EUR' },
+    )).toBe(true);
   });
 });

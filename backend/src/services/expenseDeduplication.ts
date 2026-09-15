@@ -35,14 +35,18 @@ function receiptIdentifiers(value: ExpenseIdentity): Set<string> {
   return identifiers;
 }
 
+export function hasMatchingReceiptIdentifier(existing: ExpenseIdentity, incoming: ExpenseIdentity): boolean {
+  const existingIdentifiers = receiptIdentifiers(existing);
+  const incomingIdentifiers = receiptIdentifiers(incoming);
+  return [...incomingIdentifiers].some((identifier) => existingIdentifiers.has(identifier));
+}
+
 /** Guard against an AI receipt flow logging the booking price a second time. */
 export function isLikelyDuplicateExpense(existing: ExpenseIdentity, incoming: ExpenseIdentity): boolean {
   if (Math.round(Number(existing.amount) * 100) !== Math.round(Number(incoming.amount) * 100)) return false;
   if ((existing.currency || 'USD').toUpperCase() !== (incoming.currency || 'USD').toUpperCase()) return false;
 
-  const existingIdentifiers = receiptIdentifiers(existing);
-  const incomingIdentifiers = receiptIdentifiers(incoming);
-  if ([...incomingIdentifiers].some((identifier) => existingIdentifiers.has(identifier))) return true;
+  if (hasMatchingReceiptIdentifier(existing, incoming)) return true;
 
   const existingDate = dateKey(existing.date);
   const incomingDate = dateKey(incoming.date);

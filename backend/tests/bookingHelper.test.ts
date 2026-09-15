@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeReceiptText, extractFlightLegs, extractHotelInfo, extractBookingInfo } from '../src/services/bookingHelper.js';
+import { sanitizeReceiptText, extractFlightLegs, extractHotelInfo, extractBookingInfo, normalizeCurrencyCode, parseLocalizedAmount } from '../src/services/bookingHelper.js';
 
 describe('sanitizeReceiptText', () => {
   it('cleans up doubled characters from PDF copy-paste', () => {
@@ -12,6 +12,37 @@ describe('sanitizeReceiptText', () => {
   it('preserves normal single-character words and punctuation', () => {
     const normal = 'American Airlines flight from Chicago to Naples';
     expect(sanitizeReceiptText(normal)).toBe(normal);
+  });
+});
+
+describe('European receipt amounts', () => {
+  it('parses decimal commas and European thousands separators', () => {
+    expect(parseLocalizedAmount('39,98')).toBe(39.98);
+    expect(parseLocalizedAmount('1.234,56')).toBe(1234.56);
+    expect(parseLocalizedAmount('1 234,56')).toBe(1234.56);
+    expect(parseLocalizedAmount('1,234.56')).toBe(1234.56);
+  });
+
+  it('extracts an ITABUS total and Euro currency from localized receipt text', () => {
+    const info = extractBookingInfo(`
+      Booking number BUS12345
+      Number of passengers: 2
+      2x Ticket Comfort 2026-10-01 39,98 €
+      Total: 39,98 Euro
+    `);
+    expect(info.reference).toBe('BUS12345');
+    expect(info.totalAmount).toBe(39.98);
+    expect(info.currency).toBe('EUR');
+    expect(info.type).not.toBe('hotel');
+  });
+});
+
+describe('normalizeCurrencyCode', () => {
+  it('normalizes European currency labels and rejects OCR fragments', () => {
+    expect(normalizeCurrencyCode('€')).toBe('EUR');
+    expect(normalizeCurrencyCode('euros')).toBe('EUR');
+    expect(normalizeCurrencyCode('inc')).toBeUndefined();
+    expect(normalizeCurrencyCode('apu')).toBeUndefined();
   });
 });
 
@@ -234,4 +265,3 @@ Total: €619.00
     expect(hotelInfo.reference).toBe('TEST-HM4K29');
   });
 });
-

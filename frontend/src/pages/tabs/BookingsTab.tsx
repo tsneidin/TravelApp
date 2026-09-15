@@ -271,6 +271,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
       {open && (
         <BookingModal
           tripId={trip.id}
+          defaultCurrency={trip.currency}
           booking={editingBooking}
           onClose={() => {
             setOpen(false);

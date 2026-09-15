@@ -337,6 +337,39 @@ test('booking date and time entry respects the saved clock format', async ({ pag
   }
 });
 
+test('booking price accepts a decimal comma and saves a linked expense correction', async ({ page }, testInfo) => {
+  const booking = {
+    id: 'price-booking', tripId: trip.id, type: 'car', title: 'Intercity bus',
+    provider: 'Sample Bus', reference: 'BUS12345', startAt: trip.startDate,
+    details: { confirmedPrice: 3998, currency: 'USD', expenseId: 'expense-1' },
+  };
+  let saved: Record<string, unknown> | undefined;
+  await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({ json: { trip: { ...trip, bookings: [booking] } } }));
+  await page.route(`**/api/trips/${trip.id}/bookings/${booking.id}`, async (route) => {
+    saved = route.request().postDataJSON();
+    await route.fulfill({ json: { booking: { ...booking, ...saved } } });
+  });
+  await page.goto(`/trips/${trip.id}?tab=bookings`);
+  if (testInfo.project.name === 'desktop') {
+    await page.getByTitle('Click to edit reservation, notes, or attachments', { exact: true }).click();
+  } else {
+    await page.locator('.mobile-record-title').getByText('Intercity bus', { exact: true }).click();
+  }
+
+  const form = page.getByRole('dialog');
+  await expect(form.getByLabel('Total Price', { exact: true })).toHaveValue('3998');
+  await form.getByLabel('Total Price', { exact: true }).fill('39,98');
+  await form.getByLabel('Currency', { exact: true }).selectOption('EUR');
+  await form.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  expect(saved).toBeDefined();
+  expect(saved?.details).toMatchObject({
+    confirmedPrice: 39.98,
+    currency: 'EUR',
+    expenseId: 'expense-1',
+    priceManuallySet: true,
+  });
+});
+
 test('day controls show note and journal counts on desktop and mobile', async ({ page }, testInfo) => {
   const note = { id: 'note-1', tripId: trip.id, dayId: 'day-1', name: 'Reservation note', category: 'Note', sortOrder: 0 };
   const populated = {

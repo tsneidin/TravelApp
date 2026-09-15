@@ -1135,7 +1135,8 @@ tbody tr.total-row td {
   .mobile-record-links .btn {
     min-height: 40px;
   }
-  .mobile-expense-actions .btn:not(.icon-btn) {
+  .mobile-expense-actions .btn:not(.icon-btn),
+  .mobile-booking-actions .btn:not(.icon-btn) {
     flex: 1 1 auto;
   }
   .mobile-record-audit {

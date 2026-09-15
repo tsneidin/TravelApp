@@ -217,11 +217,21 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                       <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
                         <button
                           className="btn sm ghost"
-                          title="Edit booking details, notes & attachments"
+                          title="Edit booking"
                           onClick={() => openEdit(b)}
                         >
-                          <Pencil size={13} />
+                          Edit
                         </button>
+                        {isRaw && (
+                          <button
+                            type="button"
+                            className="btn sm ghost"
+                            title="View booking source document"
+                            onClick={() => setRawBooking(b)}
+                          >
+                            <FileText size={13} /> Source
+                          </button>
+                        )}
                         <button
                           className="btn sm ghost danger"
                           title="Delete booking"
@@ -254,10 +264,6 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                       {b.title}
                     </button>
                   </div>
-                  <div className="mobile-record-actions">
-                    <button className="btn sm ghost icon-btn" aria-label={`Edit ${b.title}`} onClick={() => openEdit(b)}><Pencil size={16} /></button>
-                    <button className="btn sm ghost danger icon-btn" aria-label={`Delete ${b.title}`} onClick={() => remove(b)}><Trash2 size={16} /></button>
-                  </div>
                 </div>
                 <dl className="mobile-record-details">
                   <div><dt>Provider</dt><dd>{b.provider || '—'}</dd></div>
@@ -265,14 +271,36 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                   <div><dt>Starts / check-in</dt><dd>{formatBookingDateTime(b.startAt)}</dd></div>
                   <div><dt>Ends / check-out</dt><dd>{formatBookingDateTime(b.endAt)}</dd></div>
                 </dl>
-                {(bNotes.length > 0 || bAtts.length > 0 || isRaw) && (
-                  <div className="mobile-record-links">
-                    {bNotes.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setViewingNotesBooking(b)}><StickyNote size={14} /> {bNotes.length} {bNotes.length === 1 ? 'note' : 'notes'}</button>}
-                    {bAtts.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setViewingAttachmentsBooking(b)}><Paperclip size={14} /> {bAtts.length} {bAtts.length === 1 ? 'document' : 'documents'}</button>}
-                    {isRaw && <button type="button" className="btn sm ghost" onClick={() => setRawBooking(b)}><FileText size={14} /> Source</button>}
+                <div className="mobile-record-links mobile-booking-actions">
+                  <button className="btn sm ghost" onClick={() => openEdit(b)}>Edit</button>
+                  {isRaw && (
+                    <button type="button" className="btn sm ghost" onClick={() => setRawBooking(b)}>
+                      <FileText size={14} /> Source
+                    </button>
+                  )}
+                  {bNotes.length > 0 && (
+                    <button type="button" className="btn sm ghost" onClick={() => setViewingNotesBooking(b)}>
+                      <StickyNote size={14} /> {bNotes.length === 1 ? 'Note' : `Notes (${bNotes.length})`}
+                    </button>
+                  )}
+                  {bAtts.length > 0 && (
+                    <button type="button" className="btn sm ghost" onClick={() => setViewingAttachmentsBooking(b)}>
+                      <Paperclip size={14} /> {bAtts.length === 1 ? 'Doc' : `Docs (${bAtts.length})`}
+                    </button>
+                  )}
+                  <button
+                    className="btn sm ghost danger icon-btn"
+                    aria-label={`Delete ${b.title}`}
+                    onClick={() => remove(b)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                {(b.createdBy || b.updatedBy) && (
+                  <div className="mobile-record-audit">
+                    <AuditBadge createdBy={b.createdBy} createdAt={b.createdAt} updatedBy={b.updatedBy} updatedAt={b.updatedAt} />
                   </div>
                 )}
-                {(b.createdBy || b.updatedBy) && <div className="mobile-record-audit"><AuditBadge createdBy={b.createdBy} createdAt={b.createdAt} updatedBy={b.updatedBy} updatedAt={b.updatedAt} /></div>}
               </article>
             );
           })}

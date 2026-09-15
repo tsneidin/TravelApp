@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, StickyNote, ArrowRight, CheckCircle2,
-  Users, DollarSign, Wallet, Scale, ArrowUpRight, ArrowDownLeft
+  Users, DollarSign, Wallet, Scale, ArrowUpRight, ArrowDownLeft,
+  Ticket, AlertTriangle
 } from 'lucide-react';
 import { apiPost, apiPatch, apiDelete } from '../../lib/api';
 import type { Trip, Expense, AuditUser, ExpenseSplit } from '../../lib/types';
@@ -240,15 +241,24 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
     };
   }, [expenses, allMembers, user?.id]);
 
-  const linkedBooking = useMemo(() => {
-    if (!deletingExpense) return null;
+  const getLinkedBooking = (expenseId: string) => {
     return trip.bookings?.find((b) => {
       const details = b.details && typeof b.details === 'object' && !Array.isArray(b.details)
         ? b.details as Record<string, unknown>
         : null;
-      return details?.expenseId === deletingExpense.id;
+      return details?.expenseId === expenseId;
     }) ?? null;
+  };
+
+  const deletingLinkedBooking = useMemo(() => {
+    if (!deletingExpense) return null;
+    return getLinkedBooking(deletingExpense.id);
   }, [deletingExpense, trip.bookings]);
+
+  const editingLinkedBooking = useMemo(() => {
+    if (!editingExpense) return null;
+    return getLinkedBooking(editingExpense.id);
+  }, [editingExpense, trip.bookings]);
 
   const saveExpense = async () => {
     if (!description.trim() || amount.trim() === '') return;
@@ -483,11 +493,32 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                   {sortedExpenses.map((e) => {
                     const payer = e.paidBy || (allMembers.find((m) => m.id === e.paidById) ?? null);
                     const splitCount = Array.isArray(e.splits) ? e.splits.length : allMembers.length;
+                    const linkedBooking = getLinkedBooking(e.id);
                     return (
                       <tr key={e.id}>
                         <td>{e.date ? new Date(e.date).toLocaleDateString() : '—'}</td>
                         <td style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 600 }}>{e.description}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>{e.description}</span>
+                            {linkedBooking && (
+                              <span
+                                className="badge"
+                                title={`Linked to booking: ${linkedBooking.title}`}
+                                style={{
+                                  fontSize: '0.7rem',
+                                  padding: '1px 6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  background: 'var(--color-primary-subtle, rgba(99, 102, 241, 0.12))',
+                                  color: 'var(--color-primary, #6366f1)',
+                                  borderColor: 'transparent',
+                                }}
+                              >
+                                <Ticket size={11} /> Linked to booking
+                              </span>
+                            )}
+                          </div>
                           <AuditBadge createdBy={e.createdBy} createdAt={e.createdAt} />
                         </td>
                         <td><span className="badge">{e.category}</span></td>
@@ -551,16 +582,46 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                 const payer = e.paidBy || (allMembers.find((m) => m.id === e.paidById) ?? null);
                 const splitCount = Array.isArray(e.splits) ? e.splits.length : allMembers.length;
                 const splitLabel = e.splitType === 'none' ? 'Payer only' : e.splitType === 'exact' ? `Exact · ${splitCount}` : e.splitType === 'percentage' ? `Percentage · ${splitCount}` : e.splitType === 'shares' ? `Shares · ${splitCount}` : `Equal · ${splitCount}`;
+                const linkedBooking = getLinkedBooking(e.id);
                 return (
                   <article className="mobile-record-card" key={e.id}>
                     <div className="mobile-record-card-head">
                       <div className="mobile-record-title-wrap">
                         <span className="badge mobile-record-type">{e.category}</span>
+                        {linkedBooking && (
+                          <span
+                            className="badge"
+                            title={`Linked to booking: ${linkedBooking.title}`}
+                            style={{
+                              fontSize: '0.68rem',
+                              padding: '1px 5px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              background: 'var(--color-primary-subtle, rgba(99, 102, 241, 0.12))',
+                              color: 'var(--color-primary, #6366f1)',
+                              borderColor: 'transparent',
+                            }}
+                          >
+                            <Ticket size={10} /> Linked
+                          </span>
+                        )}
                         <button className="mobile-record-title" type="button" onClick={() => openEditExpenseModal(e)}>{e.description}</button>
                       </div>
                       <div className="mobile-record-amount">{fmt(e.amount)} <small>{e.currency}</small></div>
                     </div>
                     <dl className="mobile-record-details expense-details">
+                      {linkedBooking && (
+                        <div>
+                          <dt>Booking</dt>
+                          <dd style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
+                            <Ticket size={13} style={{ flexShrink: 0, color: 'var(--color-primary, #6366f1)' }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {linkedBooking.title}
+                            </span>
+                          </dd>
+                        </div>
+                      )}
                       <div><dt>Date</dt><dd>{e.date ? new Date(e.date).toLocaleDateString() : '—'}</dd></div>
                       <div><dt>Paid by</dt><dd className="mobile-person"><Avatar user={payer} size="sm" /> {payer?.name || '—'}</dd></div>
                       <div><dt>Split</dt><dd>{splitLabel}</dd></div>
@@ -694,6 +755,32 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
       {/* ADD / EDIT EXPENSE MODAL */}
       {open && (
         <Modal title={editingExpense ? 'Edit expense' : 'Add expense'} onClose={() => setOpen(false)} wide>
+          {editingExpense && editingLinkedBooking && (
+            <div
+              style={{
+                marginBottom: 16,
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: 'rgba(234, 179, 8, 0.12)',
+                border: '1px solid rgba(234, 179, 8, 0.35)',
+                color: 'var(--color-warning-text, #eab308)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                fontSize: '0.86rem',
+                lineHeight: 1.45,
+              }}
+            >
+              <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1, color: '#eab308' }} />
+              <div>
+                <strong style={{ display: 'block', color: '#facc15', marginBottom: 2 }}>
+                  Warning: Linked to Booking "{editingLinkedBooking.title}"
+                </strong>
+                This expense was created from or is linked to a booking reservation. Editing this expense updates your trip budget and member splits, but will not modify vendor reservation details in the Bookings tab.
+              </div>
+            </div>
+          )}
+
           <div className="field mb-3">
             <label>Description</label>
             <input
@@ -977,10 +1064,10 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
       {deletingExpense && (
         <ConfirmModal
           title="Delete expense"
-          confirmLabel={linkedBooking && deleteAlsoBooking ? 'Delete Expense & Booking' : 'Delete Expense'}
+          confirmLabel={deletingLinkedBooking && deleteAlsoBooking ? 'Delete Expense & Booking' : 'Delete Expense'}
           danger
           onConfirm={async () => {
-            const query = linkedBooking && deleteAlsoBooking ? '?deleteBooking=true' : '';
+            const query = deletingLinkedBooking && deleteAlsoBooking ? '?deleteBooking=true' : '';
             await apiDelete(`/trips/${trip.id}/expenses/${deletingExpense.id}${query}`);
             setDeletingExpense(null);
             await reload();
@@ -991,7 +1078,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
             Delete expense <strong>"{deletingExpense.description}"</strong> ({fmt(deletingExpense.amount)} {deletingExpense.currency})?
           </p>
 
-          {linkedBooking && (
+          {deletingLinkedBooking && (
             <div
               style={{
                 margin: '12px 0 16px',
@@ -1013,7 +1100,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
                     Also delete linked booking:
                   </div>
                   <div style={{ color: 'var(--muted)', fontSize: '0.84rem', marginTop: 2 }}>
-                    "{linkedBooking.title}" {linkedBooking.provider ? `(${linkedBooking.provider})` : ''}
+                    "{deletingLinkedBooking.title}" {deletingLinkedBooking.provider ? `(${deletingLinkedBooking.provider})` : ''}
                   </div>
                 </div>
               </label>

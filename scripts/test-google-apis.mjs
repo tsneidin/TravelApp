@@ -56,7 +56,7 @@ try {
   process.exit(1);
 }
 
-const placesKey = env.GOOGLE_PLACES_API_KEY;
+const placesKey = env.GOOGLE_PLACES_BACKEND_API_KEY || env.GOOGLE_PLACES_API_KEY;
 const browserKey = env.VITE_GOOGLE_MAPS_API_KEY;
 const referrer = arg('--referrer') || env.PUBLIC_BASE_URL || 'http://localhost:8070/';
 let failed = false;
@@ -65,7 +65,7 @@ console.log(`Testing Google APIs using ${envPath}`);
 console.log(`Browser referrer: ${referrer}`);
 
 if (!placesKey) {
-  console.log('FAIL  GOOGLE_PLACES_API_KEY is missing or empty');
+  console.log('FAIL  GOOGLE_PLACES_BACKEND_API_KEY or GOOGLE_PLACES_API_KEY is missing or empty');
   failed = true;
 } else {
   const places = await jsonRequest(

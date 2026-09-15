@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.134
+# TravelApp usability polish, 0.0.140
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,10 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- Contained the monthly calendar in its panel, stabilized day and event widths, and added horizontal month scrolling on mobile.
+- Prevented AI booking receipts from creating a second matching budget expense, including transport receipts forced through the activity booking type.
+- Scoped expense deletion to the active trip and verified every expense row can be removed from desktop and mobile budget views.
+- Removed the Add Trip Note shortcut from the left navigation.
 - Replaced the segmented time picker with compact clock fields and separate desktop and mobile layouts.
 - Limited journals to one overall trip journal and one journal per trip day, with validation and request errors surfaced in the form.
 - Itinerary Notes and Journals actions now show their current counts in both desktop controls and the mobile day menu.
@@ -29,10 +33,10 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 ## Verification
 
 - Frontend lint, type checking, and production build passed.
-- Backend lint and type checking passed; all 73 tests passed with a generated Prisma client and test-only environment values, including Google request and response handling tests.
-- 46 browser tests passed with two expected desktop skips, including journal creation, count indicators, compact clock input, and mobile layout checks.
+- Backend lint and type checking passed; all 66 tests passed with test-only environment values.
+- 53 browser tests passed with four expected responsive-layout skips, including calendar containment, expense deletion, journal saving, count indicators, compact clock input, and mobile layout checks.
 - Browser viewport sizes: 320 by 568, 390 by 844, and 1440 by 1000 pixels.
-- Browser tests cover sample populated and empty trips, all eight trip sections, date display, form failures, deletion failures, keyboard focus, and mobile navigation.
+- Browser tests cover sample populated and empty trips, all eight trip sections, a crowded calendar, expense deletion, date display, form failures, keyboard focus, and mobile navigation.
 - Reviewed generated mobile and desktop screenshots. Tests save populated-trip screenshots under `frontend/test-results/`.
 
 Browser tests mock API responses. Live database persistence, Google Maps rendering,

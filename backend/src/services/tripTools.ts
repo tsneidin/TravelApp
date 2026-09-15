@@ -3,6 +3,7 @@ import { syncBookingToItinerary } from './bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from './dayReconciliation.js';
 import { fetchSuggestions, type Suggestion } from './suggestions.js';
 import { inferCategoryFromText } from './categoryClassifier.js';
+import { isLikelyDuplicateExpense } from './expenseDeduplication.js';
 import type { BookingType, ExpenseCategory } from '@prisma/client';
 
 export const BOOKING_TYPES = ['flight', 'hotel', 'car', 'activity'] as const;
@@ -475,7 +476,7 @@ export const TRIP_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'add_expense',
-      description: 'Add an expense to the trip budget.',
+      description: 'Add an expense to the trip budget. Do not call this for a receipt already processed by add_booking because add_booking records the expense automatically.',
       parameters: {
         type: 'object',
         properties: {
@@ -1321,17 +1322,36 @@ export async function executeTripTool(
       if (!desc || !Number.isFinite(amount)) return { action: name, summary: 'add_expense: description and amount required', ok: false };
       const cat = String(a.category ?? 'other').toLowerCase();
       const category: ExpenseCategory = EXPENSE_CATEGORIES.includes(cat as ExpenseCategory) ? (cat as ExpenseCategory) : 'other';
+      const currency = a.currency ? String(a.currency).toUpperCase().trim() : 'USD';
+      const date = toDate(a.date);
+      const notes = a.notes ? String(a.notes).trim() : undefined;
+      const candidates = await prisma.expense.findMany({ where: { tripId, amount } });
+      const duplicate = candidates.find((expense) => isLikelyDuplicateExpense(expense, {
+        description: desc,
+        notes: [notes, ctx.sourceText].filter(Boolean).join('\n') || undefined,
+        amount,
+        currency,
+        date,
+      }));
+      if (duplicate) {
+        return {
+          action: name,
+          summary: `Expense already exists as "${duplicate.description}" (${duplicate.amount} ${duplicate.currency}); no duplicate was added`,
+          ok: true,
+          expenseId: duplicate.id,
+        };
+      }
 
       const expense = await prisma.expense.create({
         data: {
           tripId,
           userId,
           description: desc,
-          notes: a.notes ? String(a.notes).trim() : undefined,
+          notes,
           amount,
-          currency: a.currency ? String(a.currency).toUpperCase().trim() : 'USD',
+          currency,
           category,
-          date: toDate(a.date),
+          date,
         },
       });
       return { action: name, summary: `Added expense "${desc}" for ${amount} ${expense.currency}`, ok: true, expenseId: expense.id };
@@ -1341,7 +1361,7 @@ export async function executeTripTool(
       const expenseId = typeof a.expenseId === 'string' ? a.expenseId.trim() : '';
       const descQuery = typeof a.description === 'string' ? a.description.trim() : '';
 
-      let target = expenseId ? await prisma.expense.findUnique({ where: { id: expenseId } }) : null;
+      let target = expenseId ? await prisma.expense.findFirst({ where: { id: expenseId, tripId } }) : null;
       if (!target && descQuery) {
         target = await prisma.expense.findFirst({
           where: { tripId, description: { contains: descQuery, mode: 'insensitive' } },
@@ -1368,7 +1388,7 @@ export async function executeTripTool(
       const expenseId = typeof a.expenseId === 'string' ? a.expenseId.trim() : '';
       const descQuery = typeof a.description === 'string' ? a.description.trim() : '';
 
-      let target = expenseId ? await prisma.expense.findUnique({ where: { id: expenseId } }) : null;
+      let target = expenseId ? await prisma.expense.findFirst({ where: { id: expenseId, tripId } }) : null;
       if (!target && descQuery) {
         target = await prisma.expense.findFirst({
           where: { tripId, description: { contains: descQuery, mode: 'insensitive' } },

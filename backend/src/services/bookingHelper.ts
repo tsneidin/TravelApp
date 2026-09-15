@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import type { BookingType } from '@prisma/client';
 import { cleanAirportCity, toDayKey, reconcileTripDays } from './dayReconciliation.js';
+import { isLikelyDuplicateExpense, isTransportReceipt } from './expenseDeduplication.js';
 
 export interface ExtractedFlightLeg {
   carrier: string;
@@ -481,6 +482,7 @@ export async function syncBookingToItinerary(
   };
 
   const cleanTitle = fallbackTitle.replace(/^(?:🏨|✈️|🚗|🎟️|🛬|🏠|📍)\s*/, '').trim();
+  const transportReceipt = isTransportReceipt(rawSourceText, fallbackTitle, fallback.provider, info.provider);
 
   // 1. Process explicit flight legs
   if (info.legs.length > 0) {
@@ -705,8 +707,8 @@ export async function syncBookingToItinerary(
     const itineraryDate = info.startDate || fallback.startAt || trip.startDate;
     if (itineraryDate) {
       const dayId = await getOrCreateDay(itineraryDate);
-      const icon = fallback.type === 'activity' ? '🎟️' : '📍';
-      const category = fallback.type === 'activity' ? 'Activity' : 'Transport';
+      const icon = fallback.type === 'activity' && !transportReceipt ? '🎟️' : '📍';
+      const category = fallback.type === 'activity' && !transportReceipt ? 'Activity' : 'Transport';
       const name = `${icon} ${cleanTitle}`;
 
       const existingPlace = await prisma.place.findFirst({
@@ -764,7 +766,7 @@ export async function syncBookingToItinerary(
       info.type === 'hotel' ||
       /hotel|apartment|airbnb|hostel|villa|resort|accommodation|lodging/i.test(fallbackTitle) ||
       /check-in|property address/i.test(rawSourceText);
-    const isActivityBooking = fallback.type === 'activity';
+    const isActivityBooking = fallback.type === 'activity' && !transportReceipt;
 
     const expenseCategory = isHotelBooking
       ? 'lodging'
@@ -772,29 +774,32 @@ export async function syncBookingToItinerary(
       ? 'activity'
       : 'transport';
 
-    const existingExpense = await prisma.expense.findFirst({
-      where: {
-        tripId,
-        amount: info.totalAmount,
-        category: expenseCategory,
-      },
-    });
+    const descProvider =
+      info.provider && info.provider !== 'Airline' && info.provider !== 'Accommodation'
+        ? info.provider
+        : fallback.provider || cleanTitle;
+    const expenseDescription = `${descProvider} ${info.reference ? `(${info.reference})` : ''}`.trim();
+    const expenseDate = info.startDate || new Date();
+    const expenseCurrency = info.currency || 'USD';
+    const expenseCandidates = await prisma.expense.findMany({ where: { tripId, amount: info.totalAmount } });
+    const existingExpense = expenseCandidates.find((expense) => isLikelyDuplicateExpense(expense, {
+      description: expenseDescription,
+      notes: rawSourceText,
+      amount: info.totalAmount!,
+      currency: expenseCurrency,
+      date: expenseDate,
+    }));
 
     if (!existingExpense) {
-      const descProvider =
-        info.provider && info.provider !== 'Airline' && info.provider !== 'Accommodation'
-          ? info.provider
-          : fallback.provider || cleanTitle;
-
       await prisma.expense.create({
         data: {
           tripId,
           userId,
-          description: `${descProvider} ${info.reference ? `(${info.reference})` : ''}`.trim(),
+          description: expenseDescription,
           amount: info.totalAmount,
-          currency: info.currency || 'USD',
+          currency: expenseCurrency,
           category: expenseCategory,
-          date: info.startDate || new Date(),
+          date: expenseDate,
         },
       });
       expenseAdded = true;

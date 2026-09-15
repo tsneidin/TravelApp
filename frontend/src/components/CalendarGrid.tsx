@@ -114,7 +114,7 @@ export function CalendarGrid({
   };
 
   return (
-    <div className="cal-grid">
+    <div className="cal-grid" role="grid" aria-label={`${new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })} calendar`}>
       {DOW.map((d) => (
         <div key={d} className="cal-dow">
           {d}
@@ -157,7 +157,7 @@ export function CalendarGrid({
                   title={`${tooltip} (Click to open in itinerary)`}
                 >
                   <span className="pill">{dot}</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayTitle}</span>
+                  <span className="cal-event-title">{displayTitle}</span>
                 </div>
               );
             })}

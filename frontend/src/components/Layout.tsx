@@ -641,26 +641,6 @@ export function Layout() {
                                         );
                                       })}
                                     </div>
-
-                                    {/* Add Trip Note quick action */}
-                                    <button
-                                      type="button"
-                                      className="side-map-action-btn"
-                                      onClick={() => {
-                                        navigate(`/trips/${t.id}?tab=itinerary#trip-notes`);
-                                        setTimeout(() => {
-                                          window.dispatchEvent(
-                                            new CustomEvent('travelapp:open_day_notes', {
-                                              detail: { tripId: t.id, dayId: 'trip' },
-                                            }),
-                                          );
-                                        }, 70);
-                                      }}
-                                      title="Add general trip notes or reference links"
-                                    >
-                                      <Plus size={12} />
-                                      <span>Add Trip Note</span>
-                                    </button>
                                   </div>
                                 )}
                               </div>

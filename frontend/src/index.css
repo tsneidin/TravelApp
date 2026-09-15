@@ -1280,8 +1280,30 @@ tbody tr.total-row td {
 }
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  min-width: 700px;
+  gap: 6px;
+}
+.calendar-panel {
+  min-width: 0;
+  padding: 14px;
+  overflow: hidden;
+}
+.calendar-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  border-radius: 8px;
+}
+.calendar-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.calendar-help-mobile {
+  display: none;
 }
 .cal-dow {
   font-size: 0.68rem;
@@ -1303,6 +1325,7 @@ tbody tr.total-row td {
   gap: 4px;
   transition: border-color 0.15s;
   position: relative;
+  min-width: 0;
 }
 .cal-cell.empty {
   background: rgba(22, 33, 58, 0.35);
@@ -1336,6 +1359,15 @@ tbody tr.total-row td {
   white-space: nowrap;
   text-overflow: ellipsis;
   transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.cal-event-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cal-event:hover {
   filter: brightness(1.2);
@@ -2679,19 +2711,30 @@ tbody tr.total-row td {
 
   /* Calendar Mobile Grid */
   .cal-grid {
-    gap: 4px !important;
+    grid-template-columns: repeat(7, minmax(96px, 1fr));
+    min-width: 672px;
+    gap: 5px !important;
+  }
+  .calendar-panel {
+    padding: 8px;
+  }
+  .calendar-scroll {
+    padding-bottom: 6px;
+  }
+  .calendar-help-mobile {
+    display: inline;
   }
   .cal-cell {
-    min-height: 62px !important;
-    padding: 3px !important;
-    border-radius: 6px !important;
+    min-height: 96px !important;
+    padding: 5px !important;
+    border-radius: 8px !important;
   }
   .cal-cell .day-num {
     font-size: 0.68rem !important;
   }
   .cal-event {
-    padding: 1px 3px !important;
-    font-size: 0.62rem !important;
+    padding: 3px 5px !important;
+    font-size: 0.68rem !important;
     border-radius: 4px !important;
     gap: 3px !important;
   }

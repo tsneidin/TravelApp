@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
-import { asyncHandler, badRequest } from '../lib/errors.js';
+import { asyncHandler, badRequest, notFound } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
 import { config } from '../config.js';
@@ -341,7 +341,8 @@ contentRouter.delete(
   asyncHandler(async (req, res) => {
     const { tripId, expenseId } = req.params;
     await requireTripAccess(req, tripId, 'editor');
-    await prisma.expense.delete({ where: { id: expenseId } });
+    const deleted = await prisma.expense.deleteMany({ where: { id: expenseId, tripId } });
+    if (deleted.count === 0) throw notFound('Expense not found');
     res.status(204).send();
   }),
 );

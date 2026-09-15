@@ -140,19 +140,22 @@ export function CalendarView() {
         <span className="small muted">{events.length} events total</span>
       </div>
 
-      <div className="panel" style={{ padding: 14 }}>
-        <CalendarGrid
-          year={year}
-          month={month}
-          events={events}
-          tripNames={tripNames}
-          onSelectDate={openAdd}
-          onMoveEvent={moveEvent}
-        />
+      <div className="panel calendar-panel">
+        <div className="calendar-scroll" tabIndex={0} aria-label="Scrollable monthly calendar">
+          <CalendarGrid
+            year={year}
+            month={month}
+            events={events}
+            tripNames={tripNames}
+            onSelectDate={openAdd}
+            onMoveEvent={moveEvent}
+          />
+        </div>
       </div>
 
-      <div className="small muted mt">
-        Tip: drag an event onto another date to reschedule it. Click any day to add a place or booking.
+      <div className="small muted mt calendar-help">
+        <span className="calendar-help-mobile">Swipe sideways to see the full month. </span>
+        Drag an event onto another date to reschedule it. Click any day to add a place or booking.
       </div>
 
       {addOpen && (

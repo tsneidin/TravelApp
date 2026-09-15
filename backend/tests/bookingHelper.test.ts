@@ -264,4 +264,21 @@ Total: €619.00
     expect(hotelInfo.title).toBe('Vesuvio Terrace Apartment');
     expect(hotelInfo.reference).toBe('TEST-HM4K29');
   });
+
+  it('extracts correct total amount from tabular confirmation text with column header Total', () => {
+    const tabularReceipt = `
+Booking-summary 
+Your travel price 
+Amount Item Unit price Total 
+2 Apulia, 8 days - Double room €929.00 €1,858.00 
+1 21-gear men's €99.00 €99.00 
+1 Electric bike €269.00 €269.00 
+1 Digital travel documents €0.00 €0.00 
+Total amount €2,226.00 
+Eurofun Touristik GmbH
+    `;
+    const info = extractBookingInfo(tabularReceipt);
+    expect(info.totalAmount).toBe(2226);
+    expect(info.currency).toBe('EUR');
+  });
 });

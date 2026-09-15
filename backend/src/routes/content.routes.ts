@@ -341,9 +341,35 @@ contentRouter.delete(
   '/:tripId/expenses/:expenseId',
   asyncHandler(async (req, res) => {
     const { tripId, expenseId } = req.params;
+    const deleteBooking = String(req.query.deleteBooking).toLowerCase() === 'true';
     await requireTripAccess(req, tripId, 'editor');
     const deleted = await prisma.expense.deleteMany({ where: { id: expenseId, tripId } });
     if (deleted.count === 0) throw notFound('Expense not found');
+
+    // Find any bookings in this trip linked to this expense
+    const tripBookings = await prisma.booking.findMany({ where: { tripId } });
+    for (const b of tripBookings) {
+      const details = b.details && typeof b.details === 'object' && !Array.isArray(b.details)
+        ? b.details as Record<string, unknown>
+        : null;
+      if (details && details.expenseId === expenseId) {
+        if (deleteBooking) {
+          await prisma.booking.delete({ where: { id: b.id } });
+        } else {
+          await prisma.booking.update({
+            where: { id: b.id },
+            data: {
+              details: {
+                ...details,
+                expenseId: null,
+                expenseDeleted: true,
+              },
+            },
+          });
+        }
+      }
+    }
+
     res.status(204).send();
   }),
 );
@@ -384,7 +410,7 @@ contentRouter.post(
       ? booking.details as Record<string, unknown>
       : {};
     const confirmedPrice = typeof details.confirmedPrice === 'number' ? details.confirmedPrice : undefined;
-    if (confirmedPrice && confirmedPrice > 0) {
+    if (confirmedPrice !== undefined && confirmedPrice >= 0) {
       await syncBookingToItinerary(tripId, user.id, booking.id, typeof details.sourceRaw === 'string' ? details.sourceRaw : '', booking.title, {
         type: booking.type,
         provider: booking.provider ?? undefined,
@@ -423,7 +449,7 @@ contentRouter.patch(
       ? booking.details as Record<string, unknown>
       : {};
     const confirmedPrice = typeof details.confirmedPrice === 'number' ? details.confirmedPrice : undefined;
-    if (confirmedPrice && confirmedPrice > 0) {
+    if (confirmedPrice !== undefined && confirmedPrice >= 0) {
       await syncBookingToItinerary(tripId, booking.userId ?? user.id, booking.id, typeof details.sourceRaw === 'string' ? details.sourceRaw : '', booking.title, {
         type: booking.type,
         provider: booking.provider ?? undefined,
@@ -443,7 +469,21 @@ contentRouter.delete(
   '/:tripId/bookings/:bookingId',
   asyncHandler(async (req, res) => {
     const { tripId, bookingId } = req.params;
+    const deleteExpense = String(req.query.deleteExpense).toLowerCase() === 'true';
     await requireTripAccess(req, tripId, 'editor');
+
+    const booking = await prisma.booking.findFirst({ where: { id: bookingId, tripId } });
+    if (!booking) throw notFound('Booking not found');
+
+    const details = booking.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
+      ? booking.details as Record<string, unknown>
+      : null;
+    const linkedExpenseId = typeof details?.expenseId === 'string' ? details.expenseId : null;
+
+    if (linkedExpenseId && deleteExpense) {
+      await prisma.expense.deleteMany({ where: { id: linkedExpenseId, tripId } });
+    }
+
     await prisma.booking.delete({ where: { id: bookingId } });
     res.status(204).send();
   }),

@@ -290,14 +290,14 @@ export function BookingModal({
         sourceRaw: form.sourceRaw.trim() ? form.sourceRaw.trim() : undefined,
       };
       const parsedPrice = parsePriceInput(form.price);
-      if (form.price.trim() && (!parsedPrice || parsedPrice <= 0)) {
-        alert('Enter a valid positive booking price.');
+      if (form.price.trim() && (parsedPrice === undefined || parsedPrice < 0)) {
+        alert('Enter a valid booking price (0 or greater).');
         return;
       }
       const originalPrice = bookingDetail(booking, 'confirmedPrice');
       const originalCurrency = bookingDetail(booking, 'currency');
       const priceChanged = parsedPrice !== originalPrice || form.currency !== (originalCurrency || defaultCurrency);
-      if (parsedPrice) {
+      if (parsedPrice !== undefined) {
         details.confirmedPrice = parsedPrice;
         details.currency = form.currency;
         if (priceChanged) details.priceManuallySet = true;
@@ -412,7 +412,7 @@ export function BookingModal({
               value={form.price}
               inputMode="decimal"
               onChange={(e) => setForm({ ...form, price: e.target.value })}
-              placeholder="e.g. 39,98 or 39.98"
+              placeholder="e.g. 0.00, 39,98 or 39.98 (0 for free)"
             />
           </div>
           <div className="field small">

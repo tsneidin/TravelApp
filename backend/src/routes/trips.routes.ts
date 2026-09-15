@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { asyncHandler, badRequest, notFound, forbidden } from '../lib/errors.js';
 import { prisma } from '../db.js';
 import { getUser, requireTripAccess, requireFields } from '../middleware/auth.js';
-import { syncBookingToItinerary } from '../services/bookingHelper.js';
 import { reconcileTripDays, isGenericDayLabel } from '../services/dayReconciliation.js';
 import { inferCategoryFromText } from '../services/ai.js';
 import { searchGooglePlaces } from '../services/googlePlaceSearch.js';
@@ -183,31 +182,6 @@ tripsRouter.get(
     const { tripId } = req.params;
     await requireTripAccess(req, tripId, 'viewer');
     await reconcileTripDays(tripId);
-
-    // Backfill confirmations imported before booking-to-itinerary synchronization
-    // was reliable. The helper performs duplicate checks, so this is idempotent.
-    const confirmationBookings = await prisma.booking.findMany({
-      where: { tripId },
-    });
-    for (const booking of confirmationBookings) {
-      const details = booking.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
-        ? booking.details as Record<string, unknown>
-        : {};
-      const sourceRaw = typeof details.sourceRaw === 'string' ? details.sourceRaw : '';
-      if (!sourceRaw) continue;
-      const confirmedPrice = typeof details.confirmedPrice === 'number' ? details.confirmedPrice : undefined;
-      const currency = typeof details.currency === 'string' ? details.currency : undefined;
-      await syncBookingToItinerary(tripId, booking.userId ?? getUser(req).id, booking.id, sourceRaw, booking.title, {
-        type: booking.type,
-        provider: booking.provider ?? undefined,
-        reference: booking.reference ?? undefined,
-        startAt: booking.startAt ?? undefined,
-        endAt: booking.endAt ?? undefined,
-        totalAmount: confirmedPrice,
-        currency,
-        preferFallbackPrice: details.priceManuallySet === true,
-      });
-    }
 
     res.json({ trip: await loadTrip(tripId) });
   }),

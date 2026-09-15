@@ -183,9 +183,10 @@ export function extractFlightLegs(rawText: string): ExtractedBookingInfo {
   // Extract total amount & currency
   let totalAmount: number | undefined;
   let currency = 'USD';
-  const priceMatch = /(?:total(?:\s*paid)?|flight\s*subtotal)[\s:]*([€$£¥]?)\s*([0-9](?:[0-9 .,'\u00a0]*[0-9])?)\s*(EUR(?:O|OS)?|USD|GBP|JPY|[€$£¥])?/i.exec(
-    text,
-  );
+  const priceMatch =
+    /(?:total\s*amount|total\s*paid|grand\s*total|flight\s*subtotal|total\s*:)[^\S\r\n]*[:=]?(?:\r?\n)?[^\S\r\n]*([€$£¥]?)[^\S\r\n]*([0-9](?:[0-9 .,'\u00a0]*[0-9])?)[^\S\r\n]*(EUR(?:O|OS)?|USD|GBP|JPY|[€$£¥])?/i.exec(
+      text,
+    );
   if (priceMatch) {
     totalAmount = parseLocalizedAmount(priceMatch[2]);
     currency = detectCurrency(priceMatch[1], priceMatch[3], text) || 'USD';
@@ -393,7 +394,7 @@ export function extractHotelInfo(rawText: string): ExtractedBookingInfo {
   let totalAmount: number | undefined;
   let currency = 'USD';
   const totalMatch =
-    /(?:Total(?:\s*paid)?|Grand\s*total)[\s:]*([€$£¥]?)\s*([0-9](?:[0-9 .,'\u00a0]*[0-9])?)\s*(EUR(?:O|OS)?|USD|GBP|JPY|[€$£¥])?/i.exec(
+    /(?:total\s*amount|total\s*paid|grand\s*total|total\s*price|total\s*:)[^\S\r\n]*[:=]?(?:\r?\n)?[^\S\r\n]*([€$£¥]?)[^\S\r\n]*([0-9](?:[0-9 .,'\u00a0]*[0-9])?)[^\S\r\n]*(EUR(?:O|OS)?|USD|GBP|JPY|[€$£¥])?/i.exec(
       text,
     );
   if (totalMatch) {
@@ -508,9 +509,9 @@ export async function syncBookingToItinerary(
   if (!info.endDate && fallback.endAt) info.endDate = fallback.endAt;
   if (!info.address && fallback.address) info.address = fallback.address;
   if (!info.notes && fallback.notes) info.notes = fallback.notes;
-  if (fallback.preferFallbackPrice && fallback.totalAmount && fallback.totalAmount > 0) {
+  if (fallback.preferFallbackPrice && fallback.totalAmount !== undefined && fallback.totalAmount >= 0) {
     info.totalAmount = fallback.totalAmount;
-  } else if ((!info.totalAmount || info.totalAmount <= 0) && fallback.totalAmount && fallback.totalAmount > 0) {
+  } else if ((info.totalAmount === undefined || info.totalAmount <= 0) && fallback.totalAmount !== undefined && fallback.totalAmount >= 0) {
     info.totalAmount = fallback.totalAmount;
   }
   const fallbackCurrency = normalizeCurrencyCode(fallback.currency);
@@ -813,8 +814,26 @@ export async function syncBookingToItinerary(
     }
   }
 
-  // 2. Automatically log expense if price is extracted
-  if (info.totalAmount && info.totalAmount > 0) {
+  // 2. Automatically log or sync expense
+  const booking = await prisma.booking.findFirst({ where: { id: bookingId, tripId } });
+  const bookingDetails = booking?.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
+    ? booking.details as Record<string, unknown>
+    : {};
+  const linkedExpenseId = typeof bookingDetails.expenseId === 'string' ? bookingDetails.expenseId : '';
+  const expenseDeleted = bookingDetails.expenseDeleted === true;
+
+  if (info.totalAmount === 0) {
+    // If the booking is free / zero-cost, delete any previously linked expense and clear the reference
+    if (linkedExpenseId) {
+      await prisma.expense.deleteMany({ where: { id: linkedExpenseId, tripId } });
+      if (booking) {
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: { details: { ...bookingDetails, expenseId: null } },
+        });
+      }
+    }
+  } else if (info.totalAmount && info.totalAmount > 0 && !expenseDeleted) {
     const isHotelBooking =
       fallback.type === 'hotel' ||
       info.type === 'hotel' ||
@@ -842,11 +861,6 @@ export async function syncBookingToItinerary(
       currency: expenseCurrency,
       date: expenseDate,
     };
-    const booking = await prisma.booking.findFirst({ where: { id: bookingId, tripId } });
-    const bookingDetails = booking?.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
-      ? booking.details as Record<string, unknown>
-      : {};
-    const linkedExpenseId = typeof bookingDetails.expenseId === 'string' ? bookingDetails.expenseId : '';
     const expenseCandidates = await prisma.expense.findMany({ where: { tripId }, orderBy: { createdAt: 'asc' } });
     const linkedExpense = linkedExpenseId
       ? expenseCandidates.find((expense) => expense.id === linkedExpenseId)
@@ -910,10 +924,10 @@ export async function syncBookingToItinerary(
       expenseAdded = true;
     }
 
-    if (booking && bookingDetails.expenseId !== expenseId) {
+    if (booking && (bookingDetails.expenseId !== expenseId || bookingDetails.expenseDeleted === true)) {
       await prisma.booking.update({
         where: { id: booking.id },
-        data: { details: { ...bookingDetails, expenseId } },
+        data: { details: { ...bookingDetails, expenseId, expenseDeleted: false } },
       });
     }
   }

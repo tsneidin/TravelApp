@@ -1173,13 +1173,11 @@ export async function executeTripTool(
       if (!type || !title) return { action: name, summary: 'add_booking: valid type and title required', ok: false };
       const confirmedPrice = typeof a.price === 'number' ? a.price : parseLocalizedAmount(String(a.price ?? ''));
       const bookingCurrency = normalizeCurrencyCode(a.currency ? String(a.currency) : undefined);
-      const details = ctx.sourceText
-        ? {
-            sourceRaw: ctx.sourceText.slice(0, 12_000),
-            ...(confirmedPrice !== undefined && Number.isFinite(confirmedPrice) && confirmedPrice > 0 ? { confirmedPrice } : {}),
-            ...(bookingCurrency ? { currency: bookingCurrency } : {}),
-          }
-        : undefined;
+      const details = {
+        ...(ctx.sourceText ? { sourceRaw: ctx.sourceText.slice(0, 12_000) } : {}),
+        ...(confirmedPrice !== undefined && Number.isFinite(confirmedPrice) && confirmedPrice >= 0 ? { confirmedPrice } : {}),
+        ...(bookingCurrency ? { currency: bookingCurrency } : {}),
+      };
 
       const booking = await prisma.booking.create({
         data: {
@@ -1272,8 +1270,8 @@ export async function executeTripTool(
 
       const priceProvided = a.price !== undefined;
       const correctedPrice = typeof a.price === 'number' ? a.price : parseLocalizedAmount(String(a.price ?? ''));
-      if (priceProvided && (!Number.isFinite(correctedPrice) || correctedPrice! <= 0)) {
-        return { action: name, summary: 'update_booking: price must be a positive amount', ok: false };
+      if (priceProvided && (!Number.isFinite(correctedPrice) || correctedPrice! < 0)) {
+        return { action: name, summary: 'update_booking: price must be 0 or greater', ok: false };
       }
       const currencyProvided = typeof a.currency === 'string' && a.currency.trim().length > 0;
       const correctedCurrency = normalizeCurrencyCode(currencyProvided ? String(a.currency) : undefined);
@@ -1292,7 +1290,7 @@ export async function executeTripTool(
 
       const updated = await prisma.booking.update({ where: { id: target.id }, data });
       const effectivePrice = typeof updatedDetails.confirmedPrice === 'number' ? updatedDetails.confirmedPrice : undefined;
-      if ((priceProvided || currencyProvided) && effectivePrice && effectivePrice > 0) {
+      if ((priceProvided || currencyProvided) && effectivePrice !== undefined && effectivePrice >= 0) {
         const sourceRaw = typeof updatedDetails.sourceRaw === 'string' ? updatedDetails.sourceRaw : '';
         await syncBookingToItinerary(tripId, userId, updated.id, sourceRaw, updated.title, {
           type: updated.type,
@@ -1439,6 +1437,26 @@ export async function executeTripTool(
       if (!target) return { action: name, summary: `Expense "${expenseId || descQuery}" not found`, ok: false };
 
       await prisma.expense.delete({ where: { id: target.id } });
+
+      const tripBookings = await prisma.booking.findMany({ where: { tripId } });
+      for (const b of tripBookings) {
+        const details = b.details && typeof b.details === 'object' && !Array.isArray(b.details)
+          ? b.details as Record<string, unknown>
+          : null;
+        if (details && details.expenseId === target.id) {
+          await prisma.booking.update({
+            where: { id: b.id },
+            data: {
+              details: {
+                ...details,
+                expenseId: null,
+                expenseDeleted: true,
+              },
+            },
+          });
+        }
+      }
+
       return { action: name, summary: `Deleted expense "${target.description}" (${target.amount} ${target.currency})`, ok: true };
     }
 

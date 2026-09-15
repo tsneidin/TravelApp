@@ -53,14 +53,16 @@ export function ConfirmModal({
   danger = true,
   onConfirm,
   onCancel,
+  children,
 }: {
   title?: string;
-  message: string;
+  message?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
+  children?: React.ReactNode;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -79,10 +81,13 @@ export function ConfirmModal({
   };
   return (
     <Modal title={title} onClose={cancel}>
-      <p style={{ margin: '6px 0 18px', lineHeight: 1.5, color: 'var(--text)', fontSize: '0.92rem' }}>
-        {message}
-      </p>
-      {error && <p role="alert" className="danger">{error}</p>}
+      {message && (
+        <div style={{ margin: '6px 0 14px', lineHeight: 1.5, color: 'var(--text)', fontSize: '0.92rem' }}>
+          {message}
+        </div>
+      )}
+      {children}
+      {error && <p role="alert" className="danger mb-3">{error}</p>}
       <div className="modal-actions">
         <button type="button" className="btn" onClick={cancel} disabled={pending}>
           {cancelLabel}

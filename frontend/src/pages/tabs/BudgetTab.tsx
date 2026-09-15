@@ -37,6 +37,9 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
   const [noteExpense, setNoteExpense] = useState<Expense | null>(null);
   const [expenseNotes, setExpenseNotes] = useState('');
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
+  const [deleteAlsoBooking, setDeleteAlsoBooking] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const expenses = trip.expenses ?? [];
   const allMembers: AuditUser[] = useMemo(() => {
@@ -77,6 +80,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
 
   const openNewExpenseModal = () => {
     setEditingExpense(null);
+    setSaveError('');
     setDescription('');
     setAmount('');
     setCurrency(trip.currency);
@@ -91,6 +95,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
 
   const openEditExpenseModal = (exp: Expense) => {
     setEditingExpense(exp);
+    setSaveError('');
     setDescription(exp.description);
     setAmount(String(exp.amount));
     setCurrency(exp.currency || trip.currency);
@@ -235,10 +240,25 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
     };
   }, [expenses, allMembers, user?.id]);
 
+  const linkedBooking = useMemo(() => {
+    if (!deletingExpense) return null;
+    return trip.bookings?.find((b) => {
+      const details = b.details && typeof b.details === 'object' && !Array.isArray(b.details)
+        ? b.details as Record<string, unknown>
+        : null;
+      return details?.expenseId === deletingExpense.id;
+    }) ?? null;
+  }, [deletingExpense, trip.bookings]);
+
   const saveExpense = async () => {
-    if (!description.trim() || !amount) return;
+    if (!description.trim() || amount.trim() === '') return;
 
     const totalNum = Number(amount);
+    if (Number.isNaN(totalNum) || totalNum < 0) {
+      setSaveError('Please enter a valid amount (0 or greater).');
+      return;
+    }
+
     let splitsPayload: ExpenseSplit[] | undefined = undefined;
 
     if (splitType === 'none') {
@@ -290,14 +310,22 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
       splits: splitsPayload,
     };
 
-    if (editingExpense) {
-      await apiPatch(`/trips/${trip.id}/expenses/${editingExpense.id}`, payload);
-    } else {
-      await apiPost(`/trips/${trip.id}/expenses`, payload);
-    }
+    setSaving(true);
+    setSaveError('');
+    try {
+      if (editingExpense) {
+        await apiPatch(`/trips/${trip.id}/expenses/${editingExpense.id}`, payload);
+      } else {
+        await apiPost(`/trips/${trip.id}/expenses`, payload);
+      }
 
-    setOpen(false);
-    await reload();
+      setOpen(false);
+      await reload();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save expense. Please check all fields.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openNotes = (expense: Expense) => {
@@ -314,6 +342,7 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
 
   const remove = (e: Expense) => {
     setDeletingExpense(e);
+    setDeleteAlsoBooking(true);
   };
 
   const fmt = (v: number) =>
@@ -692,8 +721,8 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
             <div className="field">
               <label>Currency</label>
               <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                {['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'NZD'].map((c) => (
-                  <option key={c}>{c}</option>
+                {Array.from(new Set(['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'NZD', currency, trip.currency].filter(Boolean))).map((c) => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
@@ -881,18 +910,42 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
             />
           </div>
 
-          <div className="modal-actions">
-            <button type="button" className="btn" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={saveExpense}
-              disabled={!description.trim() || !amount}
-            >
-              {editingExpense ? 'Save Changes' : 'Save Expense'}
-            </button>
+          {saveError && (
+            <div role="alert" className="small danger mb-3" style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 6, border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+              {saveError}
+            </div>
+          )}
+
+          <div className="modal-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div>
+              {editingExpense && (
+                <button
+                  type="button"
+                  className="btn ghost danger"
+                  onClick={() => {
+                    const exp = editingExpense;
+                    setOpen(false);
+                    remove(exp);
+                  }}
+                  disabled={saving}
+                >
+                  <Trash2 size={15} style={{ marginRight: 6 }} /> Delete Expense
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setOpen(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={saveExpense}
+                disabled={saving || !description.trim() || amount.trim() === '' || Number.isNaN(Number(amount)) || Number(amount) < 0}
+              >
+                {saving ? 'Saving…' : editingExpense ? 'Save Changes' : 'Save Expense'}
+              </button>
+            </div>
           </div>
         </Modal>
       )}
@@ -924,16 +977,49 @@ export function BudgetTab({ trip, reload }: { trip: Trip; reload: () => Promise<
       {deletingExpense && (
         <ConfirmModal
           title="Delete expense"
-          message={`Delete expense "${deletingExpense.description}"?`}
-          confirmLabel="Delete"
+          confirmLabel={linkedBooking && deleteAlsoBooking ? 'Delete Expense & Booking' : 'Delete Expense'}
           danger
           onConfirm={async () => {
-            await apiDelete(`/trips/${trip.id}/expenses/${deletingExpense.id}`);
+            const query = linkedBooking && deleteAlsoBooking ? '?deleteBooking=true' : '';
+            await apiDelete(`/trips/${trip.id}/expenses/${deletingExpense.id}${query}`);
             setDeletingExpense(null);
             await reload();
           }}
           onCancel={() => setDeletingExpense(null)}
-        />
+        >
+          <p style={{ margin: '6px 0 14px', lineHeight: 1.5, color: 'var(--text)', fontSize: '0.92rem' }}>
+            Delete expense <strong>"{deletingExpense.description}"</strong> ({fmt(deletingExpense.amount)} {deletingExpense.currency})?
+          </p>
+
+          {linkedBooking && (
+            <div
+              style={{
+                margin: '12px 0 16px',
+                padding: '12px 14px',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 8,
+              }}
+            >
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: '0.88rem' }}>
+                <input
+                  type="checkbox"
+                  checked={deleteAlsoBooking}
+                  onChange={(e) => setDeleteAlsoBooking(e.target.checked)}
+                  style={{ marginTop: 3 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                    Also delete linked booking:
+                  </div>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.84rem', marginTop: 2 }}>
+                    "{linkedBooking.title}" {linkedBooking.provider ? `(${linkedBooking.provider})` : ''}
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+        </ConfirmModal>
       )}
     </div>
   );

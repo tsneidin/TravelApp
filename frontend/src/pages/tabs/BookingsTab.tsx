@@ -63,6 +63,17 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
   const [viewingAttachmentsBooking, setViewingAttachmentsBooking] = useState<Booking | null>(null);
   const [previewDoc, setPreviewDoc] = useState<BookingAttachment | null>(null);
   const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
+  const [deleteAlsoExpense, setDeleteAlsoExpense] = useState(false);
+
+  const linkedExpense = useMemo(() => {
+    if (!deletingBooking) return null;
+    const details = deletingBooking.details && typeof deletingBooking.details === 'object' && !Array.isArray(deletingBooking.details)
+      ? deletingBooking.details as Record<string, unknown>
+      : null;
+    const expenseId = typeof details?.expenseId === 'string' ? details.expenseId : null;
+    if (!expenseId) return null;
+    return trip.expenses?.find((e) => e.id === expenseId) ?? null;
+  }, [deletingBooking, trip.expenses]);
 
   const openAdd = () => {
     setEditingBooking(null);
@@ -76,6 +87,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
 
   const remove = (b: Booking) => {
     setDeletingBooking(b);
+    setDeleteAlsoExpense(true);
   };
 
   const hasRaw = (b: Booking) => Boolean(rawBookingText(b));
@@ -478,16 +490,49 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
       {deletingBooking && (
         <ConfirmModal
           title="Remove booking"
-          message={`Remove booking "${deletingBooking.title}"?`}
-          confirmLabel="Delete"
+          confirmLabel={linkedExpense && deleteAlsoExpense ? 'Delete Booking & Expense' : 'Delete Booking'}
           danger
           onConfirm={async () => {
-            await apiDelete(`/trips/${trip.id}/bookings/${deletingBooking.id}`);
+            const query = linkedExpense && deleteAlsoExpense ? '?deleteExpense=true' : '';
+            await apiDelete(`/trips/${trip.id}/bookings/${deletingBooking.id}${query}`);
             setDeletingBooking(null);
             await reload();
           }}
           onCancel={() => setDeletingBooking(null)}
-        />
+        >
+          <p style={{ margin: '6px 0 14px', lineHeight: 1.5, color: 'var(--text)', fontSize: '0.92rem' }}>
+            Remove booking <strong>"{deletingBooking.title}"</strong>?
+          </p>
+
+          {linkedExpense && (
+            <div
+              style={{
+                margin: '12px 0 16px',
+                padding: '12px 14px',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 8,
+              }}
+            >
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: '0.88rem' }}>
+                <input
+                  type="checkbox"
+                  checked={deleteAlsoExpense}
+                  onChange={(e) => setDeleteAlsoExpense(e.target.checked)}
+                  style={{ marginTop: 3 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                    Also delete linked budget expense:
+                  </div>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.84rem', marginTop: 2 }}>
+                    "{linkedExpense.description}" ({Number(linkedExpense.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {linkedExpense.currency})
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+        </ConfirmModal>
       )}
     </div>
   );

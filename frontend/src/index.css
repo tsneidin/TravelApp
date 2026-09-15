@@ -5092,6 +5092,8 @@ a.link:hover {
   overflow-y: auto;
   outline: none;
   cursor: text;
+  resize: vertical;
+  font: inherit;
 }
 
 .unified-note-editor:focus {
@@ -5099,12 +5101,14 @@ a.link:hover {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-.unified-note-editor:empty::before {
-  content: attr(data-placeholder);
+.unified-note-editor::placeholder {
   color: var(--muted);
-  pointer-events: none;
 }
 
-.unified-note-editor a {
-  cursor: pointer;
+.note-editor-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
 }

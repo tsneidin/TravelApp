@@ -606,8 +606,9 @@ export function Layout() {
                                       {/* Day-level notes rows (only days with >= 1 note) */}
                                       {daysWithNotes.map(({ day, originalIndex, dayNotesCount, dayNotePlaces }) => {
                                         const dateStr = formatSidebarDate(day.date);
-                                        const snippet = day.notes?.trim()
-                                          ? (day.notes.startsWith('http') ? 'Link' : day.notes.slice(0, 16) + (day.notes.length > 16 ? '…' : ''))
+                                        const cleanDayNote = day.notes?.trim().replace(/\s+/g, ' ') || '';
+                                        const snippet = cleanDayNote
+                                          ? (cleanDayNote.startsWith('http') ? 'Link' : cleanDayNote.slice(0, 16) + (cleanDayNote.length > 16 ? '…' : ''))
                                           : dayNotePlaces.length > 0
                                           ? dayNotePlaces[0].name
                                           : '';

@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.140
+# TravelApp usability polish, 0.0.141
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,7 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- Replaced the itinerary note content-editable surface with a controlled plain-text editor so line-break deletions save immediately, normalized CR/LF and repeated blank lines, and collapsed sidebar note previews to one line.
 - Contained the monthly calendar in its panel, stabilized day and event widths, and added horizontal month scrolling on mobile.
 - Prevented AI booking receipts from creating a second matching budget expense, including transport receipts forced through the activity booking type.
 - Scoped expense deletion to the active trip and verified every expense row can be removed from desktop and mobile budget views.
@@ -34,7 +35,7 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 - Frontend lint, type checking, and production build passed.
 - Backend lint and type checking passed; all 66 tests passed with test-only environment values.
-- 53 browser tests passed with four expected responsive-layout skips, including calendar containment, expense deletion, journal saving, count indicators, compact clock input, and mobile layout checks.
+- 56 browser tests passed with four expected responsive-layout skips, including note line-break persistence, calendar containment, expense deletion, journal saving, count indicators, compact clock input, and mobile layout checks.
 - Browser viewport sizes: 320 by 568, 390 by 844, and 1440 by 1000 pixels.
 - Browser tests cover sample populated and empty trips, all eight trip sections, a crowded calendar, expense deletion, date display, form failures, keyboard focus, and mobile navigation.
 - Reviewed generated mobile and desktop screenshots. Tests save populated-trip screenshots under `frontend/test-results/`.

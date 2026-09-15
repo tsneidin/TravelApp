@@ -359,6 +359,42 @@ test('day controls show note and journal counts on desktop and mobile', async ({
   await page.screenshot({ path: testInfo.outputPath('day-counts.png') });
 });
 
+test('day note line-break edits save immediately and remain clean', async ({ page }, testInfo) => {
+  let savedNotes = 'First line\r\n\r\n\r\nSecond line';
+  const day = { id: 'day-1', tripId: trip.id, date: trip.startDate, sortOrder: 0, notes: savedNotes, places: [] };
+  await page.route(`**/api/trips/${trip.id}`, (route) => route.fulfill({
+    json: { trip: { ...trip, days: [{ ...day, notes: savedNotes }] } },
+  }));
+  await page.route(`**/api/trips/${trip.id}/days/${day.id}`, async (route) => {
+    const update = route.request().postDataJSON() as { notes?: string };
+    savedNotes = update.notes ?? '';
+    await route.fulfill({ json: { day: { ...day, ...update } } });
+  });
+  await page.goto(`/trips/${trip.id}?tab=itinerary`);
+
+  const openNotes = async () => {
+    if (testInfo.project.name === 'desktop') {
+      await page.getByTitle('Edit day notes', { exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: 'Day 1 options' }).click();
+      await page.getByRole('dialog', { name: 'Day 1 options' }).getByRole('button', { name: 'Notes (1)', exact: true }).click();
+    }
+  };
+
+  await openNotes();
+  const form = page.getByRole('dialog', { name: /Day 1 Notes/ });
+  const editor = form.getByRole('textbox', { name: 'Note text' });
+  await expect(editor).toHaveValue('First line\n\nSecond line');
+  await editor.fill('First line\nSecond line');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  expect(savedNotes).toBe('First line\nSecond line');
+
+  await openNotes();
+  await expect(page.getByRole('dialog', { name: /Day 1 Notes/ }).getByRole('textbox', { name: 'Note text' }))
+    .toHaveValue('First line\nSecond line');
+});
+
 test('existing day journal saves without creating a duplicate', async ({ page }, testInfo) => {
   const existing = { id: 'journal-1', tripId: trip.id, title: 'Arrival', body: 'Existing entry', date: trip.startDate };
   const populated = {

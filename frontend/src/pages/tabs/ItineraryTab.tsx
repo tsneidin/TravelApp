@@ -95,49 +95,40 @@ function UnifiedNoteEditor({
   minHeight: number;
   autoFocus?: boolean;
 }) {
-  const editorRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (autoFocus) editorRef.current?.focus();
-  }, [autoFocus]);
+  const links = [...new Set(value.match(/(?:https?:\/\/|www\.)[^\s<]+[^<.,:;"')\]\s]/gi) || [])];
 
   return (
-    <div
-      ref={editorRef}
-      className="unified-note-editor"
-      contentEditable
-      suppressContentEditableWarning
-      role="textbox"
-      aria-multiline="true"
-      aria-label="Note text"
-      data-placeholder={placeholder}
-      style={{ minHeight }}
-      onBlur={(event) => onChange(event.currentTarget.innerText.replace(/\n$/, ''))}
-      onClick={(event) => {
-        const link = (event.target as HTMLElement).closest('a');
-        if (!link) return;
-        event.preventDefault();
-        event.stopPropagation();
-        window.open(link.href, '_blank', 'noopener,noreferrer');
-      }}
-      onPaste={(event) => {
-        event.preventDefault();
-        const text = event.clipboardData.getData('text/plain');
-        const selection = window.getSelection();
-        if (!selection?.rangeCount) return;
-        selection.deleteFromDocument();
-        const range = selection.getRangeAt(0);
-        const node = document.createTextNode(text);
-        range.insertNode(node);
-        range.setStartAfter(node);
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }}
-    >
-      {renderTextWithLinks(value)}
-    </div>
+    <>
+      <textarea
+        className="unified-note-editor"
+        aria-label="Note text"
+        value={value}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        style={{ minHeight }}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {links.length > 0 && (
+        <div className="note-editor-links" aria-label="Links in this note">
+          <span className="small muted">Links:</span>
+          {links.map((link, index) => (
+            <a key={link} href={formatUrl(link)} target="_blank" rel="noopener noreferrer" className="btn xs ghost">
+              <ExternalLink size={11} />
+              <span>{links.length === 1 ? 'Open link' : `Open link ${index + 1}`}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </>
   );
+}
+
+export function normalizeNoteText(value?: string | null): string {
+  return (value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function isGenericDayLabel(label?: string | null): boolean {
@@ -792,7 +783,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
   };
 
   const mergeLegacyNoteLink = (text?: string | null, url?: string | null) => {
-    const noteText = text?.trim() || '';
+    const noteText = normalizeNoteText(text);
     const legacyUrl = url?.trim() || '';
     if (!legacyUrl || noteText.includes(legacyUrl)) return noteText;
     return noteText ? `${noteText}\n\n${legacyUrl}` : legacyUrl;
@@ -924,7 +915,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     // 2. Save trip or day notes
     if (dayEditor.id === 'trip') {
       await apiPatch(`/trips/${trip.id}`, {
-        notes: dayEditor.notes?.trim() || null,
+        notes: normalizeNoteText(dayEditor.notes) || null,
         notesUrl: null,
       });
 
@@ -942,7 +933,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
             patchPromises.push(
               apiPatch(`/trips/${trip.id}/places/${p.id}`, {
                 ...(editedPlaceTitle !== undefined ? { name: editedPlaceTitle.trim() || 'Note' } : {}),
-                ...(editedPlaceNote !== undefined ? { notes: editedPlaceNote.trim() || null } : {}),
+                ...(editedPlaceNote !== undefined ? { notes: normalizeNoteText(editedPlaceNote) || null } : {}),
                 ...(editedPlaceUrl !== undefined ? { website: editedPlaceUrl.trim() || null } : {}),
               })
             );
@@ -986,7 +977,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           const isStart = d.id === dayEditor.id;
           return apiPatch(`/trips/${trip.id}/days/${d.id}`, {
             ...(isStart ? { label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null } : {}),
-            notes: dayEditor.notes,
+            notes: normalizeNoteText(dayEditor.notes) || null,
             notesUrl: null,
             location: locationVal,
             lat: latVal,
@@ -997,7 +988,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
     } else {
       await apiPatch(`/trips/${trip.id}/days/${dayEditor.id}`, {
         label: trimmed && !isGenericDayLabel(trimmed) ? trimmed : null,
-        notes: dayEditor.notes,
+        notes: normalizeNoteText(dayEditor.notes) || null,
         notesUrl: null,
         location: locationVal,
         lat: latVal,
@@ -1019,7 +1010,7 @@ export function ItineraryTab({ trip, reload }: { trip: Trip; reload: () => Promi
           patchPromises.push(
             apiPatch(`/trips/${trip.id}/places/${p.id}`, {
               ...(editedPlaceTitle !== undefined ? { name: editedPlaceTitle.trim() || 'Note' } : {}),
-              ...(editedPlaceNote !== undefined ? { notes: editedPlaceNote.trim() || null } : {}),
+              ...(editedPlaceNote !== undefined ? { notes: normalizeNoteText(editedPlaceNote) || null } : {}),
               ...(editedPlaceUrl !== undefined ? { website: editedPlaceUrl.trim() || null } : {}),
             })
           );

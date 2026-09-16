@@ -1,4 +1,4 @@
-# TravelApp usability polish, 0.0.142
+# TravelApp usability polish, 0.0.151
 
 Branch: `codex/mobile-usability-polish`
 
@@ -6,6 +6,7 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 
 ## Changes
 
+- The timeline includes hotel checkout dates even when they extend past the trip range. Stay bars run from check-in to check-out; transit and activity bars use their approximate hours within each day, with readable labels under short markers.
 - Parsed both European and US price formats in booking receipts and AI actions, validated currency codes so OCR fragments cannot become currencies, and kept bus receipts classified as transport.
 - Added editable price and currency fields to the booking form. A correction updates its linked budget expense and safely consolidates legacy duplicates from the same receipt or unique booking provider.
 - Replaced the itinerary note content-editable surface with a controlled plain-text editor so line-break deletions save immediately, normalized CR/LF and repeated blank lines, and collapsed sidebar note previews to one line.
@@ -36,8 +37,8 @@ Started from a fresh GitHub clone of `master` at `2a36bd9` (0.0.129).
 ## Verification
 
 - Frontend lint, type checking, and production build passed.
-- Backend lint and type checking passed; all 70 tests passed with test-only environment values.
-- 59 browser tests passed with four expected responsive-layout skips, including European price correction, note line-break persistence, calendar containment, expense deletion, journal saving, count indicators, compact clock input, and mobile layout checks.
+- Backend lint and type checking passed; all 71 tests passed with test-only environment values.
+- 65 browser tests passed with four expected responsive-layout skips, including timed timeline bars, European price correction, note line-break persistence, calendar containment, expense deletion, journal saving, count indicators, compact clock input, and mobile layout checks.
 - Browser viewport sizes: 320 by 568, 390 by 844, and 1440 by 1000 pixels.
 - Browser tests cover sample populated and empty trips, all eight trip sections, a crowded calendar, expense deletion, date display, form failures, keyboard focus, and mobile navigation.
 - Reviewed generated mobile and desktop screenshots. Tests save populated-trip screenshots under `frontend/test-results/`.

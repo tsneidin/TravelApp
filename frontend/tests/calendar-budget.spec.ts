@@ -70,7 +70,7 @@ test('every expense can be deleted from desktop and mobile budget views', async 
     await page.getByRole('button', { name: 'Delete 2x Ticket Comfort', exact: true }).click();
   }
   const confirmation = page.getByRole('dialog', { name: 'Delete expense' });
-  await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Delete Expense', exact: true }).click();
   await expect(confirmation).toHaveCount(0);
   expect(deletedId).toBe('expense-duplicate');
   await expect(page.getByText('2x Ticket Comfort', { exact: true })).toHaveCount(0);

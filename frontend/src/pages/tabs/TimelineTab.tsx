@@ -1,6 +1,6 @@
 import { DateTimeInput, TimeInput } from '../../components/TimeInput';
 import { useTimeFormat, formatDateTime, formatClock, formatTimeRange } from '../../lib/time';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   Calendar, Clock, MapPin, Plane, Hotel, Compass, AlertCircle,
   ZoomIn, ZoomOut, Filter, ExternalLink, Car, Train, Bus, Pencil, Plus, Sparkles
@@ -15,6 +15,7 @@ import { endForStart } from '../../lib/dateRange';
 import { isAccommodationItem, isTransitItem, normalizePlaceLocationKey, cleanPlaceOrStayTitle } from '../../lib/placeUtils';
 import { extractSpanId, generateSpanId, embedSpanId, getConsecutiveDays } from '../../lib/spanUtils';
 import { renderTextWithLinks, formatUrl } from '../../lib/linkUtils';
+import { minutesOfDay, timelinePosition } from '../../lib/timelineGeometry';
 
 interface TimelineTabProps {
   trip: Trip;
@@ -39,6 +40,8 @@ interface StaySpan {
   startDayIndex: number;
   endDayIndex: number;
   nights: number;
+  startTime?: string | null;
+  endTime?: string | null;
   booking?: Booking;
   place?: Place;
   laneIndex?: number;
@@ -254,13 +257,21 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
     const datesSet = new Set<string>();
     for (const key of dayMap.keys()) datesSet.add(key);
 
+    for (const booking of trip.bookings ?? []) {
+      const bookingStart = parseDateKey(booking.startAt);
+      const bookingEnd = parseDateKey(booking.endAt);
+      if (bookingStart) datesSet.add(bookingStart);
+      if (bookingEnd) datesSet.add(bookingEnd);
+    }
+
     if (startDateKey) datesSet.add(startDateKey);
     if (endDateKey) datesSet.add(endDateKey);
 
-    // If both start and end date exist, fill in any missing dates in range
-    if (startDateKey && endDateKey) {
-      const cur = new Date(startDateKey + 'T00:00:00');
-      const end = new Date(endDateKey + 'T00:00:00');
+    // Include booking check-in/check-out dates and every day between the bounds.
+    const bounds = Array.from(datesSet).sort();
+    if (bounds.length > 1) {
+      const cur = new Date(bounds[0] + 'T00:00:00');
+      const end = new Date(bounds[bounds.length - 1] + 'T00:00:00');
       while (cur <= end) {
         const y = cur.getFullYear();
         const m = String(cur.getMonth() + 1).padStart(2, '0');
@@ -286,7 +297,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
         label: dayRecord?.label,
       };
     });
-  }, [trip.days, trip.startDate, trip.endDate]);
+  }, [trip.days, trip.startDate, trip.endDate, trip.bookings]);
 
   // 2. Map Stays / Accommodations across the timeline with multi-lane packing
   const { staySpans, totalStayLanes } = useMemo(() => {
@@ -316,6 +327,8 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
           startDayIndex: startIdx,
           endDayIndex: endIdx,
           nights,
+          startTime: b.startAt,
+          endTime: b.endAt,
           booking: b,
         });
       }
@@ -367,6 +380,8 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
           startDayIndex,
           endDayIndex,
           nights,
+          startTime: group.places.find((place) => place.startTime)?.startTime,
+          endTime: [...group.places].reverse().find((place) => place.endTime)?.endTime,
           place: primaryPlace,
         });
       }
@@ -715,21 +730,27 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
     }
   };
 
-  const colWidth = zoomLevel === 'compact' ? 140 : 220;
+  const colWidth = zoomLevel === 'compact' ? 160 : 240;
   const totalGridWidth = Math.max(800, timelineDays.length * colWidth);
+  const activitiesByDay = timelineDays.map((day) => day.places
+    .filter((place) => !isAccommodationItem(place) && !isTransitItem(place))
+    .sort((a, b) => (minutesOfDay(a.startTime) ?? 1440) - (minutesOfDay(b.startTime) ?? 1440)));
+  const totalActivityLanes = Math.max(1, ...activitiesByDay.map((places) => places.length));
 
   // Height sizing for multi-lane tracks
   const barHeight = 36;
   const barGap = 6;
+  const timedLaneHeight = barHeight + 22;
   const staysTrackHeight = Math.max(52, totalStayLanes * (barHeight + barGap) + 8);
-  const transitTrackHeight = Math.max(52, totalTransitLanes * (barHeight + barGap) + 8);
+  const transitTrackHeight = Math.max(66, totalTransitLanes * timedLaneHeight + 8);
+  const activityTrackHeight = Math.max(66, totalActivityLanes * timedLaneHeight + 8);
 
   return (
     <div>
       {/* KPI Overview Strip */}
       <div className="kpis">
         <div className="kpi">
-          <div className="k-label">Trip duration</div>
+          <div className="k-label">Timeline range</div>
           <div className="k-value" style={{ color: 'var(--accent)' }}>
             {timelineDays.length} {timelineDays.length === 1 ? 'Day' : 'Days'}
           </div>
@@ -897,6 +918,12 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                       {dateNum}
                     </div>
 
+                    <div style={{ position: 'relative', height: 10, fontSize: '0.58rem', color: 'var(--muted)', opacity: 0.85 }} aria-hidden="true">
+                      <span style={{ position: 'absolute', left: '25%', transform: 'translateX(-50%)' }}>6 AM</span>
+                      <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>Noon</span>
+                      <span style={{ position: 'absolute', left: '75%', transform: 'translateX(-50%)' }}>6 PM</span>
+                    </div>
+
                     {day.label && (
                       <div
                         style={{
@@ -940,15 +967,20 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
 
                   {/* Render Lodging Spanning Bars */}
                   {staySpans.map((stay) => {
-                    const spanCols = Math.max(1, stay.endDayIndex - stay.startDayIndex);
-                    const leftPos = stay.startDayIndex * colWidth + 6;
-                    const width = spanCols * colWidth - 12;
+                    const position = timelinePosition(stay.startDayIndex, stay.endDayIndex, colWidth, stay.startTime, stay.endTime, {
+                      defaultStart: 15 * 60,
+                      defaultEnd: 11 * 60,
+                      minWidth: 32,
+                    });
+                    const leftPos = position.left + 3;
+                    const width = Math.min(position.width - 6, timelineDays.length * colWidth - leftPos - 3);
                     const lane = stay.laneIndex ?? 0;
                     const topPos = 4 + lane * (barHeight + barGap);
 
                     return (
                       <div
                         key={stay.id}
+                        data-testid="timeline-stay"
                         onClick={() => setSelectedItem({ type: 'stay', title: cleanPlaceOrStayTitle(stay.title), stay })}
                         style={{
                           position: 'absolute',
@@ -969,7 +1001,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                           zIndex: 2,
                           boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
                         }}
-                        title={`${cleanPlaceOrStayTitle(stay.title)} (${stay.nights} nights)`}
+                        title={`${cleanPlaceOrStayTitle(stay.title)} (${stay.nights} nights)${stay.startTime ? `, check-in ${formatClock(stay.startTime, timeFormat)}` : ''}${stay.endTime ? `, check-out ${formatClock(stay.endTime, timeFormat)}` : ''}`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                           <Hotel size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
@@ -1039,19 +1071,24 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                   ))}
 
                   {transitSpans.map((transit) => {
-                    const spanCols = Math.max(1, transit.endDayIndex - transit.startDayIndex + 1);
-                    const leftPos = transit.startDayIndex * colWidth + 6;
-                    const width = spanCols * colWidth - 12;
+                    const position = timelinePosition(transit.startDayIndex, transit.endDayIndex, colWidth, transit.startTime, transit.endTime, {
+                      defaultStart: 9 * 60,
+                      defaultDuration: 2 * 60,
+                      minWidth: 32,
+                    });
+                    const leftPos = position.left + 3;
+                    const width = Math.min(position.width - 6, timelineDays.length * colWidth - leftPos - 3);
                     const lane = transit.laneIndex ?? 0;
-                    const topPos = 4 + lane * (barHeight + barGap);
+                    const topPos = 4 + lane * timedLaneHeight;
                     const theme = getTransitColors(transit.type);
 
                     // Extract short time label if available
                     const timeLabel = transit.startTime ? formatClock(transit.startTime, timeFormat) : null;
 
                     return (
+                      <Fragment key={transit.id}>
                       <div
-                        key={transit.id}
+                        data-testid="timeline-transit"
                         onClick={() => setSelectedItem({ type: 'transit', title: cleanPlaceOrStayTitle(transit.title), transit })}
                         style={{
                           position: 'absolute',
@@ -1071,6 +1108,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                           transition: 'all 0.15s ease',
                           zIndex: 2,
                           boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+                          overflow: 'hidden',
                         }}
                         title={cleanPlaceOrStayTitle(transit.title)}
                       >
@@ -1094,6 +1132,10 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                           )}
                         </div>
                       </div>
+                      <button type="button" aria-label={`Open ${cleanPlaceOrStayTitle(transit.title)} details`} onClick={() => setSelectedItem({ type: 'transit', title: cleanPlaceOrStayTitle(transit.title), transit })} style={{ position: 'absolute', left: leftPos, top: topPos + barHeight + 2, width: Math.min(180, totalGridWidth - leftPos - 5), color: 'var(--muted)', fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left', border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}>
+                        {cleanPlaceOrStayTitle(transit.title)}{timeLabel ? ` · ${timeLabel}` : ''}
+                      </button>
+                      </Fragment>
                     );
                   })}
                 </div>
@@ -1111,79 +1153,47 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                   style={{
                     display: 'grid',
                     gridTemplateColumns: `repeat(${timelineDays.length}, ${colWidth}px)`,
+                    position: 'relative',
+                    minHeight: activityTrackHeight,
                   }}
                 >
-                  {timelineDays.map((day) => {
-                    const activityPlaces = day.places.filter(
-                      (place) => !isAccommodationItem(place) && !isTransitItem(place)
-                    );
-
+                  {timelineDays.map((day) => (
+                    <div key={day.dateStr} style={{ borderRight: '1px solid rgba(255,255,255,0.06)', minHeight: activityTrackHeight }} />
+                  ))}
+                  {activitiesByDay.flatMap((places, dayIndex) => places.map((place, laneIndex) => {
+                    const timed = minutesOfDay(place.startTime) !== undefined;
+                    const position = timelinePosition(dayIndex, dayIndex, colWidth, place.startTime, place.endTime, timed
+                      ? { defaultDuration: 90, minWidth: 36 }
+                      : { defaultStart: 0, defaultEnd: 1440, minWidth: 36 });
+                    const leftPos = position.left + 3;
+                    const width = Math.min(position.width - 6, timelineDays.length * colWidth - leftPos - 3);
+                    const topPos = 4 + laneIndex * timedLaneHeight;
                     return (
-                      <div
-                        key={day.dateStr}
+                      <Fragment key={place.id}>
+                      <button
+                        type="button"
+                        data-testid="timeline-activity"
+                        onClick={() => setSelectedItem({ type: 'place', title: cleanPlaceOrStayTitle(place.name), place })}
+                        title={`${cleanPlaceOrStayTitle(place.name)}${timed ? `, ${formatTimeRange(place.startTime, place.endTime, timeFormat)}` : ', time not set'}`}
                         style={{
-                          padding: '6px 8px',
-                          borderRight: '1px solid rgba(255,255,255,0.06)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 6,
-                          minHeight: 120,
+                          position: 'absolute', left: leftPos, width, top: topPos, height: barHeight,
+                          background: 'var(--panel-2)', border: `1px ${timed ? 'solid' : 'dashed'} var(--line)`,
+                          borderRadius: 7, padding: '0 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                          color: 'var(--text)', textAlign: 'left', overflow: 'hidden',
                         }}
                       >
-                        {activityPlaces.length === 0 ? (
-                          <div className="small muted" style={{ fontStyle: 'italic', fontSize: '0.74rem', padding: '10px 4px', textAlign: 'center' }}>
-                            No activities
-                          </div>
-                        ) : (
-                          activityPlaces.map((place, pIdx) => (
-                            <div
-                              key={place.id}
-                              onClick={() => setSelectedItem({ type: 'place', title: cleanPlaceOrStayTitle(place.name), place })}
-                              style={{
-                                background: 'var(--panel-2)',
-                                border: '1px solid var(--line)',
-                                borderRadius: 6,
-                                padding: '6px 8px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 3,
-                                transition: 'all 0.15s ease',
-                              }}
-                              title={cleanPlaceOrStayTitle(place.name)}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>
-                                  #{pIdx + 1}
-                                </span>
-                                <span style={{ fontSize: '0.8rem', marginRight: 2 }}>
-                                  {getCategoryIcon(place.category, place.name)}
-                                </span>
-                                <span
-                                  style={{
-                                    fontWeight: 600,
-                                    fontSize: '0.8rem',
-                                    color: 'var(--text)',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {cleanPlaceOrStayTitle(place.name)}
-                                </span>
-                              </div>
-
-                              {place.startTime && (
-                                <div className="small muted" style={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                  <Clock size={10} /> {formatTimeRange(place.startTime, place.endTime, timeFormat)}
-                                </div>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </div>
+                        <span style={{ flexShrink: 0 }}>{getCategoryIcon(place.category, place.name)}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.78rem' }}>
+                          {cleanPlaceOrStayTitle(place.name)}
+                        </span>
+                        {!timed && <span className="small muted" style={{ flexShrink: 0, fontSize: '0.65rem' }}>Time not set</span>}
+                      </button>
+                      <button type="button" aria-label={`Open ${cleanPlaceOrStayTitle(place.name)} details`} onClick={() => setSelectedItem({ type: 'place', title: cleanPlaceOrStayTitle(place.name), place })} style={{ position: 'absolute', left: leftPos, top: topPos + barHeight + 2, width: Math.min(180, totalGridWidth - leftPos - 5), color: 'var(--muted)', fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left', border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}>
+                        {cleanPlaceOrStayTitle(place.name)}{timed ? ` · ${formatClock(place.startTime!, timeFormat)}` : ' · Time not set'}
+                      </button>
+                      </Fragment>
                     );
-                  })}
+                  }))}
                 </div>
               </div>
             )}

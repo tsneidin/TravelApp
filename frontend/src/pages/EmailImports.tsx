@@ -21,6 +21,9 @@ interface EmailStatus {
   enabled: boolean;
   host: string;
   user: string;
+  recipient: string;
+  folder: string;
+  configured: boolean;
   pollMinutes: number;
   recent24h: number;
   byStatus: { status: string; count: number }[];
@@ -115,7 +118,7 @@ export function EmailImports() {
           <h1 className="page-title">Email imports</h1>
           <p className="page-sub">Monitor the inbox, parse confirmations, and file them into trips.</p>
         </div>
-        <button className="btn primary" onClick={() => void poll()} disabled={busy}>
+        <button className="btn primary" onClick={() => void poll()} disabled={busy || !status?.enabled || !status?.configured}>
           <RefreshCw size={16} className={busy ? 'spin' : ''} /> {busy ? 'Checking…' : 'Check now'}
         </button>
       </div>
@@ -125,8 +128,8 @@ export function EmailImports() {
       <div className="kpis">
         <div className="kpi">
           <div className="k-label">Monitor</div>
-          <div className="k-value">{status.enabled ? 'On' : 'Off'}</div>
-          <div className="k-sub">{status.user ? status.user : 'IMAP user not configured'} · every {status.pollMinutes} min</div>
+          <div className="k-value">{status.enabled && status.configured ? 'On' : 'Off'}</div>
+          <div className="k-sub">{status.recipient || 'No import address configured'} · {status.folder} · every {status.pollMinutes} min</div>
         </div>
         <div className="kpi good">
           <div className="k-label">Last 24h</div>
@@ -155,7 +158,7 @@ export function EmailImports() {
       {imports.length === 0 ? (
         <div className="empty-state">
           <div className="big"><Inbox size={20} style={{ verticalAlign: -4 }} /> Nothing here</div>
-          <p>Forward booking confirmation emails to the monitored inbox. New mail appears here after the next poll.</p>
+          <p>Send booking confirmations to {status.recipient || 'the configured import address'}. New mail appears here after the next poll.</p>
         </div>
       ) : (
         <div className="panel table-wrap">
@@ -182,7 +185,7 @@ export function EmailImports() {
                       {im.status !== 'imported' && (
                         <button className="btn sm ghost" onClick={() => void ignore(im.id)} title="Ignore"><X size={13} /></button>
                       )}
-                      {im.status !== 'ignored' && (
+                      {im.status !== 'ignored' && im.status !== 'imported' && (
                         <button className="btn sm ghost danger" onClick={() => void remove(im.id)} title="Delete"><Trash2 size={13} /></button>
                       )}
                     </div>

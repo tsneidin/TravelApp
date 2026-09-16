@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.151` — check the bottom of the left sidebar for the
+**Current version:** `0.0.152` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -153,15 +153,38 @@ AI_MODEL=llama3
 > jumps the Map tab to that location.
 
 ## Email import setup
-1. On your Gmail account (or Google Workspace admin for org mailboxes) enable:
-   - IMAP under **Settings → See all settings → Forwarding and POP/IMAP**
-   - **2-Step Verification**, then create an **App Password** (never use your
-     normal login password).
-2. Put the address + App Password + `EMAIL_ENABLED=true` in `backend/.env`
-   (or the Compose env).
-3. Forward booking confirmation emails to the monitored inbox, add senders to
-   `EMAIL_ALLOWLIST` if wanted.
-4. Imports appear under **Email imports** in the app for confirmation/assignment.
+For `name+trips@gmail.com`, sign in to IMAP as the base account
+`name@gmail.com`. The plus address selects which messages TravelApp imports;
+it is not a separate Gmail login.
+
+1. Turn on **2-Step Verification** for the Google account, then create an
+   **App Password** named TravelApp at <https://myaccount.google.com/apppasswords>.
+   Enter that password directly in the private root `.env` on the Docker host.
+   Do not use the normal Gmail password. Personal Gmail accounts have IMAP
+   enabled automatically; there is no IMAP switch to turn on.
+2. Add these values to the root `.env` beside `docker-compose.yml`:
+
+   ```dotenv
+   EMAIL_ENABLED=true
+   IMAP_HOST=imap.gmail.com
+   IMAP_PORT=993
+   IMAP_USER=name@gmail.com
+   IMAP_PASS=<Google app password entered on the Docker host>
+   EMAIL_RECIPIENT=name+trips@gmail.com
+   IMAP_FOLDER=INBOX
+   IMPORT_UNSEEN_FIRST=true
+   ```
+
+3. Recreate the API container so it receives the new environment values.
+   Send one test booking email to the plus address, then open
+   **Email imports** and select **Check now**. Review the parsed details before
+   choosing **Import as booking** and assigning a trip. The importer leaves
+   Gmail read/unread status unchanged and will not import mail sent only to the
+   base account. Already-read messages are skipped with the default setting.
+
+`EMAIL_ALLOWLIST` is an optional comma-separated **sender** filter. Leave it
+empty initially so bookings from new vendors are not missed. Deleting an
+unassigned import record allows that email to be collected again on a later poll.
 
 ## Google API key test
 

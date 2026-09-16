@@ -48,6 +48,7 @@ export const config = {
     port: optionalInt('IMAP_PORT', 993),
     user: optional('IMAP_USER'),
     pass: optional('IMAP_PASS'),
+    recipient: optional('EMAIL_RECIPIENT').trim().toLowerCase(),
     folder: optional('IMAP_FOLDER', 'INBOX'),
     pollMinutes: optionalInt('IMAP_POLL_MINUTES', 5),
     allowlist: optional('EMAIL_ALLOWLIST', '')

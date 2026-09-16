@@ -22,13 +22,21 @@ export const emailRouter = Router();
 
 emailRouter.get(
   '/status',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const user = getUser(req);
+    if (!user.isAdmin) {
+      res.status(403).json({ error: 'Admin only' });
+      return;
+    }
     const recent = await prisma.emailImport.count({ where: { createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } });
     const grouped = await prisma.emailImport.groupBy({ by: ['status'], _count: { _all: true } });
     res.json({
       enabled: config.email.enabled,
       host: config.email.host,
       user: config.email.user,
+      recipient: config.email.recipient,
+      folder: config.email.folder,
+      configured: Boolean(config.email.user && config.email.pass && config.email.recipient),
       pollMinutes: config.email.pollMinutes,
       recent24h: recent,
       byStatus: grouped.map((g) => ({ status: g.status, count: g._count._all })),
@@ -43,6 +51,9 @@ emailRouter.post(
     if (!u.isAdmin) {
       res.status(403).json({ error: 'Admin only' });
       return;
+    }
+    if (!config.email.enabled || !config.email.user || !config.email.pass || !config.email.recipient) {
+      throw badRequest('Email import is not fully configured');
     }
     const result = await pollOnce();
     res.json(result);
@@ -95,6 +106,9 @@ emailRouter.delete(
       res.status(403).json({ error: 'Admin only' });
       return;
     }
+    const item = await prisma.emailImport.findUnique({ where: { id: req.params.id } });
+    if (!item) throw notFound('Import not found');
+    if (item.status === 'imported') throw badRequest('Imported emails cannot be deleted here');
     await prisma.emailImport.delete({ where: { id: req.params.id } });
     res.status(204).send();
   }),
@@ -110,6 +124,7 @@ emailRouter.post(
     await requireTripAccess(req, tripId, 'editor');
     const item = await prisma.emailImport.findUnique({ where: { id } });
     if (!item) throw notFound('Import not found');
+    if (item.status === 'imported') throw badRequest('This email has already been imported');
     const pp: ParsedPayloadShape | null = item.parsedPayload as ParsedPayloadShape | null;
     if (!pp) {
       // attempt re-parse on assign
@@ -134,22 +149,25 @@ emailRouter.post(
     const fresh = await prisma.emailImport.findUnique({ where: { id } });
     const updatedPp: ParsedPayloadShape | null = fresh?.parsedPayload as ParsedPayloadShape | null;
     const bpp: ParsedPayloadShape = updatedPp ?? {};
-    const booking = await prisma.booking.create({
-      data: {
-        tripId,
-        userId: user.id,
-        type: fresh?.type ?? 'activity',
-        title: bpp.title ?? item.subject,
-        provider: bpp.provider,
-        reference: bpp.reference,
-        startAt: bpp.startAt ? new Date(bpp.startAt) : null,
-        details: bpp.details ?? {},
-        sourceImportId: id,
-      },
-    });
-    await prisma.emailImport.update({
-      where: { id },
-      data: { status: 'imported', tripId, userId: user.id, assignedAt: new Date() },
+    const booking = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.emailImport.updateMany({
+        where: { id, status: { not: 'imported' } },
+        data: { status: 'imported', tripId, userId: user.id, assignedAt: new Date() },
+      });
+      if (!claimed.count) throw badRequest('This email has already been imported');
+      return tx.booking.create({
+        data: {
+          tripId,
+          userId: user.id,
+          type: fresh?.type ?? 'activity',
+          title: bpp.title ?? item.subject,
+          provider: bpp.provider,
+          reference: bpp.reference,
+          startAt: bpp.startAt ? new Date(bpp.startAt) : null,
+          details: bpp.details ?? {},
+          sourceImportId: id,
+        },
+      });
     });
     res.status(201).json({ booking });
   }),
@@ -160,6 +178,9 @@ emailRouter.post(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     await requireTripAccess(req, String(req.body.tripId || ''), 'editor');
+    const existing = await prisma.emailImport.findUnique({ where: { id } });
+    if (!existing) throw notFound('Import not found');
+    if (existing.status === 'imported') throw badRequest('An imported email cannot be ignored');
     const item = await prisma.emailImport.update({
       where: { id },
       data: { status: 'ignored', tripId: req.body.tripId || null },
@@ -177,6 +198,7 @@ emailRouter.post(
       res.status(404).json({ error: 'Import not found' });
       return;
     }
+    if (item.status === 'imported') throw badRequest('An imported email cannot be reparsed');
     const parsed = parseConfirmation(item.subject, item.bodyText ?? '');
     const updated = await prisma.emailImport.update({
       where: { id: item.id },

@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.165` — check the bottom of the left sidebar for the
+**Current version:** `0.0.166` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -197,7 +197,7 @@ forwarded emails and readable PDF attachments, and returns Schema.org
 reservations for review. Enable AI Assist in app settings before importing;
 emails remain in the review queue with an error if AI is unavailable. The AI
 provider may be external, so choose its endpoint accordingly. Explicit
-check-in and check-out lines complete missing hotel dates; a focused AI retry
+check-in and check-out lines override incorrect AI hotel dates; a focused AI retry
 handles other incomplete hotel results. For an email already added to a trip,
 reparse changes only the preview. Reparse can recover receipt text from saved
 HTML or the original email when the earlier preview was blank. A labeled

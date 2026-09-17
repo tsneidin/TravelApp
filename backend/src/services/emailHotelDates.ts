@@ -21,15 +21,28 @@ function localDateTime(line: string): string | undefined {
   return `${prefix}T${String(hour).padStart(2, '0')}:${time[2]}`;
 }
 
+function evidenceLine(line: string): string {
+  return line
+    .replace(/^\s*(?:>\s?)+/, '')
+    .replace(/^\s*\|\s*/, '').replace(/\s*\|\s*$/, '')
+    .replace(/^[-:|\s]+$/, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
 function labeledDate(body: string, label: 'in' | 'out'): string | undefined {
-  const lines = body.split('\n').map((line) => line.trim());
+  const lines = body.split('\n').map(evidenceLine);
   const values: string[] = [];
   const labelPattern = label === 'in' ? /^check[ -]?in\b/i : /^check[ -]?out\b/i;
   for (let index = 0; index < lines.length; index++) {
     if (!labelPattern.test(lines[index])) continue;
     let value = localDateTime(lines[index]);
-    if ((!value || value.length === 10) && !/^check[ -]?(?:in|out)\b/i.test(lines[index + 1] || '')) {
-      value = localDateTime(`${lines[index]} ${lines[index + 1] || ''}`) || value;
+    // Gmail's text rendering inserts separator rows between a table header and
+    // its value, so inspect the nearby non-empty rows rather than only one.
+    for (let offset = 1; (!value || value.length === 10) && offset <= 8; offset++) {
+      const next = lines[index + offset] || '';
+      if (/^check[ -]?(?:in|out)\b/i.test(next)) break;
+      value = localDateTime(`${lines[index]} ${next}`) || value;
     }
     if (value) values.push(value);
   }
@@ -45,6 +58,8 @@ export function completeHotelDatesFromEmail(candidates: KitineraryCandidate[], b
   const candidate = candidates[0];
   return [{
     ...candidate,
+    // Labeled source text is authoritative. Never retain a model date that
+    // contradicts an explicit Check-in or Check-out in the message.
     startAt: checkin || candidate.startAt,
     endAt: checkout || candidate.endAt,
     details: {

@@ -16,4 +16,16 @@ describe('explicit hotel date evidence', () => {
     const body = 'Check-in February 10, 2027\nCheck-out February 12, 2027 (10:00 AM - 10:30 AM)';
     expect(completeHotelDatesFromEmail(hotel, body)[0]).toMatchObject({ startAt: '2027-02-10', endAt: '2027-02-12T10:00' });
   });
+
+  it('overrides a hallucinated model year with values from Gmail table rows', () => {
+    const body = [
+      '| Check-in |', '| ---------- |', '| Wednesday, February 10, 2027 (3:00 PM - 9:00 PM) |',
+      '| Check-out |', '| --------- |', '| Friday, February 12, 2027 (10:00 AM - 10:30 AM) |',
+    ].join('\n');
+    const wrong = [{ ...hotel[0], startAt: '2024-05-20T15:00', endAt: '2024-05-22T11:00' }];
+    expect(completeHotelDatesFromEmail(wrong, body)[0]).toMatchObject({
+      startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00',
+      details: { localStartAt: '2027-02-10T15:00', localEndAt: '2027-02-12T10:00' },
+    });
+  });
 });

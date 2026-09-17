@@ -127,4 +127,15 @@ describe('email AI fallback', () => {
     const result = await extractEmailWithLlm('Fwd: This is your receipt', 'Booking.com\nAmount paid on Jan 5, 2027\n\n€ 123.45\nThis is not an invoice.');
     expect(result.candidates[0]).toMatchObject({ price: 123.45, currency: 'EUR' });
   });
+
+  it('overrides a model-hallucinated hotel year using the forwarded Gmail table', async () => {
+    const response = { '@context': 'https://schema.org', '@graph': [{
+      '@type': 'LodgingReservation', reservationFor: { name: 'Example Harbor Hotel' },
+      checkinTime: '2024-05-20T15:00', checkoutTime: '2024-05-22T11:00',
+    }] };
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(response) } }] }) } as Response);
+    const body = '| Check-in |\n| ---------- |\n| Wednesday, February 10, 2027 (3:00 PM - 9:00 PM) |\n| Check-out |\n| --------- |\n| Friday, February 12, 2027 (10:00 AM - 10:30 AM) |';
+    const result = await extractEmailWithLlm('Fwd: hotel confirmation', body);
+    expect(result.candidates[0]).toMatchObject({ startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00' });
+  });
 });

@@ -27,6 +27,10 @@ export interface KitineraryCandidate {
   source: 'kitinerary' | 'llm';
 }
 
+export function needsEmailAiCompletion(candidates: KitineraryCandidate[]): boolean {
+  return !candidates.length || candidates.some((candidate) => candidate.type === 'hotel' && (!candidate.startAt || !candidate.endAt));
+}
+
 export function completeKitineraryCandidates(candidates: KitineraryCandidate[], fallback: ParsedConfirmation | null): KitineraryCandidate[] {
   if (!fallback) return candidates;
   return candidates.map((candidate) => {

@@ -6,7 +6,7 @@ import { extractEmailWithLlm } from './emailLlmParser.js';
 import { decryptEmailPassword, gmailClient } from './emailConnection.js';
 import { matchesRecipient, parseEmailMessage } from './emailMessage.js';
 import type { ParsedMessage } from './emailMessage.js';
-import { extractKitinerary } from './kitinerary.js';
+import { extractKitinerary, needsEmailAiCompletion } from './kitinerary.js';
 
 type SkipReason = 'recipientMismatch' | 'alreadyImported' | 'senderFiltered';
 type IngestResult = 'stored' | Exclude<SkipReason, 'recipientMismatch'>;
@@ -104,17 +104,19 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
   if (allowed.length && !allowed.some((entry) => p.from.toLowerCase().includes(entry))) return 'senderFiltered';
 
   const extracted = await extractKitinerary(source, 'booking.eml', p.sentAt);
-  const llm = extracted.length ? null : await extractEmailWithLlm(p.subject, p.bodyText);
-  const candidates = extracted.length ? extracted : llm?.candidates || [];
+  const llm = needsEmailAiCompletion(extracted) ? await extractEmailWithLlm(p.subject, p.bodyText) : null;
+  const usedAi = Boolean(llm?.candidates.length && (!extracted.length || llm.candidates.some((candidate) => candidate.type === 'hotel')));
+  const candidates = usedAi ? llm!.candidates : extracted;
+  const incomplete = needsEmailAiCompletion(candidates);
   let status: ImportStatus = 'needs_review';
   let type: BookingType | undefined;
   let parsedPayload: Record<string, unknown> | undefined;
 
   if (candidates.length) {
     type = candidates[0].type;
-    status = candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed';
+    status = candidates.some((candidate) => candidate.cancelled) || incomplete ? 'needs_review' : 'parsed';
     parsedPayload = {
-      source: extracted.length ? 'kitinerary' : 'llm', candidates,
+      source: usedAi ? 'llm' : 'kitinerary', candidates,
       title: candidates[0].title, provider: candidates[0].provider,
       reference: candidates[0].reference, startAt: candidates[0].startAt,
       endAt: candidates[0].endAt, confidence: 0.85,
@@ -132,7 +134,7 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
       bodyHtml: p.bodyHtml.slice(0, 200_000),
       rawSource: source.length <= 15 * 1024 * 1024 ? new Uint8Array(source) : undefined,
       status, type,
-      error: llm?.error || null,
+      error: incomplete ? llm?.error || 'Hotel dates are incomplete. Reparse or add the booking manually.' : null,
       parsedPayload: parsedPayload as Prisma.InputJsonValue | undefined,
     },
   });

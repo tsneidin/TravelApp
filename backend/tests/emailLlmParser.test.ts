@@ -40,4 +40,48 @@ describe('email AI fallback', () => {
     expect(body.messages[1].content).toContain('Original hotel confirmation TEST-AK-0917-02');
     expect(body.messages[1].content.length).toBeLessThan(30_100);
   });
+
+  it('handles the quoted Booking.com forward and a common model response format', async () => {
+    const forwarded = [
+      'Sent from my iPhone',
+      'Begin forwarded message:',
+      '> From: noreply@booking.com',
+      '> Subject: Thanks! Your booking is confirmed at Barirooms - Picca 24',
+      '> Confirmation: 5126038442',
+      '> Your apartment in Bari is confirmed.',
+      '> Reservation details',
+      '> Check-in Thursday, October 1, 2026 (3:00 PM - 9:00 PM)',
+      '> Check-out Saturday, October 3, 2026 (10:00 AM - 10:30 AM)',
+      '> Location 24 Piazza Luigi di Savoia Duca Degli Abruzzi, 70121 Bari, Italy',
+      '> Cancellation cost until October 1: € 288.91',
+      '> Price details',
+      '> 1 Deluxe Apartment € 255.37',
+      '> VAT € 25.54',
+      '> Booking.com will pay - € 23.05',
+      '> Total Price € 265.86',
+      '> Total paid € 265.86',
+      '> The property invoice will show € 288.91.',
+      '> <mime-attachment.gif>',
+    ].join('\n');
+    const modelJson = JSON.stringify({
+      '@type': 'LodgingReservation', reservationFor: 'Barirooms - Picca 24',
+      reservationNumber: '5126038442', checkinTime: '2026-10-01T15:00', checkoutTime: '2026-10-03T10:00',
+      totalPrice: '€ 265,86', priceCurrency: '€',
+    });
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: `Here is the reservation:\n\x60\x60\x60json\n${modelJson}\n\x60\x60\x60` } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: Barirooms confirmation', forwarded);
+    expect(result.error).toBeUndefined();
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({ type: 'hotel', title: 'Barirooms - Picca 24', reference: '5126038442', startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00', price: 265.86, currency: 'EUR' });
+    const request = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string) as { messages: Array<{ content: string }> };
+    expect(request.messages[1].content).toContain('Total Price € 265.86');
+    expect(request.messages[1].content).not.toContain('> Check-in');
+    expect(request.messages[1].content).not.toContain('<mime-attachment.gif>');
+  });
+
+  it('uses a single explicitly labeled total instead of a cancellation amount selected by the model', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Barirooms' }, checkinTime: '2026-10-01T15:00', checkoutTime: '2026-10-03T10:00', totalPrice: 288.91, priceCurrency: 'EUR' }] }) } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: hotel', 'Cancellation cost € 288.91\nTotal Price\n€ 265.86\nProperty invoice € 288.91');
+    expect(result.candidates[0]).toMatchObject({ price: 265.86, currency: 'EUR' });
+  });
 });

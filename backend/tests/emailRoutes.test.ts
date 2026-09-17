@@ -12,10 +12,11 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock('../src/db.js', () => ({ prisma: db }));
 vi.mock('../src/services/dayReconciliation.js', () => ({ reconcileTripDays: vi.fn().mockResolvedValue({}) }));
-vi.mock('../src/services/kitinerary.js', () => ({ extractKitinerary: vi.fn().mockResolvedValue([]), completeKitineraryCandidates: (candidates: unknown[]) => candidates }));
+vi.mock('../src/services/kitinerary.js', () => ({ extractKitinerary: vi.fn().mockResolvedValue([]), needsEmailAiCompletion: (candidates: Array<{ type: string; startAt?: string; endAt?: string }>) => !candidates.length || candidates.some((candidate) => candidate.type === 'hotel' && (!candidate.startAt || !candidate.endAt)) }));
 vi.mock('../src/services/emailLlmParser.js', () => ({ extractEmailWithLlm: vi.fn().mockResolvedValue({ candidates: [] }) }));
 
 import { extractEmailWithLlm } from '../src/services/emailLlmParser.js';
+import { extractKitinerary } from '../src/services/kitinerary.js';
 
 import { emailRouter } from '../src/routes/email.routes.js';
 import { errorHandler } from '../src/lib/errors.js';
@@ -33,6 +34,7 @@ describe('personal email review queue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [] });
+    vi.mocked(extractKitinerary).mockResolvedValue([]);
     db.emailConnection.findUnique.mockResolvedValue(null);
     db.emailImport.count.mockResolvedValue(0);
     db.emailImport.groupBy.mockResolvedValue([]);
@@ -120,6 +122,17 @@ describe('personal email review queue', () => {
       .set('Authorization', `Bearer ${token('user-one')}`).send({});
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 0, item: { status: 'needs_review', error: 'AI extraction is disabled.' } });
+  });
+
+  it('uses AI to complete a hotel when KItinerary only finds a partial reservation', async () => {
+    vi.mocked(extractKitinerary).mockResolvedValue([{ source: 'kitinerary', type: 'hotel', title: 'Barirooms', reference: '5126038442', details: {} }]);
+    vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [{ source: 'llm', type: 'hotel', title: 'Barirooms', reference: '5126038442', startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00', price: 265.86, currency: 'EUR', details: {} }] });
+    db.emailImport.findFirst.mockResolvedValue({ id: 'bari-email', userId: 'user-one', status: 'needs_review', subject: 'Fwd: Barirooms', bodyText: 'Confirmation: 5126038442', bodyHtml: '', parsedPayload: null });
+    db.emailImport.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'bari-email', ...data }));
+    const response = await request(app).post('/email/imports/bari-email/reparse')
+      .set('Authorization', `Bearer ${token('user-one')}`).send({});
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 1, item: { status: 'parsed', parsedPayload: { source: 'llm', candidates: [{ startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00', price: 265.86 }] } } });
   });
 
   it('applies reparsed dates only to a booking linked to that email', async () => {

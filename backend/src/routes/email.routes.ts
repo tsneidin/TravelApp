@@ -9,7 +9,7 @@ import { parseEmailMessage } from '../services/emailMessage.js';
 import { stripHtmlToText } from '../services/fileParser.js';
 import { Prisma } from '@prisma/client';
 import type { BookingType, ImportStatus } from '@prisma/client';
-import { extractKitinerary } from '../services/kitinerary.js';
+import { extractKitinerary, needsEmailAiCompletion } from '../services/kitinerary.js';
 import type { KitineraryCandidate } from '../services/kitinerary.js';
 import { decryptEmailPassword, encryptEmailPassword, testGmailConnection } from '../services/emailConnection.js';
 import { z } from 'zod';
@@ -306,20 +306,22 @@ emailRouter.post(
     const previous = item.parsedPayload as ParsedPayloadShape | null;
     const savedCandidates = previous?.source === 'kitinerary' ? previous.candidates || [] : [];
     const kitineraryCandidates = extracted.length ? extracted : savedCandidates;
-    const llm = kitineraryCandidates.length ? null : await extractEmailWithLlm(item.subject, bodyText);
-    const candidates = kitineraryCandidates.length ? kitineraryCandidates : llm?.candidates || [];
+    const llm = needsEmailAiCompletion(kitineraryCandidates) ? await extractEmailWithLlm(item.subject, bodyText) : null;
+    const usedAi = Boolean(llm?.candidates.length && (!kitineraryCandidates.length || llm.candidates.some((candidate) => candidate.type === 'hotel')));
+    const candidates = usedAi ? llm!.candidates : kitineraryCandidates;
+    const incomplete = needsEmailAiCompletion(candidates);
     const updated = await prisma.emailImport.update({
       where: { id: item.id },
       omit: { rawSource: true },
       include: { trip: { select: { id: true, name: true } } },
       data: candidates.length
         ? {
-            status: item.status === 'imported' ? 'imported' : candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed',
+            status: item.status === 'imported' ? 'imported' : candidates.some((candidate) => candidate.cancelled) || incomplete ? 'needs_review' : 'parsed',
             type: candidates[0].type,
             bodyText: bodyText.slice(0, 60_000),
-            error: null,
+            error: incomplete ? llm?.error || 'Hotel dates are incomplete. Reparse or add the booking manually.' : null,
             parsedPayload: {
-              source: kitineraryCandidates.length ? 'kitinerary' : 'llm', candidates,
+              source: usedAi ? 'llm' : 'kitinerary', candidates,
               title: candidates[0].title,
               provider: candidates[0].provider,
               reference: candidates[0].reference,
@@ -330,7 +332,7 @@ emailRouter.post(
           }
         : { status: item.status === 'imported' ? 'imported' : 'needs_review' as ImportStatus, bodyText: bodyText.slice(0, 60_000), error: llm?.error || 'No reservation found', parsedPayload: previous ? previous as Prisma.InputJsonValue : Prisma.DbNull },
     });
-    const parser = extracted.length ? 'KItinerary from the full email' : savedCandidates.length ? 'Saved KItinerary result' : 'AI extraction';
+    const parser = usedAi ? 'AI extraction' : extracted.length ? 'KItinerary from the full email' : savedCandidates.length ? 'Saved KItinerary result' : 'AI extraction';
     const changed = JSON.stringify(item.parsedPayload) !== JSON.stringify(updated.parsedPayload);
     res.json({ item: updated, parser, reservations: candidates.length, changed });
   }),

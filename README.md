@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.154` — check the bottom of the left sidebar for the
+**Current version:** `0.0.155` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -173,6 +173,7 @@ it is not a separate Gmail login.
    EMAIL_RECIPIENT=name+trips@gmail.com
    IMAP_FOLDER=INBOX
    IMPORT_UNSEEN_FIRST=true
+   EMAIL_LOG_LEVEL=info
    ```
 
 3. Recreate the API container so it receives the new environment values.
@@ -197,8 +198,13 @@ To check ingestion on Unraid, open **Docker → travelapp-api → Logs**, or run
 `docker logs --since 30m travelapp-api`. The startup line
 `[email] worker disabled (EMAIL_ENABLED=false)` means no mailbox is being
 checked. `[email] worker disabled; missing EMAIL_RECIPIENT` means the Compose
-environment is incomplete. Once enabled, `[email] polled N, imported M`
-reports each check;
+environment is incomplete. Once enabled, each `[email] polled` line reports
+unread messages checked, stored imports, and counts skipped for a wrong address,
+an existing import, or the sender filter. Set `EMAIL_LOG_LEVEL=debug` in the
+root `.env` and recreate the API container to see each checked message's UID,
+sent date, outcome, and partially masked recipient addresses. Debug logs omit
+subjects, bodies, and credentials. `IMPORT_UNSEEN_FIRST=true` skips messages
+already marked read; mark a test email unread before checking again.
 `[email] poll error` indicates a connection or processing failure. The
 `[kitinerary] extracted N reservation(s)` line means the local extractor found
 structured data. The **Email imports** page shows the stored results and

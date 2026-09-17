@@ -25,6 +25,8 @@ interface EmailStatus {
   folder: string;
   configured: boolean;
   pollMinutes: number;
+  logLevel: string;
+  unreadOnly: boolean;
   recent24h: number;
   byStatus: { status: string; count: number }[];
 }
@@ -63,8 +65,13 @@ export function EmailImports() {
     setBusy(true);
     setMsg('');
     try {
-      const r = await apiPost<{ processed: number; imported: number }>('/email/poll');
-      setMsg(`Poll complete: ${r.processed} processed, ${r.imported} imported.`);
+      const r = await apiPost<{
+        processed: number;
+        imported: number;
+        unreadOnly: boolean;
+        skipped: { recipientMismatch: number; alreadyImported: number; senderFiltered: number };
+      }>('/email/poll');
+      setMsg(`Checked ${r.processed} ${r.unreadOnly ? 'unread' : ''} messages: ${r.imported} stored, ${r.skipped.recipientMismatch} wrong address, ${r.skipped.alreadyImported} already stored, ${r.skipped.senderFiltered} blocked by sender filter.`);
       await load();
     } catch (e) {
       setMsg((e as Error).message);
@@ -130,7 +137,7 @@ export function EmailImports() {
         <div className="kpi">
           <div className="k-label">Monitor</div>
           <div className="k-value">{status.enabled && status.configured ? 'On' : 'Off'}</div>
-          <div className="k-sub">{status.recipient || 'No import address configured'} · {status.folder} · every {status.pollMinutes} min</div>
+          <div className="k-sub">{status.recipient || 'No import address configured'} · {status.folder} · {status.unreadOnly ? 'unread only' : 'all mail'} · every {status.pollMinutes} min · {status.logLevel} logs</div>
         </div>
         <div className="kpi good">
           <div className="k-label">Last 24h</div>

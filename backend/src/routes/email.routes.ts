@@ -47,6 +47,8 @@ emailRouter.get(
       folder: config.email.folder,
       configured: Boolean(config.email.user && config.email.pass && config.email.recipient),
       pollMinutes: config.email.pollMinutes,
+      logLevel: config.email.logLevel,
+      unreadOnly: config.email.unseenFirst,
       recent24h: recent,
       byStatus: grouped.map((g) => ({ status: g.status, count: g._count._all })),
     });

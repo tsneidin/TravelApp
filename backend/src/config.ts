@@ -51,6 +51,7 @@ export const config = {
     recipient: optional('EMAIL_RECIPIENT').trim().toLowerCase(),
     folder: optional('IMAP_FOLDER', 'INBOX'),
     pollMinutes: optionalInt('IMAP_POLL_MINUTES', 5),
+    logLevel: optional('EMAIL_LOG_LEVEL', 'info').trim().toLowerCase() === 'debug' ? 'debug' : 'info',
     allowlist: optional('EMAIL_ALLOWLIST', '')
       .split(',')
       .map((s) => s.trim().toLowerCase())

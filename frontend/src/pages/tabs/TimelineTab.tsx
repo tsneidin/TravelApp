@@ -736,6 +736,7 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
   const activitiesByDay = timelineDays.map((day) => day.places
     .filter((place) => !isAccommodationItem(place) && !isTransitItem(place))
     .sort((a, b) => (minutesOfDay(a.startTime) ?? 1440) - (minutesOfDay(b.startTime) ?? 1440)));
+  const dueTodosByDay = timelineDays.map((day) => (trip.todos ?? []).filter((todo) => parseDateKey(todo.dueDate) === day.dateStr));
   const totalActivityLanes = Math.max(1, ...activitiesByDay.map((places) => places.length));
 
   // Height sizing for multi-lane tracks
@@ -1144,6 +1145,22 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
             )}
 
             {/* 4. TRACK: DAILY ACTIVITIES & PLACES (📍) */}
+            {(trackFilter === 'all' || trackFilter === 'activities') && dueTodosByDay.some((todos) => todos.length) && (
+              <div style={{ padding: '12px 0' }}>
+                <div style={{ padding: '0 12px 8px', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.76rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <AlertCircle size={13} style={{ color: '#f59e0b' }} /> Due To-Do Items
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${timelineDays.length}, ${colWidth}px)`, position: 'relative', minHeight: 48 }}>
+                  {timelineDays.map((day, dayIndex) => (
+                    <div key={day.dateStr} style={{ borderRight: '1px solid rgba(255,255,255,0.06)', padding: '4px 5px', minHeight: 48 }}>
+                      {dueTodosByDay[dayIndex].map((todo) => <div key={todo.id} title={todo.notes || todo.title} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '5px 7px', marginBottom: 3, borderRadius: 6, fontSize: '0.75rem', color: todo.done ? 'var(--muted)' : 'var(--text)', textDecoration: todo.done ? 'line-through' : undefined, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)' }}>To-do: {todo.title}</div>)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 5. TRACK: DAILY ACTIVITIES & PLACES */}
             {(trackFilter === 'all' || trackFilter === 'activities') && (
               <div style={{ padding: '12px 0' }}>
                 <div style={{ padding: '0 12px 8px', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.76rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>

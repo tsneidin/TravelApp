@@ -170,6 +170,13 @@ export function EmailImports() {
     });
   };
 
+  const editableDateTime = (value?: string) => {
+    if (!value) return '';
+    const date = value.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${date}T00:00`;
+    return value.replace('Z', '').slice(0, 16);
+  };
+
   const remove = (id: string) => {
     setDeletingImportId(id);
   };
@@ -293,8 +300,8 @@ export function EmailImports() {
                     <label>Provider<input value={candidate.provider || ''} onChange={(event) => updateCandidate(index, 'provider', event.target.value)} /></label>
                     <label>Reference<input value={candidate.reference || ''} onChange={(event) => updateCandidate(index, 'reference', event.target.value)} /></label>
                     <label>Type<select value={candidate.type} onChange={(event) => updateCandidate(index, 'type', event.target.value)}><option value="hotel">Hotel</option><option value="flight">Flight</option><option value="car">Car</option><option value="activity">Activity</option></select></label>
-                    <label>Start<input type="datetime-local" value={(candidate.details?.localStartAt || candidate.startAt || '').slice(0, 16)} onChange={(event) => updateCandidate(index, 'startAt', event.target.value)} /></label>
-                    <label>End<input type="datetime-local" value={(candidate.details?.localEndAt || candidate.endAt || '').slice(0, 16)} onChange={(event) => updateCandidate(index, 'endAt', event.target.value)} /></label>
+                    <label>Start<input type="datetime-local" value={editableDateTime(candidate.details?.localStartAt || candidate.startAt)} onChange={(event) => updateCandidate(index, 'startAt', event.target.value)} /></label>
+                    <label>End<input type="datetime-local" value={editableDateTime(candidate.details?.localEndAt || candidate.endAt)} onChange={(event) => updateCandidate(index, 'endAt', event.target.value)} /></label>
                     <label>Amount<input type="number" min="0" step="0.01" value={candidate.price ?? ''} onChange={(event) => updateCandidate(index, 'price', event.target.value)} /></label>
                     <label>Currency<input value={candidate.currency || ''} onChange={(event) => updateCandidate(index, 'currency', event.target.value.toUpperCase())} maxLength={3} /></label>
                   </div>

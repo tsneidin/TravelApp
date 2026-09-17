@@ -5,6 +5,8 @@ import { apiGet, apiPost, apiDelete } from '../lib/api';
 import type { EmailImport, Trip, ImportStatus } from '../lib/types';
 import { Spinner } from '../components/Spinner';
 import { Modal, ConfirmModal } from '../components/Modal';
+import { EmailConnectionSettings } from '../components/EmailConnectionSettings';
+import type { EmailConnectionStatus } from '../components/EmailConnectionSettings';
 
 const STATUSES: (ImportStatus | '')[] = ['', 'pending', 'parsed', 'needs_review', 'imported', 'ignored'];
 
@@ -17,23 +19,19 @@ const STATUS_BADGE: Record<ImportStatus, string> = {
   failed: 'badge danger',
 };
 
-interface EmailStatus {
-  enabled: boolean;
-  host: string;
-  user: string;
-  recipient: string;
-  folder: string;
-  configured: boolean;
-  pollMinutes: number;
-  logLevel: string;
-  unreadOnly: boolean;
-  recent24h: number;
-  byStatus: { status: string; count: number }[];
-}
+const STATUS_LABEL: Record<ImportStatus, string> = {
+  pending: 'Review needed',
+  parsed: 'Ready to review',
+  needs_review: 'Check details',
+  imported: 'Added to trip',
+  ignored: 'Ignored',
+  failed: 'Failed',
+};
 
 export function EmailImports() {
   const timeFormat = useTimeFormat();
-  const [status, setStatus] = useState<EmailStatus | null>(null);
+  const [status, setStatus] = useState<EmailConnectionStatus | null>(null);
+  const [showConnection, setShowConnection] = useState(false);
   const [imports, setImports] = useState<EmailImport[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [filter, setFilter] = useState<ImportStatus | ''>('');
@@ -46,7 +44,7 @@ export function EmailImports() {
 
   const load = useCallback(async () => {
     const [s, i, t] = await Promise.all([
-      apiGet<EmailStatus>('/email/status'),
+      apiGet<EmailConnectionStatus>('/email/status'),
       apiGet<{ imports: EmailImport[] }>(`/email/imports${filter ? `?status=${filter}` : ''}`),
       apiGet<{ trips: Trip[] }>('/trips'),
     ]);
@@ -58,7 +56,13 @@ export function EmailImports() {
 
   useEffect(() => {
     setLoading(true);
-    load().finally(() => setLoading(false));
+    load().catch((error) => setMsg((error as Error).message)).finally(() => setLoading(false));
+  }, [load]);
+
+  useEffect(() => {
+    const refresh = () => void load().catch((error) => setMsg((error as Error).message));
+    window.addEventListener('travelapp:email-config-changed', refresh);
+    return () => window.removeEventListener('travelapp:email-config-changed', refresh);
   }, [load]);
 
   const poll = async () => {
@@ -71,7 +75,7 @@ export function EmailImports() {
         unreadOnly: boolean;
         skipped: { recipientMismatch: number; alreadyImported: number; senderFiltered: number };
       }>('/email/poll');
-      setMsg(`Checked ${r.processed} ${r.unreadOnly ? 'unread' : ''} messages: ${r.imported} stored, ${r.skipped.recipientMismatch} wrong address, ${r.skipped.alreadyImported} already stored, ${r.skipped.senderFiltered} blocked by sender filter.`);
+      setMsg(`Checked ${r.processed} ${r.unreadOnly ? 'unread' : ''} messages: ${r.imported} captured for review, ${r.skipped.recipientMismatch} wrong address, ${r.skipped.alreadyImported} already captured, ${r.skipped.senderFiltered} blocked by sender filter.`);
       await load();
     } catch (e) {
       setMsg((e as Error).message);
@@ -81,9 +85,13 @@ export function EmailImports() {
   };
 
   const openDetail = async (id: string) => {
-    const r = await apiGet<{ item: EmailImport }>(`/email/imports/${id}`);
-    setDetail(r.item);
-    setMsg('');
+    try {
+      const r = await apiGet<{ item: EmailImport }>(`/email/imports/${id}`);
+      setDetail(r.item);
+      setMsg('');
+    } catch (error) {
+      setMsg((error as Error).message);
+    }
   };
 
   const assign = async () => {
@@ -91,7 +99,7 @@ export function EmailImports() {
     setBusy(true);
     try {
       const result = await apiPost<{ bookings: unknown[]; skipped: number }>(`/email/imports/${detail.id}/assign`, { tripId: selTrip });
-      setMsg(`${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} imported${result.skipped ? `, ${result.skipped} existing skipped` : ''}.`);
+      setMsg(`${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added to the trip${result.skipped ? `, ${result.skipped} existing skipped` : ''}.`);
       setDetail(null);
       await load();
     } catch (e) {
@@ -102,7 +110,7 @@ export function EmailImports() {
   };
 
   const ignore = async (id: string) => {
-    await apiPost(`/email/imports/${id}/ignore`, { tripId: selTrip || undefined });
+    await apiPost(`/email/imports/${id}/ignore`, {});
     await load();
   };
 
@@ -123,26 +131,32 @@ export function EmailImports() {
     <div className="app-shell">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Email imports</h1>
-          <p className="page-sub">Monitor the inbox, parse confirmations, and file them into trips.</p>
+          <h1 className="page-title">Email inbox</h1>
+          <p className="page-sub">Review your booking emails before adding anything to a trip.</p>
         </div>
-        <button className="btn primary" onClick={() => void poll()} disabled={busy || !status?.enabled || !status?.configured}>
-          <RefreshCw size={16} className={busy ? 'spin' : ''} /> {busy ? 'Checking…' : 'Check now'}
-        </button>
+        <div className="row">
+          <button className="btn" onClick={() => setShowConnection((value) => !value)}>{showConnection ? 'Hide settings' : 'Gmail settings'}</button>
+          <button className="btn primary" onClick={() => void poll()} disabled={busy || !status.enabled || !status.configured}>
+            <RefreshCw size={16} className={busy ? 'spin' : ''} /> {busy ? 'Checking…' : 'Check now'}
+          </button>
+        </div>
       </div>
 
       {msg && <div className="small mt mb" style={{ color: 'var(--accent)', fontWeight: 700 }}>{msg}</div>}
+      {status.lastError && <div className="small danger mb" role="alert">Last mailbox check failed: {status.lastError}</div>}
+
+      {(!status.configured || showConnection) && <EmailConnectionSettings />}
 
       <div className="kpis">
         <div className="kpi">
           <div className="k-label">Monitor</div>
           <div className="k-value">{status.enabled && status.configured ? 'On' : 'Off'}</div>
-          <div className="k-sub">{status.recipient || 'No import address configured'} · {status.folder} · {status.unreadOnly ? 'unread only' : 'all mail'} · every {status.pollMinutes} min · {status.logLevel} logs</div>
+          <div className="k-sub">{status.recipient || 'Connect Gmail above'} · {status.folder} · {status.unseenOnly ? 'unread only' : 'all mail'} · every {status.pollMinutes} min</div>
         </div>
         <div className="kpi good">
           <div className="k-label">Last 24h</div>
           <div className="k-value">{status.recent24h}</div>
-          <div className="k-sub">email imports received</div>
+          <div className="k-sub">emails captured for review</div>
         </div>
         {status.byStatus?.map((b) => (
           <div className="kpi" key={b.status}>
@@ -157,7 +171,7 @@ export function EmailImports() {
         <div className="seg" style={{ maxWidth: 620 }}>
           {STATUSES.map((s) => (
             <button key={s || 'all'} className={filter === s ? 'active' : ''} onClick={() => setFilter(s)}>
-              {s === '' ? 'All' : s}
+              {s === '' ? 'All' : STATUS_LABEL[s]}
             </button>
           ))}
         </div>
@@ -166,7 +180,7 @@ export function EmailImports() {
       {imports.length === 0 ? (
         <div className="empty-state">
           <div className="big"><Inbox size={20} style={{ verticalAlign: -4 }} /> Nothing here</div>
-          <p>Send booking confirmations to {status.recipient || 'the configured import address'}. New mail appears here after the next poll.</p>
+          <p>{status.configured ? `Send booking confirmations to ${status.recipient}. New mail appears here after the next check.` : 'Connect your Gmail account above to capture booking confirmations.'}</p>
         </div>
       ) : (
         <div className="panel table-wrap">
@@ -179,7 +193,7 @@ export function EmailImports() {
             <tbody>
               {imports.map((im) => (
                 <tr key={im.id}>
-                  <td><span className={STATUS_BADGE[im.status]}>{im.status}</span></td>
+                  <td><span className={STATUS_BADGE[im.status]}>{STATUS_LABEL[im.status]}</span></td>
                   <td style={{ textAlign: 'left', maxWidth: 320 }}>
                     <button className="link" style={{ textAlign: 'left' }} onClick={() => void openDetail(im.id)}>
                       {im.subject}
@@ -190,10 +204,10 @@ export function EmailImports() {
                   <td>{formatDateTime(im.createdAt, timeFormat)}</td>
                   <td>
                     <div className="row" style={{ gap: 4 }}>
-                      {im.status !== 'imported' && (
+                      {im.status !== 'ignored' && im.status !== 'imported' && (
                         <button className="btn sm ghost" onClick={() => void ignore(im.id)} title="Ignore"><X size={13} /></button>
                       )}
-                      {im.status !== 'ignored' && im.status !== 'imported' && (
+                      {im.status !== 'imported' && (
                         <button className="btn sm ghost danger" onClick={() => void remove(im.id)} title="Delete"><Trash2 size={13} /></button>
                       )}
                     </div>
@@ -206,9 +220,9 @@ export function EmailImports() {
       )}
 
       {detail && (
-        <Modal title="Imported email" onClose={() => setDetail(null)} wide>
+        <Modal title="Review booking email" onClose={() => setDetail(null)} wide>
           <div className="row between mb">
-            <span className="badge">{detail.status}</span>
+            <span className="badge">{STATUS_LABEL[detail.status]}</span>
             <span className="small muted">from {detail.from}</span>
           </div>
           <div className="mb">
@@ -244,23 +258,23 @@ export function EmailImports() {
             </div>
           )}
 
-          <div className="field small">
+          {!detail.trip && detail.status !== 'ignored' && <div className="field small">
             <label>Import into trip</label>
             <select value={selTrip} onChange={(e) => setSelTrip(e.target.value)}>
               {trips.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-          </div>
+          </div>}
 
           <div className="modal-actions">
             <button className="btn" onClick={() => setDetail(null)}>Close</button>
-            {detail.parsedPayload?.source !== 'kitinerary' && <button className="btn" onClick={() => void reparse(detail.id)}>Reparse</button>}
+            {detail.status !== 'imported' && detail.status !== 'ignored' && detail.parsedPayload?.source !== 'kitinerary' && <button className="btn" onClick={() => void reparse(detail.id)}>Reparse</button>}
             {detail.trip ? (
               <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
-            ) : (
+            ) : detail.status !== 'ignored' ? (
               <button className="btn primary" onClick={() => void assign()} disabled={busy || !selTrip || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
-                <Check size={14} /> Import {detail.parsedPayload?.candidates?.length || 1} booking{detail.parsedPayload?.candidates?.length === 1 ? '' : 's'}
+                <Check size={14} /> Approve and add {detail.parsedPayload?.candidates?.length || 1} booking{detail.parsedPayload?.candidates?.length === 1 ? '' : 's'}
               </button>
-            )}
+            ) : null}
           </div>
 
           <details className="mt" style={{ marginTop: 16 }}>

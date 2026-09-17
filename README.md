@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.156` — check the bottom of the left sidebar for the
+**Current version:** `0.0.158` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -93,8 +93,7 @@ PUBLIC_BASE_URL=http://192.168.86.86:8070
 # Optional bootstrap admin (created on first boot if DB is empty):
 BOOTSTRAP_EMAIL=you@example.com
 BOOTSTRAP_PASSWORD=choose_a_password
-# Optional email import — leave false until IMAP is configured:
-EMAIL_ENABLED=false
+# Gmail imports are configured inside each user's account settings.
 # AI assistant — leave false until an OpenAI-compatible endpoint is set up:
 AI_ENABLED=false
 AI_BASE_URL=http://open-webui:8080   # Open WebUI on the LAN, or Ollama http://<host-ip>:11434
@@ -170,39 +169,29 @@ AI_MODEL=llama3
 > jumps the Map tab to that location.
 
 ## Email import setup
-For `name+trips@gmail.com`, sign in to IMAP as the base account
-`name@gmail.com`. The plus address selects which messages TravelApp imports;
-it is not a separate Gmail login.
+Each user connects their own Gmail account in **Account Settings → Email
+imports** or **Email inbox → Gmail settings**. For `name+trips@gmail.com`, enter
+`name@gmail.com` as the Gmail account and the plus address as the import
+address. The plus address is a filter, not a separate Gmail login.
 
-1. Turn on **2-Step Verification** for the Google account, then create an
-   **App Password** named TravelApp at <https://myaccount.google.com/apppasswords>.
-   Enter that password directly in the private root `.env` on the Docker host.
-   Do not use the normal Gmail password. Personal Gmail accounts have IMAP
-   enabled automatically; there is no IMAP switch to turn on.
-2. Add these values to the root `.env` beside `docker-compose.yml`:
+1. Turn on **2-Step Verification** for the Google account and create a Gmail
+   **App Password** at <https://myaccount.google.com/apppasswords>.
+2. Enter the Gmail address, import address, and app password in TravelApp.
+   Saving verifies the connection. The password is encrypted in the database
+   using the server's `JWT_SECRET` and never returned to the browser. If that
+   secret changes, enter the app password again.
+3. Open **Email inbox**, use **Check now**, review a captured email, select a
+   trip, and choose **Approve and add**. Nothing is added to a trip before
+   approval. Each user can see only their own captured emails. Unread-only
+   checking is the default; the importer does not mark messages read.
 
-   ```dotenv
-   EMAIL_ENABLED=true
-   IMAP_HOST=imap.gmail.com
-   IMAP_PORT=993
-   IMAP_USER=name@gmail.com
-   IMAP_PASS=<Google app password entered on the Docker host>
-   EMAIL_RECIPIENT=name+trips@gmail.com
-   IMAP_FOLDER=INBOX
-   IMPORT_UNSEEN_FIRST=true
-   EMAIL_LOG_LEVEL=info
-   ```
-
-3. Recreate the API container so it receives the new environment values.
-   Send one test booking email to the plus address, then open
-   **Email imports** and select **Check now**. Review the parsed details before
-   choosing **Import as booking** and assigning a trip. The importer leaves
-   Gmail read/unread status unchanged and will not import mail sent only to the
-   base account. Already-read messages are skipped with the default setting.
-
-`EMAIL_ALLOWLIST` is an optional comma-separated **sender** filter. Leave it
-empty initially so bookings from new vendors are not missed. Deleting an
-unassigned import record allows that email to be collected again on a later poll.
+For an upgrade from the former shared mailbox, keep the old `IMAP_USER` and
+`EMAIL_RECIPIENT` values in the root `.env` for one deployment. When a user
+connects that same Gmail account and import address, TravelApp moves the
+unassigned captured emails into that user's review queue. The former
+`IMAP_PASS` is no longer passed to the API container. After verifying the old
+emails appear, remove the old email variables from `.env` and run **Update
+Stack** again. Existing trip bookings remain unchanged.
 
 The API image includes KDE KItinerary. It first extracts structured
 reservations from incoming email and AI Assist attachments; AI Assist also tries
@@ -212,20 +201,10 @@ review before creating bookings. Cancellations are held for review rather than
 created as new bookings. KItinerary runs locally in the API container.
 
 To check ingestion on Unraid, open **Docker → travelapp-api → Logs**, or run
-`docker logs --since 30m travelapp-api`. The startup line
-`[email] worker disabled (EMAIL_ENABLED=false)` means no mailbox is being
-checked. `[email] worker disabled; missing EMAIL_RECIPIENT` means the Compose
-environment is incomplete. Once enabled, each `[email] polled` line reports
-unread messages checked, stored imports, and counts skipped for a wrong address,
-an existing import, or the sender filter. Set `EMAIL_LOG_LEVEL=debug` in the
-root `.env` and recreate the API container to see each checked message's UID,
-sent date, outcome, and partially masked recipient addresses. Debug logs omit
-subjects, bodies, and credentials. `IMPORT_UNSEEN_FIRST=true` skips messages
-already marked read; mark a test email unread before checking again.
-`[email] poll error` indicates a connection or processing failure. The
-`[kitinerary] extracted N reservation(s)` line means the local extractor found
-structured data. The **Email imports** page shows the stored results and
-requires an admin account.
+`docker logs --since 30m travelapp-api`. Each `[email] account=...` line gives
+counts captured and skipped for that user without revealing the account name.
+The log detail setting in Gmail settings adds per-message outcomes with masked
+addresses. The **Email inbox** page also shows the last check and any error.
 
 ## Google API key test
 

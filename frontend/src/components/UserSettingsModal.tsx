@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Upload, KeyRound, User, Check, Sparkles, Palette } from 'lucide-react';
+import { Upload, KeyRound, User, Check, Sparkles, Palette, Mail } from 'lucide-react';
 import { Modal } from './Modal';
 import { Avatar, PRESET_AVATARS } from './Avatar';
 import { useAuth } from '../lib/auth';
 import { apiPatch, apiPost, uploadAvatar } from '../lib/api';
 import { THEMES, getSavedTheme, applyTheme, type ThemeId } from '../lib/theme';
+import { EmailConnectionSettings } from './EmailConnectionSettings';
 
 export interface UserSettingsModalProps {
   onClose: () => void;
@@ -14,7 +15,7 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
   const { user, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'theme' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'theme' | 'email' | 'security'>('profile');
   const [timeFormat, setTimeFormat] = useState(user?.settings?.timeFormat === '24' ? '24' : '12');
   const [name, setName] = useState(user?.name ?? '');
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(user?.avatarUrl ?? null);
@@ -140,6 +141,13 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
           onClick={() => setActiveTab('theme')}
         >
           <Palette size={14} /> Appearance & Theme
+        </button>
+        <button
+          type="button"
+          className={`btn sm ${activeTab === 'email' ? 'primary' : 'ghost'}`}
+          onClick={() => setActiveTab('email')}
+        >
+          <Mail size={14} /> Email imports
         </button>
         <button
           type="button"
@@ -280,6 +288,8 @@ export function UserSettingsModal({ onClose }: UserSettingsModalProps) {
           </div>
         </form>
       )}
+
+      {activeTab === 'email' && <EmailConnectionSettings />}
 
       {activeTab === 'theme' && (
         <div>

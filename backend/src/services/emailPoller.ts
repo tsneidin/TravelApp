@@ -1,10 +1,9 @@
-import { ImapFlow } from 'imapflow';
 import { createHash } from 'node:crypto';
-import { config } from '../config.js';
+import { Prisma } from '@prisma/client';
+import type { BookingType, EmailConnection, ImportStatus } from '@prisma/client';
 import { prisma } from '../db.js';
 import { parseConfirmation } from './emailParser.js';
-import { Prisma } from '@prisma/client';
-import type { BookingType, ImportStatus } from '@prisma/client';
+import { decryptEmailPassword, gmailClient } from './emailConnection.js';
 import { matchesRecipient, parseEmailMessage } from './emailMessage.js';
 import type { ParsedMessage } from './emailMessage.js';
 import { extractKitinerary } from './kitinerary.js';
@@ -20,14 +19,17 @@ export interface EmailPollResult {
   skipped: Record<SkipReason, number>;
 }
 
-function emptyResult(): EmailPollResult {
+const running = new Set<string>();
+
+function emptyResult(unreadOnly: boolean): EmailPollResult {
   return {
-    processed: 0,
-    imported: 0,
-    mailboxMatches: 0,
-    unreadOnly: config.email.unseenFirst,
+    processed: 0, imported: 0, mailboxMatches: 0, unreadOnly,
     skipped: { recipientMismatch: 0, alreadyImported: 0, senderFiltered: 0 },
   };
+}
+
+function accountKey(userId: string): string {
+  return createHash('sha256').update(userId).digest('hex').slice(0, 8);
 }
 
 function messageKey(messageId: string): string {
@@ -40,78 +42,66 @@ function recipientHint(address: string): string {
   return `${local?.slice(0, 1) || '*'}***${tag}@${domain || '?'}`;
 }
 
-function debugMessage(uid: number, message: ParsedMessage, outcome: string): void {
-  if (config.email.logLevel !== 'debug') return;
-  console.log(`[email] debug uid=${uid} id=${messageKey(message.messageId)} sent=${message.sentAt || 'unknown'} outcome=${outcome} recipients=${message.recipients.map(recipientHint).join(',') || 'none'}`);
+function debugMessage(connection: EmailConnection, uid: number, message: ParsedMessage, outcome: string): void {
+  if (connection.logLevel !== 'debug') return;
+  console.log(`[email] account=${accountKey(connection.userId)} uid=${uid} id=${messageKey(message.messageId)} sent=${message.sentAt || 'unknown'} outcome=${outcome} recipients=${message.recipients.map(recipientHint).join(',') || 'none'}`);
 }
 
-function missingEmailSettings(): string[] {
-  return [
-    !config.email.user && 'IMAP_USER',
-    !config.email.pass && 'IMAP_PASS',
-    !config.email.recipient && 'EMAIL_RECIPIENT',
-  ].filter((value): value is string => Boolean(value));
-}
-
-export async function pollOnce(): Promise<EmailPollResult> {
-  const result = emptyResult();
-  if (!config.email.enabled) return result;
-  const missing = missingEmailSettings();
-  if (missing.length) {
-    console.warn(`[email] cannot poll; missing ${missing.join(', ')}`);
-    return result;
-  }
-
-  const client = new ImapFlow({
-    host: config.email.host,
-    port: config.email.port,
-    secure: true,
-    auth: { user: config.email.user, pass: config.email.pass },
-    logger: false,
-  });
+export async function pollOnce(userId: string): Promise<EmailPollResult> {
+  const connection = await prisma.emailConnection.findUnique({ where: { userId } });
+  if (!connection || !connection.enabled) throw new Error('Connect and enable your Gmail account first');
+  if (running.has(userId)) throw new Error('This mailbox is already being checked');
+  const result = emptyResult(connection.unseenOnly);
+  running.add(userId);
+  let client: ReturnType<typeof gmailClient> | undefined;
+  let lastError: string | null = null;
 
   try {
+    client = gmailClient(connection.username, decryptEmailPassword(connection.secret));
     await client.connect();
-    await client.mailboxOpen(config.email.folder);
-    const query = config.email.unseenFirst ? { seen: false } : { all: true };
-    const uids = (await client.search(query, { uid: true })) as number[] | false;
-    if (!uids) return result;
-    result.mailboxMatches = uids.length;
+    await client.mailboxOpen(connection.folder);
+    const uids = (await client.search(connection.unseenOnly ? { seen: false } : { all: true }, { uid: true })) as number[] | false;
+    result.mailboxMatches = uids ? uids.length : 0;
 
-    for (const uid of uids) {
+    for (const uid of uids || []) {
       const msg = await client.fetchOne(uid, { source: true }, { uid: true });
       if (!msg || !msg.source) continue;
       const parsed = await parseEmailMessage(msg.source);
       result.processed++;
-      if (!matchesRecipient(parsed, config.email.recipient)) {
+      if (!matchesRecipient(parsed, connection.recipient)) {
         result.skipped.recipientMismatch++;
-        debugMessage(uid, parsed, 'recipientMismatch');
+        debugMessage(connection, uid, parsed, 'recipientMismatch');
         continue;
       }
-      const outcome = await ingest(parsed, msg.source);
+      const outcome = await ingest(parsed, msg.source, connection);
       if (outcome === 'stored') result.imported++;
       else result.skipped[outcome]++;
-      debugMessage(uid, parsed, outcome);
+      debugMessage(connection, uid, parsed, outcome);
     }
+    console.log(`[email] account=${accountKey(userId)} checked ${result.processed} ${connection.unseenOnly ? 'unread' : 'total'}, captured ${result.imported}; skipped recipient=${result.skipped.recipientMismatch}, existing=${result.skipped.alreadyImported}, sender=${result.skipped.senderFiltered}`);
+    return result;
+  } catch (error) {
+    lastError = error instanceof Error ? error.message.slice(0, 200) : 'Mailbox check failed';
+    console.error(`[email] account=${accountKey(userId)} poll error: ${lastError}`);
+    throw error;
   } finally {
     try {
-      await client.logout();
-    } catch {
-      /* ignore */
+      if (client?.usable) await client.logout().catch(() => undefined);
+      await prisma.emailConnection.updateMany({ where: { userId }, data: { lastCheckedAt: new Date(), lastError } });
+    } finally {
+      running.delete(userId);
     }
   }
-
-  return result;
 }
 
-async function ingest(p: ParsedMessage, source: Buffer): Promise<IngestResult> {
-  const existing = await prisma.emailImport.findUnique({ where: { messageId: p.messageId } });
+async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnection): Promise<IngestResult> {
+  const existing = await prisma.emailImport.findUnique({
+    where: { userId_messageId: { userId: connection.userId, messageId: p.messageId } },
+  });
   if (existing) return 'alreadyImported';
 
-  if (config.email.allowlist.length) {
-    const from = p.from.toLowerCase();
-    if (!config.email.allowlist.some((d) => from.includes(d))) return 'senderFiltered';
-  }
+  const allowed = connection.allowlist.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (allowed.length && !allowed.some((entry) => p.from.toLowerCase().includes(entry))) return 'senderFiltered';
 
   const candidates = await extractKitinerary(source, 'booking.eml', p.sentAt);
   const parsed = candidates.length ? null : parseConfirmation(p.subject, p.bodyText);
@@ -123,40 +113,31 @@ async function ingest(p: ParsedMessage, source: Buffer): Promise<IngestResult> {
     type = candidates[0].type;
     status = candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed';
     parsedPayload = {
-      source: 'kitinerary',
-      candidates,
-      title: candidates[0].title,
-      provider: candidates[0].provider,
-      reference: candidates[0].reference,
-      startAt: candidates[0].startAt,
-      endAt: candidates[0].endAt,
-      confidence: 0.85,
+      source: 'kitinerary', candidates,
+      title: candidates[0].title, provider: candidates[0].provider,
+      reference: candidates[0].reference, startAt: candidates[0].startAt,
+      endAt: candidates[0].endAt, confidence: 0.85,
     };
   } else if (parsed) {
     type = parsed.type;
     status = parsed.confidence >= 0.7 ? 'parsed' : 'needs_review';
     parsedPayload = {
-      title: parsed.title,
-      provider: parsed.provider,
-      reference: parsed.reference,
-      startAt: parsed.startAt?.toISOString(),
-      endAt: parsed.endAt?.toISOString(),
-      address: parsed.address,
-      details: parsed.details,
-      confidence: parsed.confidence,
+      title: parsed.title, provider: parsed.provider, reference: parsed.reference,
+      startAt: parsed.startAt?.toISOString(), endAt: parsed.endAt?.toISOString(),
+      address: parsed.address, details: parsed.details, confidence: parsed.confidence,
     };
   }
 
   await prisma.emailImport.create({
     data: {
+      userId: connection.userId,
       messageId: p.messageId,
       from: p.from,
       to: p.to,
       subject: p.subject,
       bodyText: p.bodyText.slice(0, 60_000),
       bodyHtml: p.bodyHtml.slice(0, 200_000),
-      status,
-      type,
+      status, type,
       parsedPayload: parsedPayload as Prisma.InputJsonValue | undefined,
     },
   });
@@ -164,22 +145,16 @@ async function ingest(p: ParsedMessage, source: Buffer): Promise<IngestResult> {
 }
 
 export function startEmailWorker(): void {
-  if (!config.email.enabled) return;
-  const missing = missingEmailSettings();
-  if (missing.length) {
-    console.warn(`[email] worker disabled; missing ${missing.join(', ')}`);
-    return;
-  }
-  console.log(`[email] monitoring ${config.email.folder} (${config.email.unseenFirst ? 'unread only' : 'all mail'}), recipient=${recipientHint(config.email.recipient)}, log level=${config.email.logLevel}`);
-  const intervalMs = Math.max(config.email.pollMinutes, 1) * 60_000;
   const run = async () => {
-    try {
-      const r = await pollOnce();
-      console.log(`[email] polled ${r.processed} ${r.unreadOnly ? 'unread' : 'total'}, imported ${r.imported}; skipped recipient=${r.skipped.recipientMismatch}, existing=${r.skipped.alreadyImported}, sender=${r.skipped.senderFiltered}`);
-    } catch (e) {
-      console.error('[email] poll error', e);
+    const now = Date.now();
+    const connections = await prisma.emailConnection.findMany({ where: { enabled: true }, select: { userId: true, pollMinutes: true, lastCheckedAt: true } });
+    for (const connection of connections) {
+      if (running.has(connection.userId)) continue;
+      const intervalMs = Math.max(connection.pollMinutes, 1) * 60_000;
+      if (connection.lastCheckedAt && now - connection.lastCheckedAt.getTime() < intervalMs) continue;
+      void pollOnce(connection.userId).catch(() => undefined);
     }
   };
-  void run();
-  setInterval(run, intervalMs);
+  void run().catch((error) => console.error('[email] worker error', error));
+  setInterval(() => void run().catch((error) => console.error('[email] worker error', error)), 60_000);
 }

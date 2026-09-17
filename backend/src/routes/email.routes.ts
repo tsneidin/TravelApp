@@ -9,6 +9,8 @@ import { Prisma } from '@prisma/client';
 import type { BookingType, ImportStatus } from '@prisma/client';
 import { extractKitinerary } from '../services/kitinerary.js';
 import type { KitineraryCandidate } from '../services/kitinerary.js';
+import { decryptEmailPassword, encryptEmailPassword, testGmailConnection } from '../services/emailConnection.js';
+import { z } from 'zod';
 
 interface ParsedPayloadShape {
   source?: string;
@@ -29,26 +31,98 @@ interface ParsedPayloadShape {
 
 export const emailRouter = Router();
 
+const connectionSchema = z.object({
+  username: z.string().email(),
+  recipient: z.string().email(),
+  appPassword: z.string().max(200).optional(),
+  folder: z.string().min(1).max(100).default('INBOX'),
+  enabled: z.boolean().default(true),
+  unseenOnly: z.boolean().default(true),
+  pollMinutes: z.number().int().min(1).max(60).default(5),
+  logLevel: z.enum(['info', 'debug']).default('info'),
+  allowlist: z.string().max(500).default(''),
+});
+
+emailRouter.patch(
+  '/connection',
+  asyncHandler(async (req, res) => {
+    const user = getUser(req);
+    const parsed = connectionSchema.safeParse(req.body);
+    if (!parsed.success) throw badRequest('Enter a valid Gmail address, import address, and mailbox settings');
+    const values = parsed.data;
+    const username = values.username.trim().toLowerCase();
+    const recipient = values.recipient.trim().toLowerCase();
+    const existing = await prisma.emailConnection.findUnique({ where: { userId: user.id } });
+    const password = values.appPassword?.replace(/\s+/g, '') || (existing ? decryptEmailPassword(existing.secret) : '');
+    if (!password) throw badRequest('A Gmail app password is required');
+    if (values.enabled) {
+      try {
+        await testGmailConnection(username, password, values.folder);
+      } catch {
+        throw badRequest('Could not connect to Gmail. Check the account, app password, and folder.');
+      }
+    }
+    await prisma.emailConnection.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id, username, recipient,
+        secret: encryptEmailPassword(password), folder: values.folder,
+        enabled: values.enabled, unseenOnly: values.unseenOnly,
+        pollMinutes: values.pollMinutes, logLevel: values.logLevel, allowlist: values.allowlist.trim(),
+      },
+      update: {
+        username, recipient, secret: encryptEmailPassword(password), folder: values.folder,
+        enabled: values.enabled, unseenOnly: values.unseenOnly,
+        pollMinutes: values.pollMinutes, logLevel: values.logLevel, allowlist: values.allowlist.trim(),
+        lastError: null,
+      },
+    });
+    // The former server-wide inbox had unassigned records. Claim them only
+    // after this user proves access to that same mailbox and import address.
+    let claimed = 0;
+    if (values.enabled && config.legacyEmail.user === username && config.legacyEmail.recipient === recipient) {
+      const unassigned = await prisma.emailImport.findMany({ where: { userId: null }, select: { id: true, messageId: true } });
+      for (const item of unassigned) {
+        const duplicate = await prisma.emailImport.findUnique({
+          where: { userId_messageId: { userId: user.id, messageId: item.messageId } },
+          select: { id: true },
+        });
+        if (duplicate) continue;
+        const result = await prisma.emailImport.updateMany({ where: { id: item.id, userId: null }, data: { userId: user.id } });
+        claimed += result.count;
+      }
+    }
+    res.json({ ok: true, claimed });
+  }),
+);
+
+emailRouter.delete(
+  '/connection',
+  asyncHandler(async (req, res) => {
+    await prisma.emailConnection.deleteMany({ where: { userId: getUser(req).id } });
+    res.status(204).send();
+  }),
+);
+
 emailRouter.get(
   '/status',
   asyncHandler(async (req, res) => {
     const user = getUser(req);
-    if (!user.isAdmin) {
-      res.status(403).json({ error: 'Admin only' });
-      return;
-    }
-    const recent = await prisma.emailImport.count({ where: { createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } });
-    const grouped = await prisma.emailImport.groupBy({ by: ['status'], _count: { _all: true } });
+    const connection = await prisma.emailConnection.findUnique({ where: { userId: user.id } });
+    const recent = await prisma.emailImport.count({ where: { userId: user.id, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } });
+    const grouped = await prisma.emailImport.groupBy({ by: ['status'], where: { userId: user.id }, _count: { _all: true } });
     res.json({
-      enabled: config.email.enabled,
-      host: config.email.host,
-      user: config.email.user,
-      recipient: config.email.recipient,
-      folder: config.email.folder,
-      configured: Boolean(config.email.user && config.email.pass && config.email.recipient),
-      pollMinutes: config.email.pollMinutes,
-      logLevel: config.email.logLevel,
-      unreadOnly: config.email.unseenFirst,
+      enabled: connection?.enabled ?? false,
+      configured: Boolean(connection),
+      username: connection?.username ?? '',
+      recipient: connection?.recipient ?? '',
+      folder: connection?.folder ?? 'INBOX',
+      pollMinutes: connection?.pollMinutes ?? 5,
+      logLevel: connection?.logLevel ?? 'info',
+      unseenOnly: connection?.unseenOnly ?? true,
+      allowlist: connection?.allowlist ?? '',
+      lastCheckedAt: connection?.lastCheckedAt ?? null,
+      lastError: connection?.lastError ?? null,
       recent24h: recent,
       byStatus: grouped.map((g) => ({ status: g.status, count: g._count._all })),
     });
@@ -59,14 +133,7 @@ emailRouter.post(
   '/poll',
   asyncHandler(async (req, res) => {
     const u = getUser(req);
-    if (!u.isAdmin) {
-      res.status(403).json({ error: 'Admin only' });
-      return;
-    }
-    if (!config.email.enabled || !config.email.user || !config.email.pass || !config.email.recipient) {
-      throw badRequest('Email import is not fully configured');
-    }
-    const result = await pollOnce();
+    const result = await pollOnce(u.id);
     res.json(result);
   }),
 );
@@ -76,9 +143,8 @@ emailRouter.get(
   asyncHandler(async (req, res) => {
     const user = getUser(req);
     const status = req.query.status as string | undefined;
-    const where: Prisma.EmailImportWhereInput = {};
+    const where: Prisma.EmailImportWhereInput = { userId: user.id };
     if (status) where.status = status as ImportStatus;
-    if (!user.isAdmin) where.trip = { members: { some: { userId: user.id } } };
     const imports = await prisma.emailImport.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -93,17 +159,10 @@ emailRouter.get(
   '/imports/:id',
   asyncHandler(async (req, res) => {
     const user = getUser(req);
-    const item = await prisma.emailImport.findUnique({ where: { id: req.params.id } });
+    const item = await prisma.emailImport.findFirst({ where: { id: req.params.id, userId: user.id } });
     if (!item) {
       res.status(404).json({ error: 'Import not found' });
       return;
-    }
-    if (!user.isAdmin) {
-      const trip = item.tripId ? await prisma.tripMember.findFirst({ where: { tripId: item.tripId, userId: user.id } }) : await prisma.tripMember.findFirst({ where: { userId: user.id } });
-      if (!trip) {
-        res.status(403).json({ error: 'Forbidden' });
-        return;
-      }
     }
     res.json({ item });
   }),
@@ -113,11 +172,7 @@ emailRouter.delete(
   '/imports/:id',
   asyncHandler(async (req, res) => {
     const user = getUser(req);
-    if (!user.isAdmin) {
-      res.status(403).json({ error: 'Admin only' });
-      return;
-    }
-    const item = await prisma.emailImport.findUnique({ where: { id: req.params.id } });
+    const item = await prisma.emailImport.findFirst({ where: { id: req.params.id, userId: user.id } });
     if (!item) throw notFound('Import not found');
     if (item.status === 'imported') throw badRequest('Imported emails cannot be deleted here');
     await prisma.emailImport.delete({ where: { id: req.params.id } });
@@ -133,9 +188,9 @@ emailRouter.post(
     const tripId = req.body.tripId as string;
     if (!tripId) throw badRequest('tripId is required');
     await requireTripAccess(req, tripId, 'editor');
-    const item = await prisma.emailImport.findUnique({ where: { id } });
+    const item = await prisma.emailImport.findFirst({ where: { id, userId: user.id } });
     if (!item) throw notFound('Import not found');
-    if (item.status === 'imported') throw badRequest('This email has already been imported');
+    if (item.status === 'imported' || item.status === 'ignored') throw badRequest('This email has already been reviewed');
     const pp: ParsedPayloadShape | null = item.parsedPayload as ParsedPayloadShape | null;
     if (!pp) {
       // attempt re-parse on assign
@@ -168,8 +223,8 @@ emailRouter.post(
     }
     const result = await prisma.$transaction(async (tx) => {
       const claimed = await tx.emailImport.updateMany({
-        where: { id, status: { not: 'imported' } },
-        data: { status: 'imported', tripId, userId: user.id, assignedAt: new Date() },
+        where: { id, userId: user.id, status: { notIn: ['imported', 'ignored'] } },
+        data: { status: 'imported', tripId, assignedAt: new Date() },
       });
       if (!claimed.count) throw badRequest('This email has already been imported');
       const bookings = [];
@@ -212,13 +267,13 @@ emailRouter.post(
   '/imports/:id/ignore',
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    await requireTripAccess(req, String(req.body.tripId || ''), 'editor');
-    const existing = await prisma.emailImport.findUnique({ where: { id } });
+    const user = getUser(req);
+    const existing = await prisma.emailImport.findFirst({ where: { id, userId: user.id } });
     if (!existing) throw notFound('Import not found');
     if (existing.status === 'imported') throw badRequest('An imported email cannot be ignored');
     const item = await prisma.emailImport.update({
       where: { id },
-      data: { status: 'ignored', tripId: req.body.tripId || null },
+      data: { status: 'ignored' },
     });
     res.json({ item });
   }),
@@ -227,11 +282,7 @@ emailRouter.post(
 emailRouter.post(
   '/imports/:id/reparse',
   asyncHandler(async (req, res) => {
-    if (!getUser(req).isAdmin) {
-      res.status(403).json({ error: 'Admin only' });
-      return;
-    }
-    const item = await prisma.emailImport.findUnique({ where: { id: req.params.id } });
+    const item = await prisma.emailImport.findFirst({ where: { id: req.params.id, userId: getUser(req).id } });
     if (!item) {
       res.status(404).json({ error: 'Import not found' });
       return;

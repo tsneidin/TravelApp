@@ -36,11 +36,7 @@ async function main() {
     console.log(`[api] debug logging ${config.debugLogging ? 'enabled' : 'disabled'}`);
   });
 
-  if (config.email.enabled) {
-    startEmailWorker();
-  } else {
-    console.log('[email] worker disabled (EMAIL_ENABLED=false)');
-  }
+  startEmailWorker();
 
   const shutdown = async () => {
     server.close();

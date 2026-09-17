@@ -283,7 +283,7 @@ export function Layout() {
             <Plane size={20} className="side-brand-icon" style={{ flexShrink: 0 }} />
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, textAlign: 'left' }}>
               <span className="mobile-top-title" style={{ fontWeight: 800 }}>
-                {currentTrip ? currentTrip.name : location.pathname === '/calendar' ? 'Calendar' : location.pathname === '/email' ? 'Email Imports' : 'TravelApp'}
+                {currentTrip ? currentTrip.name : location.pathname === '/calendar' ? 'Calendar' : location.pathname === '/email' ? 'Email inbox' : 'TravelApp'}
               </span>
               {currentTrip?.destination && (
                 <span className="mobile-top-sub">{currentTrip.destination}</span>
@@ -408,12 +408,10 @@ export function Layout() {
             <CalendarDays size={18} />
             <span>Calendar</span>
           </NavLink>
-          {user?.isAdmin && (
-            <NavLink to="/email" className={({ isActive }) => (isActive ? 'side-link active' : 'side-link')}>
-              <Inbox size={18} />
-              <span>Email imports</span>
-            </NavLink>
-          )}
+          <NavLink to="/email" className={({ isActive }) => (isActive ? 'side-link active' : 'side-link')}>
+            <Inbox size={18} />
+            <span>Email inbox</span>
+          </NavLink>
         </nav>
 
         <div className="side-section-label">

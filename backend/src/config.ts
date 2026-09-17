@@ -42,21 +42,9 @@ export const config = {
     name: optional('BOOTSTRAP_NAME', 'Admin'),
   },
 
-  email: {
-    enabled: optionalBool('EMAIL_ENABLED', false),
-    host: optional('IMAP_HOST', 'imap.gmail.com'),
-    port: optionalInt('IMAP_PORT', 993),
-    user: optional('IMAP_USER'),
-    pass: optional('IMAP_PASS'),
-    recipient: optional('EMAIL_RECIPIENT').trim().toLowerCase(),
-    folder: optional('IMAP_FOLDER', 'INBOX'),
-    pollMinutes: optionalInt('IMAP_POLL_MINUTES', 5),
-    logLevel: optional('EMAIL_LOG_LEVEL', 'info').trim().toLowerCase() === 'debug' ? 'debug' : 'info',
-    allowlist: optional('EMAIL_ALLOWLIST', '')
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-    unseenFirst: optionalBool('IMPORT_UNSEEN_FIRST', true),
+  legacyEmail: {
+    user: optional('LEGACY_IMAP_USER').trim().toLowerCase(),
+    recipient: optional('LEGACY_EMAIL_RECIPIENT').trim().toLowerCase(),
   },
 
   ai: {

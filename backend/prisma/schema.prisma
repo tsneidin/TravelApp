@@ -56,6 +56,7 @@ model User {
   expenses     Expense[]      @relation("ExpenseUser")
   paidExpenses Expense[]      @relation("ExpensePayer")
   imports      EmailImport[]
+  emailConnection EmailConnection?
   bookings     Booking[]
   chat         ChatMessage[]
 }
@@ -267,7 +268,7 @@ model Booking {
 
 model EmailImport {
   id            String       @id @default(cuid())
-  messageId     String       @unique
+  messageId     String
   from          String
   to            String?
   subject       String
@@ -283,11 +284,32 @@ model EmailImport {
 
   trip    Trip?    @relation(fields: [tripId], references: [id])
   tripId  String?
-  user    User?    @relation(fields: [userId], references: [id])
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String?
 
   @@index([tripId])
   @@index([status])
+  @@unique([userId, messageId])
+}
+
+model EmailConnection {
+  userId        String   @id
+  username      String
+  secret        String
+  recipient     String
+  folder        String   @default("INBOX")
+  enabled       Boolean  @default(true)
+  unseenOnly    Boolean  @default(true)
+  pollMinutes   Int      @default(5)
+  logLevel      String   @default("info")
+  allowlist     String   @default("")
+  lastCheckedAt DateTime?
+  lastError     String?
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, lastCheckedAt])
 }
 
 model ChatMessage {

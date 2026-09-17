@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.158` — check the bottom of the left sidebar for the
+**Current version:** `0.0.159` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -180,10 +180,19 @@ address. The plus address is a filter, not a separate Gmail login.
    Saving verifies the connection. The password is encrypted in the database
    using the server's `JWT_SECRET` and never returned to the browser. If that
    secret changes, enter the app password again.
-3. Open **Email inbox**, use **Check now**, review a captured email, select a
-   trip, and choose **Approve and add**. Nothing is added to a trip before
-   approval. Each user can see only their own captured emails. Unread-only
-   checking is the default; the importer does not mark messages read.
+3. Open **Email inbox**, use **Check now**, review a captured email, select an
+   existing trip or **Create a new trip**, and choose **Approve and add**.
+   Nothing is added to a trip before approval. Each user can see only their
+   own captured emails. Unread-only checking is the default; the importer does
+   not mark messages read.
+
+**Reparse email** shows that it is working, then reports which parser found the
+reservation and whether the details changed. KItinerary receives the full
+original email on first capture and on reparse for newly captured messages.
+Older emails are reparsed from saved HTML/text, while prior KItinerary results
+are retained if present. For an email already added to a trip, reparse changes
+only the preview. **Apply dates to booking** updates the linked booking after
+you review the newly extracted check-in and check-out dates.
 
 For an upgrade from the former shared mailbox, keep the old `IMAP_USER` and
 `EMAIL_RECIPIENT` values in the root `.env` for one deployment. When a user

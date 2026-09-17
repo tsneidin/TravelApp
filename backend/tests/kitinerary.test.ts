@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { extractKitinerary, normalizeKitineraryOutput } from '../src/services/kitinerary.js';
+import { completeKitineraryCandidates, extractKitinerary, normalizeKitineraryOutput } from '../src/services/kitinerary.js';
+import { parseConfirmation } from '../src/services/emailParser.js';
 
 describe('KItinerary reservation mapping', () => {
   it('maps a hotel stay with local times and a numeric euro total', () => {
@@ -20,7 +21,17 @@ describe('KItinerary reservation mapping', () => {
       type: 'hotel', title: 'Test Hotel', reference: 'EURO123',
       startAt: '2026-10-03T15:00:00+02:00', endAt: '2026-10-05T11:00:00+02:00',
       price: 39.98, currency: 'EUR', address: '1 Example St, Bari, IT',
+      details: { localStartAt: '2026-10-03T15:00', localEndAt: '2026-10-05T11:00' },
     });
+  });
+
+  it('fills hotel dates omitted by KItinerary from the email text', () => {
+    const candidates = normalizeKitineraryOutput([{ '@type': 'LodgingReservation', reservationFor: { name: 'Alaska Lodge' } }]);
+    const fallback = parseConfirmation('Alaska hotel booking', 'Check-in: December 13, 2026 at 3 PM. Check-out: December 15, 2026 at 11 AM.');
+    const [result] = completeKitineraryCandidates(candidates, fallback);
+    expect(result.startAt).toBe('2026-12-13T15:00:00.000Z');
+    expect(result.endAt).toBe('2026-12-15T11:00:00.000Z');
+    expect(result.details).toMatchObject({ localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' });
   });
 
   it('keeps transport route, deduplicates passengers, and flags cancellations', () => {

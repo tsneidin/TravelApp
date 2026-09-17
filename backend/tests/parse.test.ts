@@ -41,6 +41,46 @@ describe('parseConfirmation', () => {
     expect(r!.reference).toBeTruthy();
   });
 
+  it('keeps distinct Alaska hotel check-in and check-out wall times', () => {
+    const body = 'Hotel stay confirmed. Check-in: Sunday, December 13, 2026 after 3:00 PM. Check-out: Tuesday, December 15, 2026 before 11:00 AM. Room for two guests.';
+    const result = parseConfirmation('Alaska hotel booking confirmation', body);
+    expect(result?.type).toBe('hotel');
+    expect(result?.startAt?.toISOString()).toBe('2026-12-13T15:00:00.000Z');
+    expect(result?.endAt?.toISOString()).toBe('2026-12-15T11:00:00.000Z');
+    expect(result?.details).toMatchObject({ localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' });
+  });
+
+  it('parses the captured Anchorage test-email format and its body confirmation number', () => {
+    const body = `TEST DATA ONLY. NO RESERVATION EXISTS.
+HOTEL BOOKING CONFIRMATION (TEST)
+Confirmation number: TEST-AK-0917-02
+Property: Aurora Harbor Hotel (fictional)
+Address: 100 Example Avenue, Anchorage, AK 99501
+Check-in: December 13, 2026 at 3:00 PM Alaska time
+Check-out: December 15, 2026 at 11:00 AM Alaska time`;
+    const result = parseConfirmation('[TEST DATA - NOT A RESERVATION] Anchorage hotel confirmation - Dec 13-15, 2026 - TEST-AK-0917-02', body);
+    expect(result).toMatchObject({ type: 'hotel', title: 'Aurora Harbor Hotel', provider: 'Aurora Harbor Hotel', reference: 'TEST-AK-0917-02', address: '100 Example Avenue, Anchorage, AK 99501' });
+    expect(result?.details).toMatchObject({ localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' });
+  });
+
+  it('does not mistake Anchorage in a subject for the hotel confirmation number', () => {
+    const body = `HOTEL BOOKING CONFIRMATION (TEST)
+Hotel: Northern Lights Test Hotel (fictional property)
+Location: Anchorage, Alaska, USA
+Confirmation number: TESTAK2026 (invalid test reference)
+Check-in: December 13, 2026 at 3:00 PM Alaska time
+Check-out: December 15, 2026 at 11:00 AM Alaska time`;
+    const result = parseConfirmation('Hotel booking confirmation - Anchorage, Alaska - Dec 13-15, 2026', body);
+    expect(result?.reference).toBe('TESTAK2026');
+    expect(result?.title).toBe('Northern Lights Test Hotel');
+    expect(result?.details).toMatchObject({ localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' });
+  });
+
+  it('keeps the checkout date when hotel times are omitted', () => {
+    const result = parseConfirmation('Hotel booking confirmation', 'Check-in: 13/12/2026. Check-out: 15/12/2026.');
+    expect(result?.details).toMatchObject({ localStartAt: '2026-12-13', localEndAt: '2026-12-15' });
+  });
+
   it('extracts car rental details', () => {
     const body =
       'Your car rental with Enterprise pickup 2026-10-03 at Narita. Confirmation #: 55421-ENT.';

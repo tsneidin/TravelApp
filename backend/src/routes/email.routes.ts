@@ -7,10 +7,11 @@ import { pollOnce } from '../services/emailPoller.js';
 import { parseConfirmation } from '../services/emailParser.js';
 import { Prisma } from '@prisma/client';
 import type { BookingType, ImportStatus } from '@prisma/client';
-import { extractKitinerary } from '../services/kitinerary.js';
+import { completeKitineraryCandidates, extractKitinerary } from '../services/kitinerary.js';
 import type { KitineraryCandidate } from '../services/kitinerary.js';
 import { decryptEmailPassword, encryptEmailPassword, testGmailConnection } from '../services/emailConnection.js';
 import { z } from 'zod';
+import { reconcileTripDays } from '../services/dayReconciliation.js';
 
 interface ParsedPayloadShape {
   source?: string;
@@ -42,6 +43,15 @@ const connectionSchema = z.object({
   logLevel: z.enum(['info', 'debug']).default('info'),
   allowlist: z.string().max(500).default(''),
 });
+
+function bookingDate(candidate: ParsedPayloadShape, field: 'startAt' | 'endAt'): Date | null {
+  const local = candidate.details?.[field === 'startAt' ? 'localStartAt' : 'localEndAt'];
+  if (local && /^20\d\d-\d\d-\d\d(?:T\d\d:\d\d)?$/.test(local)) {
+    return new Date(`${local.length === 10 ? `${local}T12:00` : local}:00Z`);
+  }
+  const value = candidate[field];
+  return value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null;
+}
 
 emailRouter.patch(
   '/connection',
@@ -149,7 +159,7 @@ emailRouter.get(
       where,
       orderBy: { createdAt: 'desc' },
       take: 200,
-      include: { trip: { select: { id: true, name: true } } },
+      select: { id: true, from: true, subject: true, status: true, type: true, createdAt: true, tripId: true, trip: { select: { id: true, name: true } } },
     });
     res.json({ imports });
   }),
@@ -159,7 +169,7 @@ emailRouter.get(
   '/imports/:id',
   asyncHandler(async (req, res) => {
     const user = getUser(req);
-    const item = await prisma.emailImport.findFirst({ where: { id: req.params.id, userId: user.id } });
+    const item = await prisma.emailImport.findFirst({ where: { id: req.params.id, userId: user.id }, omit: { rawSource: true }, include: { trip: { select: { id: true, name: true } } } });
     if (!item) {
       res.status(404).json({ error: 'Import not found' });
       return;
@@ -185,9 +195,11 @@ emailRouter.post(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const user = getUser(req);
-    const tripId = req.body.tripId as string;
-    if (!tripId) throw badRequest('tripId is required');
-    await requireTripAccess(req, tripId, 'editor');
+    const tripId = typeof req.body.tripId === 'string' ? req.body.tripId : '';
+    const newTrip = z.object({ name: z.string().trim().min(1).max(120), destination: z.string().trim().max(200).optional() }).safeParse(req.body.newTrip);
+    if (!tripId && !newTrip.success) throw badRequest('Select a trip or enter a new trip name');
+    if (tripId && req.body.newTrip) throw badRequest('Choose an existing trip or a new trip');
+    if (tripId) await requireTripAccess(req, tripId, 'editor');
     const item = await prisma.emailImport.findFirst({ where: { id, userId: user.id } });
     if (!item) throw notFound('Import not found');
     if (item.status === 'imported' || item.status === 'ignored') throw badRequest('This email has already been reviewed');
@@ -201,6 +213,7 @@ emailRouter.post(
         data: {
           type: parsed.type,
           parsedPayload: {
+            source: 'fallback',
             title: parsed.title,
             provider: parsed.provider,
             reference: parsed.reference,
@@ -222,9 +235,19 @@ emailRouter.post(
       throw badRequest('This email includes a cancellation. Review the existing booking instead.');
     }
     const result = await prisma.$transaction(async (tx) => {
+      const dateKeys = candidates.flatMap((candidate) => [candidate.details?.localStartAt?.slice(0, 10) || candidate.startAt?.slice(0, 10), candidate.details?.localEndAt?.slice(0, 10) || candidate.endAt?.slice(0, 10)]).filter((value): value is string => Boolean(value && /^20\d\d-\d\d-\d\d$/.test(value))).sort();
+      const createdTrip = newTrip.success ? await tx.trip.create({ data: {
+        ownerId: user.id,
+        name: newTrip.data.name,
+        destination: newTrip.data.destination || '',
+        currency: candidates.find((candidate) => candidate.currency)?.currency || 'USD',
+        startDate: dateKeys.length ? new Date(`${dateKeys[0]}T12:00:00Z`) : undefined,
+        endDate: dateKeys.length ? new Date(`${dateKeys.at(-1)}T12:00:00Z`) : undefined,
+      } }) : null;
+      const targetTripId = createdTrip?.id || tripId;
       const claimed = await tx.emailImport.updateMany({
         where: { id, userId: user.id, status: { notIn: ['imported', 'ignored'] } },
-        data: { status: 'imported', tripId, assignedAt: new Date() },
+        data: { status: 'imported', tripId: targetTripId, assignedAt: new Date() },
       });
       if (!claimed.count) throw badRequest('This email has already been imported');
       const bookings = [];
@@ -232,23 +255,23 @@ emailRouter.post(
       for (const candidate of candidates) {
         const type = candidate.type ?? fresh?.type ?? 'activity';
         const title = candidate.title ?? item.subject;
-        const startAt = candidate.startAt && !Number.isNaN(Date.parse(candidate.startAt)) ? new Date(candidate.startAt) : null;
+        const startAt = bookingDate(candidate, 'startAt');
         const existingWhere: Prisma.BookingWhereInput = candidate.reference
-          ? { tripId, type, reference: { equals: candidate.reference, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) }
-          : { tripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) };
+          ? { tripId: targetTripId, type, reference: { equals: candidate.reference, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) }
+          : { tripId: targetTripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) };
         if (await tx.booking.findFirst({ where: existingWhere, select: { id: true } })) {
           skipped++;
           continue;
         }
         bookings.push(await tx.booking.create({ data: {
-          tripId,
+          tripId: targetTripId,
           userId: user.id,
           type,
           title,
           provider: candidate.provider,
           reference: candidate.reference,
           startAt,
-          endAt: candidate.endAt && !Number.isNaN(Date.parse(candidate.endAt)) ? new Date(candidate.endAt) : null,
+          endAt: bookingDate(candidate, 'endAt'),
           details: {
             ...(candidate.details ?? {}),
             ...(candidate.price !== undefined ? { confirmedPrice: candidate.price } : {}),
@@ -257,8 +280,9 @@ emailRouter.post(
           sourceImportId: id,
         } }));
       }
-      return { bookings, skipped };
+      return { bookings, skipped, trip: createdTrip ? { id: createdTrip.id, name: createdTrip.name } : null, tripId: targetTripId };
     });
+    await reconcileTripDays(result.tripId).catch((error) => console.warn('[email] trip day refresh failed after approval', error));
     res.status(201).json(result);
   }),
 );
@@ -271,11 +295,11 @@ emailRouter.post(
     const existing = await prisma.emailImport.findFirst({ where: { id, userId: user.id } });
     if (!existing) throw notFound('Import not found');
     if (existing.status === 'imported') throw badRequest('An imported email cannot be ignored');
-    const item = await prisma.emailImport.update({
+    await prisma.emailImport.update({
       where: { id },
       data: { status: 'ignored' },
     });
-    res.json({ item });
+    res.json({ ok: true });
   }),
 );
 
@@ -287,17 +311,22 @@ emailRouter.post(
       res.status(404).json({ error: 'Import not found' });
       return;
     }
-    if (item.status === 'imported') throw badRequest('An imported email cannot be reparsed');
-    const candidates = await extractKitinerary(
-      Buffer.from(item.bodyHtml || item.bodyText || ''),
-      item.bodyHtml ? 'saved.html' : 'saved.txt',
+    const hasOriginal = Boolean(item.rawSource?.length);
+    const extracted = await extractKitinerary(
+      hasOriginal ? Buffer.from(item.rawSource!) : Buffer.from(item.bodyHtml || item.bodyText || ''),
+      hasOriginal ? 'booking.eml' : item.bodyHtml ? 'saved.html' : 'saved.txt',
     );
-    const parsed = candidates.length ? null : parseConfirmation(item.subject, item.bodyText ?? '');
+    const parsed = parseConfirmation(item.subject, item.bodyText ?? '');
+    const previous = item.parsedPayload as ParsedPayloadShape | null;
+    const savedCandidates = previous?.source === 'kitinerary' ? previous.candidates || [] : [];
+    const candidates = completeKitineraryCandidates(extracted.length ? extracted : savedCandidates, parsed);
     const updated = await prisma.emailImport.update({
       where: { id: item.id },
+      omit: { rawSource: true },
+      include: { trip: { select: { id: true, name: true } } },
       data: candidates.length
         ? {
-            status: candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed',
+            status: item.status === 'imported' ? 'imported' : candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed',
             type: candidates[0].type,
             parsedPayload: {
               source: 'kitinerary', candidates,
@@ -311,9 +340,10 @@ emailRouter.post(
           }
         : parsed
         ? {
-            status: parsed.confidence >= 0.7 ? 'parsed' : 'needs_review',
+            status: item.status === 'imported' ? 'imported' : parsed.confidence >= 0.7 ? 'parsed' : 'needs_review',
             type: parsed.type,
             parsedPayload: {
+              source: 'fallback',
               title: parsed.title,
               provider: parsed.provider,
               reference: parsed.reference,
@@ -324,8 +354,51 @@ emailRouter.post(
               confidence: parsed.confidence,
             },
           }
-        : { status: 'needs_review' as ImportStatus, parsedPayload: Prisma.DbNull },
+        : { status: item.status === 'imported' ? 'imported' : 'needs_review' as ImportStatus, parsedPayload: previous ? previous as Prisma.InputJsonValue : Prisma.DbNull },
     });
-    res.json({ item: updated });
+    const parser = extracted.length ? 'KItinerary from the full email' : savedCandidates.length ? 'Saved KItinerary result with TravelApp fallback' : parsed ? 'TravelApp fallback' : 'No new reservation found';
+    const changed = JSON.stringify(item.parsedPayload) !== JSON.stringify(updated.parsedPayload);
+    res.json({ item: updated, parser, reservations: candidates.length || (parsed ? 1 : 0), changed });
+  }),
+);
+
+emailRouter.post(
+  '/imports/:id/apply-dates',
+  asyncHandler(async (req, res) => {
+    const user = getUser(req);
+    const item = await prisma.emailImport.findFirst({ where: { id: req.params.id, userId: user.id } });
+    if (!item || item.status !== 'imported' || !item.tripId) throw notFound('Imported email not found');
+    await requireTripAccess(req, item.tripId, 'editor');
+    const parsed = item.parsedPayload as ParsedPayloadShape | null;
+    if (!parsed) throw badRequest('Reparse this email before updating booking dates');
+    const candidates: ParsedPayloadShape[] = parsed.candidates?.length ? parsed.candidates : [parsed];
+    if (candidates.some((candidate) => candidate.cancelled)) throw badRequest('A cancellation cannot update booking dates');
+    const bookings = await prisma.booking.findMany({ where: { tripId: item.tripId, sourceImportId: item.id } });
+    if (!bookings.length) throw badRequest('No booking from this email was found in the trip');
+    const updated = await prisma.$transaction(async (tx) => {
+      let count = 0;
+      const matched = new Set<string>();
+      for (const candidate of candidates) {
+        const booking = bookings.find((entry) => !matched.has(entry.id) && (
+          (candidate.reference && entry.reference?.toLowerCase() === candidate.reference.toLowerCase()) ||
+          (!candidate.reference && entry.title.toLowerCase() === (candidate.title || '').toLowerCase()) ||
+          (candidates.length === 1 && bookings.length === 1)));
+        if (!booking || (!candidate.startAt && !candidate.endAt)) continue;
+        const details = booking.details && typeof booking.details === 'object' && !Array.isArray(booking.details)
+          ? booking.details as Record<string, unknown> : {};
+        await tx.booking.update({ where: { id: booking.id }, data: {
+          ...(candidate.startAt ? { startAt: bookingDate(candidate, 'startAt') } : {}),
+          ...(candidate.endAt ? { endAt: bookingDate(candidate, 'endAt') } : {}),
+          details: { ...details, ...(candidate.details ?? {}) } as Prisma.InputJsonValue,
+          updatedById: user.id,
+        } });
+        matched.add(booking.id);
+        count++;
+      }
+      if (!count) throw badRequest('No usable dates were found for the linked booking');
+      return count;
+    });
+    await reconcileTripDays(item.tripId).catch((error) => console.warn('[email] trip day refresh failed after date update', error));
+    res.json({ updated });
   }),
 );

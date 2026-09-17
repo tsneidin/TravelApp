@@ -1,5 +1,5 @@
 import { DateTimeInput, TimeInput } from '../../components/TimeInput';
-import { useTimeFormat, formatDateTime, formatClock, formatTimeRange } from '../../lib/time';
+import { useTimeFormat, formatDateTime, formatLocalDateTime, formatClock, formatTimeRange } from '../../lib/time';
 import { Fragment, useMemo, useState } from 'react';
 import {
   Calendar, Clock, MapPin, Plane, Hotel, Compass, AlertCircle,
@@ -152,7 +152,8 @@ function getTransitColors(type: TransitSpan['type']) {
 
 export function TimelineTab({ trip, reload }: TimelineTabProps) {
   const timeFormat = useTimeFormat();
-  const formatBookingDateTime = (value?: string | null) => value ? formatDateTime(value, timeFormat) : '—';
+  const formatBookingDateTime = (value?: string | null, local?: unknown) => typeof local === 'string'
+    ? formatLocalDateTime(local, timeFormat) : value ? formatDateTime(value, timeFormat) : '—';
   const [zoomLevel, setZoomLevel] = useState<'standard' | 'compact'>('standard');
   const [trackFilter, setTrackFilter] = useState<'all' | 'stays' | 'transit' | 'activities'>('all');
   const [selectedItem, setSelectedItem] = useState<{
@@ -1482,12 +1483,12 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="grid grid-2 mb-3">
                   <div>
                     <label className="small muted">Check-In</label>
-                    <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.stay.booking.startAt)}</div>
+                    <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.stay.booking.startAt, selectedItem.stay.booking.details?.localStartAt)}</div>
                   </div>
                   {selectedItem.stay.booking?.endAt && (
                     <div>
                       <label className="small muted">Check-Out</label>
-                      <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.stay.booking.endAt)}</div>
+                      <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.stay.booking.endAt, selectedItem.stay.booking.details?.localEndAt)}</div>
                     </div>
                   )}
                 </div>
@@ -1563,12 +1564,12 @@ export function TimelineTab({ trip, reload }: TimelineTabProps) {
                 <div className="grid grid-2 mb-3">
                   <div>
                     <label className="small muted">Departure</label>
-                    <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.transit.booking.startAt)}</div>
+                    <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.transit.booking.startAt, selectedItem.transit.booking.details?.localStartAt)}</div>
                   </div>
                   {selectedItem.transit.booking?.endAt && (
                     <div>
                       <label className="small muted">Arrival</label>
-                      <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.transit.booking.endAt)}</div>
+                      <div style={{ fontWeight: 600 }}>{formatBookingDateTime(selectedItem.transit.booking.endAt, selectedItem.transit.booking.details?.localEndAt)}</div>
                     </div>
                   )}
                 </div>

@@ -36,7 +36,6 @@ async function loadTrip(tripId: string) {
       packing: { orderBy: { sortOrder: 'asc' } },
       journal: { orderBy: { date: 'asc' } },
       photos: true,
-      imports: { orderBy: { createdAt: 'desc' } },
       mapViews: { orderBy: { createdAt: 'asc' } },
       todos: { orderBy: [{ done: 'asc' }, { dueDate: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
     },

@@ -6,7 +6,7 @@ import { parseConfirmation } from './emailParser.js';
 import { decryptEmailPassword, gmailClient } from './emailConnection.js';
 import { matchesRecipient, parseEmailMessage } from './emailMessage.js';
 import type { ParsedMessage } from './emailMessage.js';
-import { extractKitinerary } from './kitinerary.js';
+import { completeKitineraryCandidates, extractKitinerary } from './kitinerary.js';
 
 type SkipReason = 'recipientMismatch' | 'alreadyImported' | 'senderFiltered';
 type IngestResult = 'stored' | Exclude<SkipReason, 'recipientMismatch'>;
@@ -103,8 +103,8 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
   const allowed = connection.allowlist.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
   if (allowed.length && !allowed.some((entry) => p.from.toLowerCase().includes(entry))) return 'senderFiltered';
 
-  const candidates = await extractKitinerary(source, 'booking.eml', p.sentAt);
-  const parsed = candidates.length ? null : parseConfirmation(p.subject, p.bodyText);
+  const parsed = parseConfirmation(p.subject, p.bodyText);
+  const candidates = completeKitineraryCandidates(await extractKitinerary(source, 'booking.eml', p.sentAt), parsed);
   let status: ImportStatus = 'pending';
   let type: BookingType | undefined;
   let parsedPayload: Record<string, unknown> | undefined;
@@ -122,6 +122,7 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
     type = parsed.type;
     status = parsed.confidence >= 0.7 ? 'parsed' : 'needs_review';
     parsedPayload = {
+      source: 'fallback',
       title: parsed.title, provider: parsed.provider, reference: parsed.reference,
       startAt: parsed.startAt?.toISOString(), endAt: parsed.endAt?.toISOString(),
       address: parsed.address, details: parsed.details, confidence: parsed.confidence,
@@ -137,6 +138,7 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
       subject: p.subject,
       bodyText: p.bodyText.slice(0, 60_000),
       bodyHtml: p.bodyHtml.slice(0, 200_000),
+      rawSource: source.length <= 15 * 1024 * 1024 ? new Uint8Array(source) : undefined,
       status, type,
       parsedPayload: parsedPayload as Prisma.InputJsonValue | undefined,
     },

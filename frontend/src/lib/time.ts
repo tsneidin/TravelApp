@@ -32,3 +32,15 @@ export function formatDateTime(value: string, format: TimeFormat): string {
     hour: '2-digit', minute: '2-digit', hourCycle: format === '24' ? 'h23' : 'h12',
   });
 }
+
+/** Reservation confirmations describe the destination's wall clock time. */
+export function formatLocalDateTime(value: string, format: TimeFormat): string {
+  const local = value.slice(0, 16);
+  const date = new Date(local.length === 10 ? `${local}T12:00:00Z` : `${local}:00Z`);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+    ...(local.length > 10 ? { hour: '2-digit', minute: '2-digit', hourCycle: format === '24' ? 'h23' : 'h12' } : {}),
+    timeZone: 'UTC',
+  });
+}

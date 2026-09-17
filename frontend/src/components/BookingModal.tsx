@@ -53,6 +53,11 @@ export function toDatetimeLocal(val?: string | null): string {
   return `${y}-${m}-${day}T${hours}:${minutes}`;
 }
 
+function importedLocalInput(value: unknown, fallback?: string | null): string {
+  if (typeof value !== 'string') return toDatetimeLocal(fallback);
+  return value.length === 10 ? `${value}T12:00` : value;
+}
+
 export function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -139,8 +144,8 @@ export function BookingModal({
         title: booking.title,
         provider: booking.provider || '',
         reference: booking.reference || '',
-        startAt: toDatetimeLocal(booking.startAt),
-        endAt: toDatetimeLocal(booking.endAt),
+        startAt: importedLocalInput(bookingDetail(booking, 'localStartAt'), booking.startAt),
+        endAt: importedLocalInput(bookingDetail(booking, 'localEndAt'), booking.endAt),
         price: typeof bookingDetail(booking, 'confirmedPrice') === 'number' ? String(bookingDetail(booking, 'confirmedPrice')) : '',
         currency: typeof bookingDetail(booking, 'currency') === 'string' ? String(bookingDetail(booking, 'currency')) : defaultCurrency,
         notes: [...bookingNotes(booking)],
@@ -304,13 +309,18 @@ export function BookingModal({
       }
 
       if (booking) {
+        const localDates = typeof existingDetails.localStartAt === 'string' || typeof existingDetails.localEndAt === 'string';
+        if (localDates) {
+          details.localStartAt = form.startAt || undefined;
+          details.localEndAt = form.endAt || undefined;
+        }
         await apiPatch(`/trips/${tripId}/bookings/${booking.id}`, {
           type: form.type,
           title: form.title.trim(),
           provider: form.provider.trim() || null,
           reference: form.reference.trim() || null,
-          startAt: form.startAt ? new Date(form.startAt).toISOString() : null,
-          endAt: form.endAt ? new Date(form.endAt).toISOString() : null,
+          startAt: form.startAt ? (localDates ? `${form.startAt}:00Z` : new Date(form.startAt).toISOString()) : null,
+          endAt: form.endAt ? (localDates ? `${form.endAt}:00Z` : new Date(form.endAt).toISOString()) : null,
           details,
         });
       } else {

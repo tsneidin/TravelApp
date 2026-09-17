@@ -13,6 +13,7 @@ export interface ParsedConfirmation {
 }
 
 const MONTHS_SHORT = 'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec';
+const MONTHS = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
 
 const DATE_PATTERNS: [string, RegExp][] = [
   ['ymd', /\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/],
@@ -20,11 +21,35 @@ const DATE_PATTERNS: [string, RegExp][] = [
   [
     'monDayY',
     new RegExp(
-      `\\b(${MONTHS_SHORT})\\.?[ ]?(\\d{1,2})(?:st|nd|rd|th)?[,]?[ ]*(20\\d{2})\\b`,
+      `\\b(${MONTHS})\\.?[ ]?(\\d{1,2})(?:st|nd|rd|th)?[,]?[ ]*(20\\d{2})\\b`,
       'i',
     ),
   ],
 ];
+
+function hotelSection(body: string, label: 'in' | 'out'): string {
+  const pattern = label === 'in' ? /\bcheck[-\s]?in\b/i : /\bcheck[-\s]?out\b/i;
+  const match = pattern.exec(body);
+  if (!match) return '';
+  const rest = body.slice(match.index + match[0].length);
+  return rest.split(/\bcheck[-\s]?(?:in|out)\b/i, 1)[0].slice(0, 180);
+}
+
+function hotelMoment(section: string): { date: Date; local: string } | undefined {
+  const date = parseDate(section);
+  if (!date) return undefined;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const datePart = `${year}-${month}-${day}`;
+  const ampm = /\b(\d{1,2})(?::([0-5]\d))?\s*(AM|PM)\b/i.exec(section);
+  const clock24 = ampm ? null : /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(section);
+  if (!ampm && !clock24) return { date: new Date(`${datePart}T12:00:00Z`), local: datePart };
+  const hour = ampm ? Number(ampm[1]) % 12 + (ampm[3].toUpperCase() === 'PM' ? 12 : 0) : Number(clock24![1]);
+  const minute = ampm ? Number(ampm[2] || 0) : Number(clock24![2]);
+  const local = `${datePart}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return { date: new Date(`${local}:00Z`), local };
+}
 
 function parseDate(text: string): Date | undefined {
   for (const entry of DATE_PATTERNS) {
@@ -34,9 +59,11 @@ function parseDate(text: string): Date | undefined {
     if (entry[0] === 'ymd') {
       d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
     } else if (entry[0] === 'mdy') {
-      d = new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]));
+      const first = Number(m[1]);
+      const second = Number(m[2]);
+      d = first > 12 ? new Date(Number(m[3]), second - 1, first) : new Date(Number(m[3]), first - 1, second);
     } else {
-      const mon = MONTHS_SHORT.split('|').indexOf(m[1].toLowerCase());
+      const mon = MONTHS_SHORT.split('|').indexOf(m[1].slice(0, 3).toLowerCase());
       d = new Date(Number(m[3]), mon, Number(m[2]));
     }
     if (d && !Number.isNaN(d.getTime())) return d;
@@ -49,7 +76,7 @@ function clean(s: string | undefined): string {
 }
 
 const FLIGHT_HINTS = ['flight', 'boarding pass', 'eticket', 'e-ticket', 'airline', 'departure', 'arrival'];
-const HOTEL_HINTS = ['hotel', 'reservation', 'booking confirmation', 'booking-confirmation', 'check-in', 'check in', 'stay at', 'room'];
+const HOTEL_HINTS = ['hotel', 'reservation', 'booking confirmation', 'booking-confirmation', 'check-in', 'check in', 'checkin', 'check-out', 'check out', 'checkout', 'stay at', 'room'];
 const CAR_HINTS = ['rental agreement', 'car rental', 'rental car', 'vehicle', 'pick-up', 'pickup', 'hertz', 'enterprise', 'avis', 'budget'];
 const ACTIVITY_HINTS = ['tour', 'ticket', 'attraction', 'reservation confirmed', 'restaurant', 'experience', 'activity', 'cruise', 'admission'];
 
@@ -104,9 +131,11 @@ export function parseConfirmation(subject: string, body: string): ParsedConfirma
   const details: Record<string, string> = {};
   let title = clean(subject);
   let provider: string | undefined;
-  let reference = extractReference(text);
+  let reference = extractReference(body) || extractReference(subject);
   let address: string | undefined;
   const date = parseDate(text);
+  let startAt = date;
+  let endAt = date;
 
   const addressMatch =
     /\b(\d{1,5}\s+[A-Z][\w\s]{3,60}?(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|way|lane|ln\.?|drive|dr\.?|court|ct\.?))/i.exec(
@@ -129,8 +158,24 @@ export function parseConfirmation(subject: string, body: string): ParsedConfirma
     case 'hotel': {
       const brand = HOTELS.exec(lower);
       if (brand) provider = capitalise(brand[1]);
-      if (!lower.includes('hotel') && clean(subject).length > 3) {
-        title = clean(subject);
+      const property = /^(?:property|hotel)\s*:\s*(.+)$/im.exec(body)?.[1]?.trim();
+      if (property) {
+        title = property.replace(/\s*\((?:fictional(?: property)?|test(?: data)?)\)\s*$/i, '').trim();
+        provider = title;
+      }
+      address = /^(?:address|location)\s*:\s*(.+)$/im.exec(body)?.[1]?.trim() || address;
+      const checkIn = hotelMoment(hotelSection(body, 'in'));
+      const checkOut = hotelMoment(hotelSection(body, 'out'));
+      if (checkIn) {
+        startAt = checkIn.date;
+        details.localStartAt = checkIn.local;
+      }
+      if (checkOut) {
+        endAt = checkOut.date;
+        details.localEndAt = checkOut.local;
+        if (!checkIn) startAt = undefined;
+      } else {
+        endAt = undefined;
       }
       break;
     }
@@ -158,8 +203,8 @@ export function parseConfirmation(subject: string, body: string): ParsedConfirma
     title: title || type,
     provider,
     reference,
-    startAt: date,
-    endAt: date,
+    startAt,
+    endAt,
     address,
     details,
     confidence,

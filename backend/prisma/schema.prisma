@@ -274,6 +274,7 @@ model EmailImport {
   subject       String
   bodyText      String?
   bodyHtml      String?
+  rawSource     Bytes?
   headers       Json?
   status        ImportStatus @default(pending)
   type          BookingType?

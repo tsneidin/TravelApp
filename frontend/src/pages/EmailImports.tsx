@@ -1,4 +1,4 @@
-import { useTimeFormat, formatDateTime } from '../lib/time';
+import { useTimeFormat, formatDateTime, formatLocalDateTime } from '../lib/time';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Check, X, Trash2, Inbox } from 'lucide-react';
 import { apiGet, apiPost, apiDelete } from '../lib/api';
@@ -38,6 +38,11 @@ export function EmailImports() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<EmailImport | null>(null);
   const [selTrip, setSelTrip] = useState('');
+  const [newTripName, setNewTripName] = useState('');
+  const [newTripDestination, setNewTripDestination] = useState('');
+  const [reparsing, setReparsing] = useState(false);
+  const [reparseResult, setReparseResult] = useState('');
+  const [reparsedId, setReparsedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
@@ -51,7 +56,7 @@ export function EmailImports() {
     setStatus(s);
     setImports(i.imports);
     setTrips(t.trips);
-    if (!selTrip && t.trips.length) setSelTrip(t.trips[0].id);
+    if (!selTrip) setSelTrip(t.trips[0]?.id || '__new__');
   }, [filter, selTrip]);
 
   useEffect(() => {
@@ -89,18 +94,25 @@ export function EmailImports() {
       const r = await apiGet<{ item: EmailImport }>(`/email/imports/${id}`);
       setDetail(r.item);
       setMsg('');
+      setReparseResult('');
+      setReparsedId(null);
+      setNewTripName(`${r.item.parsedPayload?.candidates?.[0]?.title || r.item.parsedPayload?.title || r.item.subject} trip`.slice(0, 120));
+      setNewTripDestination('');
     } catch (error) {
       setMsg((error as Error).message);
     }
   };
 
   const assign = async () => {
-    if (!detail || !selTrip) return;
+    if (!detail || !selTrip || (selTrip === '__new__' && !newTripName.trim())) return;
     setBusy(true);
     try {
-      const result = await apiPost<{ bookings: unknown[]; skipped: number }>(`/email/imports/${detail.id}/assign`, { tripId: selTrip });
-      setMsg(`${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added to the trip${result.skipped ? `, ${result.skipped} existing skipped` : ''}.`);
+      const result = await apiPost<{ bookings: unknown[]; skipped: number; tripId: string; trip?: { name: string } | null }>(`/email/imports/${detail.id}/assign`, selTrip === '__new__'
+        ? { newTrip: { name: newTripName.trim(), destination: newTripDestination.trim() } }
+        : { tripId: selTrip });
+      setMsg(`${result.trip ? `Created ${result.trip.name}. ` : ''}${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added${result.skipped ? `, ${result.skipped} existing skipped` : ''}.`);
       setDetail(null);
+      setSelTrip(result.tripId);
       await load();
     } catch (e) {
       setMsg((e as Error).message);
@@ -115,9 +127,34 @@ export function EmailImports() {
   };
 
   const reparse = async (id: string) => {
-    await apiPost(`/email/imports/${id}/reparse`, {});
-    await load();
-    await openDetail(id);
+    setReparsing(true);
+    setReparseResult('Reparsing email…');
+    try {
+      const result = await apiPost<{ item: EmailImport; parser: string; reservations: number; changed: boolean }>(`/email/imports/${id}/reparse`, {});
+      setDetail(result.item);
+      setReparsedId(id);
+      setReparseResult(`${result.parser}: ${result.reservations} reservation${result.reservations === 1 ? '' : 's'} found. ${result.changed ? 'The extracted details changed.' : 'The extracted details are unchanged.'}${result.item.status === 'imported' ? ' The saved booking has not been changed.' : ''}`);
+      await load();
+    } catch (error) {
+      setReparseResult(`Reparse failed: ${(error as Error).message}`);
+    } finally {
+      setReparsing(false);
+    }
+  };
+
+  const applyDates = async () => {
+    if (!detail) return;
+    setBusy(true);
+    try {
+      const result = await apiPost<{ updated: number }>(`/email/imports/${detail.id}/apply-dates`, {});
+      setMsg(`Updated dates on ${result.updated} existing booking${result.updated === 1 ? '' : 's'}.`);
+      setDetail(null);
+      await load();
+    } catch (error) {
+      setReparseResult(`Could not update booking dates: ${(error as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const remove = (id: string) => {
@@ -228,6 +265,7 @@ export function EmailImports() {
           <div className="mb">
             <b>{detail.subject}</b>
           </div>
+          {reparseResult && <p className="small" role="status">{reparseResult}</p>}
 
           {detail.parsedPayload?.candidates?.length ? (
             <div className="card mb">
@@ -238,7 +276,8 @@ export function EmailImports() {
                 <div className="small" key={`${candidate.reference || candidate.title}-${index}`} style={{ padding: '8px 0', borderTop: index ? '1px solid var(--border)' : undefined }}>
                   <div><b>{candidate.title}</b> {candidate.cancelled && <span className="badge warn">Cancellation</span>}</div>
                   <div>{candidate.type} · {candidate.reference || 'No reference'}</div>
-                  {candidate.startAt && <div>{formatDateTime(candidate.startAt, timeFormat)}{candidate.endAt ? ` to ${formatDateTime(candidate.endAt, timeFormat)}` : ''}</div>}
+                  {candidate.startAt && <div>Check-in/start: {formatLocalDateTime(candidate.details?.localStartAt || candidate.startAt, timeFormat)}</div>}
+                  {candidate.endAt && <div>Check-out/end: {formatLocalDateTime(candidate.details?.localEndAt || candidate.endAt, timeFormat)}</div>}
                   {candidate.price !== undefined && candidate.currency && <div>{candidate.currency} {candidate.price.toFixed(2)}</div>}
                 </div>
               ))}
@@ -246,32 +285,41 @@ export function EmailImports() {
           ) : detail.parsedPayload && (
             <div className="card mb">
               <div className="small muted" style={{ textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>
-                Parsed ({detail.type})
+                {detail.parsedPayload.source === 'fallback' ? 'TravelApp fallback' : 'Parsed'} ({detail.type})
               </div>
               <div className="small">
                 <div><b>Title:</b> {detail.parsedPayload.title ?? '—'}</div>
                 <div><b>Provider:</b> {detail.parsedPayload.provider ?? '—'}</div>
                 <div><b>Reference:</b> {detail.parsedPayload.reference ?? '—'}</div>
-                <div><b>Date:</b> {detail.parsedPayload.startAt ? formatDateTime(detail.parsedPayload.startAt, timeFormat) : '—'}</div>
+                <div><b>Check-in/start:</b> {detail.parsedPayload.startAt ? formatLocalDateTime(detail.parsedPayload.details?.localStartAt || detail.parsedPayload.startAt, timeFormat) : '—'}</div>
+                <div><b>Check-out/end:</b> {detail.parsedPayload.endAt ? formatLocalDateTime(detail.parsedPayload.details?.localEndAt || detail.parsedPayload.endAt, timeFormat) : '—'}</div>
                 <div><b>Confidence:</b> {detail.parsedPayload.confidence ?? 0}</div>
               </div>
             </div>
           )}
 
           {!detail.trip && detail.status !== 'ignored' && <div className="field small">
-            <label>Import into trip</label>
-            <select value={selTrip} onChange={(e) => setSelTrip(e.target.value)}>
+            <label htmlFor="email-trip">Add to trip</label>
+            <select id="email-trip" value={selTrip} onChange={(e) => setSelTrip(e.target.value)}>
               {trips.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <option value="__new__">Create a new trip</option>
             </select>
+            {selTrip === '__new__' && <div className="grid grid-2 mt">
+              <div className="field"><label htmlFor="email-new-trip-name">Trip name</label><input id="email-new-trip-name" value={newTripName} onChange={(event) => setNewTripName(event.target.value)} maxLength={120} required /></div>
+              <div className="field"><label htmlFor="email-new-trip-destination">Destination</label><input id="email-new-trip-destination" value={newTripDestination} onChange={(event) => setNewTripDestination(event.target.value)} maxLength={200} placeholder="Optional" /></div>
+            </div>}
           </div>}
 
           <div className="modal-actions">
             <button className="btn" onClick={() => setDetail(null)}>Close</button>
-            {detail.status !== 'imported' && detail.status !== 'ignored' && detail.parsedPayload?.source !== 'kitinerary' && <button className="btn" onClick={() => void reparse(detail.id)}>Reparse</button>}
+            {detail.status !== 'ignored' && <button className="btn" onClick={() => void reparse(detail.id)} disabled={reparsing || busy}>{reparsing ? 'Reparsing…' : 'Reparse email'}</button>}
             {detail.trip ? (
-              <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
+              <>
+                <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
+                {detail.status === 'imported' && reparsedId === detail.id && (detail.parsedPayload?.startAt || detail.parsedPayload?.endAt || detail.parsedPayload?.candidates?.some((candidate) => candidate.startAt || candidate.endAt)) && <button className="btn primary" onClick={() => void applyDates()} disabled={busy || reparsing}>Apply dates to booking</button>}
+              </>
             ) : detail.status !== 'ignored' ? (
-              <button className="btn primary" onClick={() => void assign()} disabled={busy || !selTrip || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
+              <button className="btn primary" onClick={() => void assign()} disabled={busy || reparsing || !selTrip || (selTrip === '__new__' && !newTripName.trim()) || !detail.parsedPayload || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
                 <Check size={14} /> Approve and add {detail.parsedPayload?.candidates?.length || 1} booking{detail.parsedPayload?.candidates?.length === 1 ? '' : 's'}
               </button>
             ) : null}

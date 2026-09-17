@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { BookingType } from '@prisma/client';
+import type { ParsedConfirmation } from './emailParser.js';
 
 const execFileAsync = promisify(execFile);
 const supportedExtensions = new Set(['eml', 'pdf', 'txt', 'html', 'htm', 'ics', 'pkpass', 'png', 'jpg', 'jpeg']);
@@ -24,6 +25,25 @@ export interface KitineraryCandidate {
   cancelled?: boolean;
   details: Record<string, string>;
   source: 'kitinerary';
+}
+
+export function completeKitineraryCandidates(candidates: KitineraryCandidate[], fallback: ParsedConfirmation | null): KitineraryCandidate[] {
+  if (!fallback) return candidates;
+  return candidates.map((candidate) => {
+    if (candidate.type !== fallback.type) return candidate;
+    const startMissing = !candidate.startAt || candidate.startAt.length === 10;
+    const endMissing = !candidate.endAt || candidate.endAt.length === 10;
+    return {
+      ...candidate,
+      startAt: startMissing ? fallback.startAt?.toISOString() || candidate.startAt : candidate.startAt,
+      endAt: endMissing ? fallback.endAt?.toISOString() || candidate.endAt : candidate.endAt,
+      details: {
+        ...candidate.details,
+        ...(startMissing && fallback.details.localStartAt ? { localStartAt: fallback.details.localStartAt } : {}),
+        ...(endMissing && fallback.details.localEndAt ? { localEndAt: fallback.details.localEndAt } : {}),
+      },
+    };
+  });
 }
 
 function record(value: unknown): JsonRecord {
@@ -98,6 +118,7 @@ export function normalizeKitineraryOutput(output: unknown): KitineraryCandidate[
     const details = Object.fromEntries([
       ['kitineraryType', kind], ['origin', origin], ['destination', destination],
       ['number', number], ['timezone', string(record(reservation.checkinTime || trip.departureTime).timezone)],
+      ['localStartAt', startAt?.slice(0, 16)], ['localEndAt', endAt?.slice(0, 16)],
     ].filter(([, item]) => Boolean(item)));
     const cancelled = string(reservation.reservationStatus).endsWith('ReservationCancelled');
     const key = [type, reference?.toLowerCase(), startAt, route.toLowerCase(), title.toLowerCase()].join('|');

@@ -1,4 +1,4 @@
-import { useTimeFormat, formatDateTime } from '../../lib/time';
+import { useTimeFormat, formatDateTime, formatLocalDateTime } from '../../lib/time';
 import { useMemo, useState } from 'react';
 import {
   Plus,
@@ -43,7 +43,8 @@ function getBookingTypeIcon(t: BookingType) {
 
 export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promise<void> }) {
   const timeFormat = useTimeFormat();
-  const formatBookingDateTime = (value?: string | null) => value ? formatDateTime(value, timeFormat) : '—';
+  const formatBookingDateTime = (value?: string | null, local?: unknown) => typeof local === 'string'
+    ? formatLocalDateTime(local, timeFormat) : value ? formatDateTime(value, timeFormat) : '—';
   const bookings = trip.bookings ?? [];
   const sortedBookings = useMemo(() => [...bookings].sort((a, b) => {
     if (!a.startAt && !b.startAt) return a.title.localeCompare(b.title);
@@ -113,7 +114,7 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
           <div>
             <span className="mobile-overview-label">{nextBooking?.startAt && new Date(nextBooking.startAt).getTime() >= Date.now() ? 'Up next' : 'Trip reservations'}</span>
             <strong>{nextBooking?.title}</strong>
-            <span>{nextBooking?.startAt ? formatBookingDateTime(nextBooking.startAt) : `${bookings.length} saved ${bookings.length === 1 ? 'booking' : 'bookings'}`}</span>
+            <span>{nextBooking?.startAt ? formatBookingDateTime(nextBooking.startAt, nextBooking.details?.localStartAt) : `${bookings.length} saved ${bookings.length === 1 ? 'booking' : 'bookings'}`}</span>
           </div>
           <span className="mobile-overview-count">{bookings.length}</span>
         </section>
@@ -173,8 +174,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                         '—'
                       )}
                     </td>
-                    <td style={{ fontSize: '0.84rem' }}>{formatBookingDateTime(b.startAt)}</td>
-                    <td style={{ fontSize: '0.84rem' }}>{formatBookingDateTime(b.endAt)}</td>
+                    <td style={{ fontSize: '0.84rem' }}>{formatBookingDateTime(b.startAt, b.details?.localStartAt)}</td>
+                    <td style={{ fontSize: '0.84rem' }}>{formatBookingDateTime(b.endAt, b.details?.localEndAt)}</td>
                     <td>
                       <div className="row" style={{ gap: 6, justifyContent: 'center' }}>
                         {bNotes.length > 0 ? (
@@ -257,8 +258,8 @@ export function BookingsTab({ trip, reload }: { trip: Trip; reload: () => Promis
                 <dl className="mobile-record-details">
                   <div><dt>Provider</dt><dd>{b.provider || '—'}</dd></div>
                   <div><dt>Confirmation</dt><dd>{b.reference || '—'}</dd></div>
-                  <div><dt>Starts / check-in</dt><dd>{formatBookingDateTime(b.startAt)}</dd></div>
-                  <div><dt>Ends / check-out</dt><dd>{formatBookingDateTime(b.endAt)}</dd></div>
+                  <div><dt>Starts / check-in</dt><dd>{formatBookingDateTime(b.startAt, b.details?.localStartAt)}</dd></div>
+                  <div><dt>Ends / check-out</dt><dd>{formatBookingDateTime(b.endAt, b.details?.localEndAt)}</dd></div>
                 </dl>
                 <div className="mobile-record-links mobile-booking-actions">
                   <button className="btn sm ghost" onClick={() => openEdit(b)}>Edit</button>

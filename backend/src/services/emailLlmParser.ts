@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getAiConfig } from './settings.service.js';
-import { normalizeKitineraryOutput, type KitineraryCandidate } from './kitinerary.js';
+import { needsEmailAiCompletion, normalizeKitineraryOutput, type KitineraryCandidate } from './kitinerary.js';
+import { completeHotelDatesFromEmail } from './emailHotelDates.js';
 
 const reservation = z.object({
   '@type': z.enum(['FlightReservation', 'LodgingReservation', 'RentalCarReservation', 'BusReservation', 'TrainReservation', 'BoatReservation', 'TaxiReservation', 'FoodEstablishmentReservation', 'EventReservation']),
@@ -110,7 +111,43 @@ export async function extractEmailWithLlm(subject: string, bodyText: string): Pr
     const content = data.choices?.[0]?.message?.content?.trim() || '';
     const parsed = schema.safeParse(parseAiReservations(content));
     if (!parsed.success) return { candidates: [], error: 'AI returned an invalid Schema.org reservation. Reparse or add the booking manually.' };
-    const candidates = normalizeKitineraryOutput(parsed.data).map((candidate) => ({ ...candidate, source: 'llm' as const }));
+    let candidates = completeHotelDatesFromEmail(
+      normalizeKitineraryOutput(parsed.data).map((candidate) => ({ ...candidate, source: 'llm' as const })), body,
+    );
+    if (candidates.length === 1 && candidates[0].type === 'hotel' && needsEmailAiCompletion(candidates)) {
+      const dateLines = body.split('\n').filter((line) => /^\s*check[ -]?(?:in|out)\b/i.test(line));
+      try {
+        const retry = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: config.model, temperature: 0,
+            messages: [
+              { role: 'system', content: 'Return only Schema.org JSON with @context https://schema.org and @graph containing one LodgingReservation. This is a correction: the prior extraction omitted checkinTime or checkoutTime. Read the explicit Check-in and Check-out lines. Use the first time in each stated window and include the full local ISO date and time. Do not use cancellation deadlines. Do not invent missing values.' },
+              { role: 'user', content: `Subject: ${subject}\n${dateLines.length ? dateLines.join('\n') : text}` },
+            ],
+          }),
+        });
+        if (retry.ok) {
+          const retryData = await retry.json() as { choices?: Array<{ message?: { content?: string | null } }> };
+          const retryJson = schema.safeParse(parseAiReservations(retryData.choices?.[0]?.message?.content || ''));
+          if (retryJson.success) {
+            const fixed = normalizeKitineraryOutput(retryJson.data).find((candidate) => candidate.type === 'hotel');
+            if (fixed) {
+              candidates = [{
+                ...candidates[0],
+                startAt: candidates[0].startAt || fixed.startAt,
+                endAt: candidates[0].endAt || fixed.endAt,
+                details: { ...fixed.details, ...candidates[0].details },
+              }];
+            }
+          }
+        }
+      } catch {
+        // Retain the first extraction for review when the focused retry fails.
+      }
+    }
     const statedTotal = candidates.length === 1 ? statedTotalPrice(body) : undefined;
     if (statedTotal) {
       candidates[0].price = statedTotal.price;

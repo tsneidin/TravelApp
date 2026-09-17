@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.163` — check the bottom of the left sidebar for the
+**Current version:** `0.0.164` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -190,14 +190,16 @@ address. The plus address is a filter, not a separate Gmail login.
 reservation and whether the details changed. KItinerary receives the full
 original email on first capture and on reparse for newly captured messages.
 Older emails are reparsed from saved HTML/text, while prior KItinerary results
-are retained if present. If KItinerary finds no reservation, the configured AI
+are retained if present. If KItinerary finds no reservation or an incomplete
+hotel stay, the configured AI
 Assist model receives the email subject and plain text, including attached
 forwarded emails and readable PDF attachments, and returns Schema.org
 reservations for review. Enable AI Assist in app settings before importing;
 emails remain in the review queue with an error if AI is unavailable. The AI
-provider may be external, so choose its endpoint accordingly. For an email
-already added to a trip, reparse changes
-only the preview. **Apply dates to booking** updates the linked booking after
+provider may be external, so choose its endpoint accordingly. Explicit
+check-in and check-out lines complete missing hotel dates; a focused AI retry
+handles other incomplete hotel results. For an email already added to a trip,
+reparse changes only the preview. **Apply dates to booking** updates the linked booking after
 you review the newly extracted check-in and check-out dates.
 
 For an upgrade from the former shared mailbox, keep the old `IMAP_USER` and
@@ -211,7 +213,7 @@ Stack** again. Existing trip bookings remain unchanged.
 The API image includes KDE KItinerary. It first extracts structured
 reservations from incoming email and AI Assist attachments; AI Assist also tries
 it on pasted confirmations. Email import uses the configured AI model when
-KItinerary finds nothing. Email imports show every extracted reservation for
+KItinerary finds nothing or misses hotel dates. Email imports show every extracted reservation for
 review before creating bookings. Cancellations are held for review rather than
 created as new bookings. KItinerary runs locally in the API container.
 

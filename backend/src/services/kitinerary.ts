@@ -110,8 +110,8 @@ export function normalizeKitineraryOutput(output: unknown): KitineraryCandidate[
       : type === 'car' ? [provider || 'Rental car', placeName].filter(Boolean).join(': ')
       : isTransport ? [label, carrier, number, route].filter(Boolean).join(' ').trim()
       : placeName || [label, provider].filter(Boolean).join(' ');
-    const startAt = dateTime(reservation.checkinTime || reservation.pickupTime || trip.departureTime || trip.startDate || trip.startTime);
-    const endAt = dateTime(reservation.checkoutTime || reservation.dropoffTime || trip.arrivalTime || trip.endDate || trip.endTime);
+    const startAt = dateTime(reservation.checkinTime || reservation.checkInTime || reservation.checkinDate || reservation.checkInDate || trip.checkinTime || trip.checkInTime || reservation.pickupTime || trip.departureTime || trip.startDate || trip.startTime);
+    const endAt = dateTime(reservation.checkoutTime || reservation.checkOutTime || reservation.checkoutDate || reservation.checkOutDate || trip.checkoutTime || trip.checkOutTime || reservation.dropoffTime || trip.arrivalTime || trip.endDate || trip.endTime);
     const reference = string(reservation.reservationNumber) || undefined;
     const ticket = record(reservation.reservedTicket);
     const rawPrice = reservation.totalPrice ?? ticket.totalPrice;

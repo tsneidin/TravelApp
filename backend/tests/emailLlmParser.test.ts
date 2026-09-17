@@ -84,4 +84,22 @@ describe('email AI fallback', () => {
     const result = await extractEmailWithLlm('Fwd: hotel', 'Cancellation cost € 288.91\nTotal Price\n€ 265.86\nProperty invoice € 288.91');
     expect(result.candidates[0]).toMatchObject({ price: 265.86, currency: 'EUR' });
   });
+
+  it('completes missing hotel dates from explicit email lines without another model call', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Barirooms - Picca 24' }, reservationNumber: '5126038442' }] }) } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: Barirooms', 'Check-in Thursday, October 1, 2026 (3:00 PM - 9:00 PM)\nCheck-out Saturday, October 3, 2026 (10:00 AM - 10:30 AM)');
+    expect(result.candidates[0]).toMatchObject({ startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries an incomplete hotel extraction with focused date instructions', async () => {
+    const first = { '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example hotel' }, reservationNumber: 'ABC123' }] };
+    const second = { '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example hotel' }, checkinTime: '2026-10-01T15:00', checkoutTime: '2026-10-03T10:00' }] };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(first) } }] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(second) } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: hotel', 'Hotel dates are October 1 through October 3, 2026. Arrive at 3 PM, leave at 10 AM.');
+    expect(result.candidates[0]).toMatchObject({ reference: 'ABC123', startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });

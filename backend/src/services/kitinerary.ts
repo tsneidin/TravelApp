@@ -24,7 +24,7 @@ export interface KitineraryCandidate {
   currency?: string;
   cancelled?: boolean;
   details: Record<string, string>;
-  source: 'kitinerary';
+  source: 'kitinerary' | 'llm';
 }
 
 export function completeKitineraryCandidates(candidates: KitineraryCandidate[], fallback: ParsedConfirmation | null): KitineraryCandidate[] {
@@ -130,7 +130,7 @@ export function normalizeKitineraryOutput(output: unknown): KitineraryCandidate[
   return candidates;
 }
 
-/** Run KDE's local extractor. Missing or failed extraction falls back to TravelApp's parser. */
+/** Run KDE's local extractor. An empty result lets the caller try AI extraction. */
 export async function extractKitinerary(input: Buffer, filename: string, contextDate?: string): Promise<KitineraryCandidate[]> {
   const extractor = process.env.KITINERARY_BIN || '/usr/local/bin/kitinerary-extractor';
   if (!existsSync(extractor) || !input.length || input.length > 15 * 1024 * 1024) return [];
@@ -152,7 +152,7 @@ export async function extractKitinerary(input: Buffer, filename: string, context
     return candidates;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code || 'extractor-error';
-    console.warn(`[kitinerary] extraction failed (${code}); using fallback parser`);
+    console.warn(`[kitinerary] extraction failed (${code}); using AI extraction`);
     return [];
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined);

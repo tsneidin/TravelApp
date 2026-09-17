@@ -133,7 +133,7 @@ export function EmailImports() {
       const result = await apiPost<{ item: EmailImport; parser: string; reservations: number; changed: boolean }>(`/email/imports/${id}/reparse`, {});
       setDetail(result.item);
       setReparsedId(id);
-      setReparseResult(`${result.parser}: ${result.reservations} reservation${result.reservations === 1 ? '' : 's'} found. ${result.changed ? 'The extracted details changed.' : 'The extracted details are unchanged.'}${result.item.status === 'imported' ? ' The saved booking has not been changed.' : ''}`);
+      setReparseResult(`${result.parser}: ${result.reservations} reservation${result.reservations === 1 ? '' : 's'} found. ${result.item.error || (result.changed ? 'The extracted details changed.' : 'The extracted details are unchanged.')}${result.item.status === 'imported' ? ' The saved booking has not been changed.' : ''}`);
       await load();
     } catch (error) {
       setReparseResult(`Reparse failed: ${(error as Error).message}`);
@@ -266,11 +266,12 @@ export function EmailImports() {
             <b>{detail.subject}</b>
           </div>
           {reparseResult && <p className="small" role="status">{reparseResult}</p>}
+          {detail.error && !reparseResult && <p className="small" role="alert">{detail.error}</p>}
 
           {detail.parsedPayload?.candidates?.length ? (
             <div className="card mb">
               <div className="small muted" style={{ textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>
-                KItinerary found {detail.parsedPayload.candidates.length} reservation{detail.parsedPayload.candidates.length === 1 ? '' : 's'}
+                {detail.parsedPayload.source === 'llm' ? 'AI extraction' : 'KItinerary'} found {detail.parsedPayload.candidates.length} reservation{detail.parsedPayload.candidates.length === 1 ? '' : 's'}
               </div>
               {detail.parsedPayload.candidates.map((candidate, index) => (
                 <div className="small" key={`${candidate.reference || candidate.title}-${index}`} style={{ padding: '8px 0', borderTop: index ? '1px solid var(--border)' : undefined }}>
@@ -316,10 +317,10 @@ export function EmailImports() {
             {detail.trip ? (
               <>
                 <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
-                {detail.status === 'imported' && reparsedId === detail.id && (detail.parsedPayload?.startAt || detail.parsedPayload?.endAt || detail.parsedPayload?.candidates?.some((candidate) => candidate.startAt || candidate.endAt)) && <button className="btn primary" onClick={() => void applyDates()} disabled={busy || reparsing}>Apply dates to booking</button>}
+                {detail.status === 'imported' && reparsedId === detail.id && !detail.error && (detail.parsedPayload?.startAt || detail.parsedPayload?.endAt || detail.parsedPayload?.candidates?.some((candidate) => candidate.startAt || candidate.endAt)) && <button className="btn primary" onClick={() => void applyDates()} disabled={busy || reparsing}>Apply dates to booking</button>}
               </>
             ) : detail.status !== 'ignored' ? (
-              <button className="btn primary" onClick={() => void assign()} disabled={busy || reparsing || !selTrip || (selTrip === '__new__' && !newTripName.trim()) || !detail.parsedPayload || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
+              <button className="btn primary" onClick={() => void assign()} disabled={busy || reparsing || !selTrip || (selTrip === '__new__' && !newTripName.trim()) || !detail.parsedPayload || Boolean(detail.error) || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
                 <Check size={14} /> Approve and add {detail.parsedPayload?.candidates?.length || 1} booking{detail.parsedPayload?.candidates?.length === 1 ? '' : 's'}
               </button>
             ) : null}

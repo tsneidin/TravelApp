@@ -13,6 +13,9 @@ const db = vi.hoisted(() => ({
 vi.mock('../src/db.js', () => ({ prisma: db }));
 vi.mock('../src/services/dayReconciliation.js', () => ({ reconcileTripDays: vi.fn().mockResolvedValue({}) }));
 vi.mock('../src/services/kitinerary.js', () => ({ extractKitinerary: vi.fn().mockResolvedValue([]), completeKitineraryCandidates: (candidates: unknown[]) => candidates }));
+vi.mock('../src/services/emailLlmParser.js', () => ({ extractEmailWithLlm: vi.fn().mockResolvedValue({ candidates: [] }) }));
+
+import { extractEmailWithLlm } from '../src/services/emailLlmParser.js';
 
 import { emailRouter } from '../src/routes/email.routes.js';
 import { errorHandler } from '../src/lib/errors.js';
@@ -29,6 +32,7 @@ function token(userId: string): string {
 describe('personal email review queue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [] });
     db.emailConnection.findUnique.mockResolvedValue(null);
     db.emailImport.count.mockResolvedValue(0);
     db.emailImport.groupBy.mockResolvedValue([]);
@@ -98,13 +102,24 @@ describe('personal email review queue', () => {
   });
 
   it('reports the parser result while keeping an imported email linked to its trip', async () => {
+    vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [{ source: 'llm', type: 'hotel', title: 'Alaska Lodge', startAt: '2026-12-13T15:00', endAt: '2026-12-15T11:00', details: { localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' } }] });
     db.emailImport.findFirst.mockResolvedValue({ id: 'hotel-email', userId: 'user-one', status: 'imported', tripId: 'trip-one', subject: 'Alaska hotel booking', bodyText: 'Check-in: December 13, 2026 at 3 PM. Check-out: December 15, 2026 at 11 AM.', bodyHtml: '', parsedPayload: null });
     db.emailImport.update.mockImplementation(async ({ data }: { data: { status: string; parsedPayload: unknown } }) => ({ id: 'hotel-email', status: data.status, parsedPayload: data.parsedPayload, trip: { id: 'trip-one', name: 'Alaska trip' } }));
     const response = await request(app).post('/email/imports/hotel-email/reparse')
       .set('Authorization', `Bearer ${token('user-one')}`).send({});
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ parser: 'TravelApp fallback', reservations: 1, changed: true, item: { status: 'imported', trip: { id: 'trip-one' } } });
-    expect(response.body.item.parsedPayload.details).toMatchObject({ localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' });
+    expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 1, changed: true, item: { status: 'imported', trip: { id: 'trip-one' } } });
+    expect(response.body.item.parsedPayload.candidates[0].details).toMatchObject({ localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' });
+  });
+
+  it('reports an AI extraction error and keeps an unparsed email in review', async () => {
+    vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [], error: 'AI extraction is disabled.' });
+    db.emailImport.findFirst.mockResolvedValue({ id: 'hotel-email', userId: 'user-one', status: 'pending', subject: 'Hotel', bodyText: 'Booking', bodyHtml: '', parsedPayload: null });
+    db.emailImport.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'hotel-email', ...data }));
+    const response = await request(app).post('/email/imports/hotel-email/reparse')
+      .set('Authorization', `Bearer ${token('user-one')}`).send({});
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 0, item: { status: 'needs_review', error: 'AI extraction is disabled.' } });
   });
 
   it('applies reparsed dates only to a booking linked to that email', async () => {

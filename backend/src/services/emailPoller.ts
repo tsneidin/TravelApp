@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import type { BookingType, EmailConnection, ImportStatus } from '@prisma/client';
 import { prisma } from '../db.js';
-import { parseConfirmation } from './emailParser.js';
+import { extractEmailWithLlm } from './emailLlmParser.js';
 import { decryptEmailPassword, gmailClient } from './emailConnection.js';
 import { matchesRecipient, parseEmailMessage } from './emailMessage.js';
 import type { ParsedMessage } from './emailMessage.js';
-import { completeKitineraryCandidates, extractKitinerary } from './kitinerary.js';
+import { extractKitinerary } from './kitinerary.js';
 
 type SkipReason = 'recipientMismatch' | 'alreadyImported' | 'senderFiltered';
 type IngestResult = 'stored' | Exclude<SkipReason, 'recipientMismatch'>;
@@ -103,9 +103,10 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
   const allowed = connection.allowlist.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
   if (allowed.length && !allowed.some((entry) => p.from.toLowerCase().includes(entry))) return 'senderFiltered';
 
-  const parsed = parseConfirmation(p.subject, p.bodyText);
-  const candidates = completeKitineraryCandidates(await extractKitinerary(source, 'booking.eml', p.sentAt), parsed);
-  let status: ImportStatus = 'pending';
+  const extracted = await extractKitinerary(source, 'booking.eml', p.sentAt);
+  const llm = extracted.length ? null : await extractEmailWithLlm(p.subject, p.bodyText);
+  const candidates = extracted.length ? extracted : llm?.candidates || [];
+  let status: ImportStatus = 'needs_review';
   let type: BookingType | undefined;
   let parsedPayload: Record<string, unknown> | undefined;
 
@@ -113,19 +114,10 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
     type = candidates[0].type;
     status = candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed';
     parsedPayload = {
-      source: 'kitinerary', candidates,
+      source: extracted.length ? 'kitinerary' : 'llm', candidates,
       title: candidates[0].title, provider: candidates[0].provider,
       reference: candidates[0].reference, startAt: candidates[0].startAt,
       endAt: candidates[0].endAt, confidence: 0.85,
-    };
-  } else if (parsed) {
-    type = parsed.type;
-    status = parsed.confidence >= 0.7 ? 'parsed' : 'needs_review';
-    parsedPayload = {
-      source: 'fallback',
-      title: parsed.title, provider: parsed.provider, reference: parsed.reference,
-      startAt: parsed.startAt?.toISOString(), endAt: parsed.endAt?.toISOString(),
-      address: parsed.address, details: parsed.details, confidence: parsed.confidence,
     };
   }
 
@@ -140,6 +132,7 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
       bodyHtml: p.bodyHtml.slice(0, 200_000),
       rawSource: source.length <= 15 * 1024 * 1024 ? new Uint8Array(source) : undefined,
       status, type,
+      error: llm?.error || null,
       parsedPayload: parsedPayload as Prisma.InputJsonValue | undefined,
     },
   });

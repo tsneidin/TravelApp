@@ -7,18 +7,23 @@ import { startEmailWorker } from './services/emailPoller.js';
 
 async function bootstrapAdmin() {
   const count = await prisma.user.count();
+  if (count > 0) {
+    if (config.bootstrap.email) console.log('[bootstrap] skipped: users already exist; BOOTSTRAP_* does not create or reset accounts');
+    return;
+  }
   if (count === 0 && config.bootstrap.email && config.bootstrap.password) {
-    const existing = await prisma.user.findUnique({ where: { email: config.bootstrap.email.toLowerCase() } });
+    const email = config.bootstrap.email.trim().toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (!existing) {
       await prisma.user.create({
         data: {
-          email: config.bootstrap.email.toLowerCase(),
+          email,
           name: config.bootstrap.name,
           passwordHash: await hashPassword(config.bootstrap.password),
           isAdmin: true,
         },
       });
-      console.log(`[bootstrap] created admin ${config.bootstrap.email}`);
+      console.log(`[bootstrap] created admin ${email}`);
     }
   }
 }

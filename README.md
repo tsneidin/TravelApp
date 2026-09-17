@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.155` — check the bottom of the left sidebar for the
+**Current version:** `0.0.156` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -112,6 +112,23 @@ VITE_GOOGLE_MAPS_API_KEY=
 > **Note:** the `.env` file is gitignored — it never gets committed — and lives
 > in the repo dir on the Unraid share rather than in git, so `git pull` to
 > update code won't touch your secrets.
+
+### Recover an admin account on an existing installation
+
+`BOOTSTRAP_EMAIL` and `BOOTSTRAP_PASSWORD` only create an admin when the user
+table is empty. Changing them later does not create a login or reset a password.
+After putting the desired admin email and password in the root `.env` and running
+**Update Stack**, run this once from the Unraid terminal:
+
+```bash
+docker exec travelapp-api node dist/src/scripts/recoverAdmin.js --confirm
+```
+
+This creates that admin if absent, or grants admin and resets the password if
+the email already exists. It does not alter other users or trips. Log in with
+the configured email and password, then remove `BOOTSTRAP_PASSWORD` from the
+root `.env` and recreate the API container so the password is no longer held in
+its environment.
 
 Connect via the existing **swag** reverse proxy or **cloudflared** tunnel later
 for remote access.

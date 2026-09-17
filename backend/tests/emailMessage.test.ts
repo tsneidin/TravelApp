@@ -50,4 +50,39 @@ describe('booking email intake', () => {
     expect(matchesRecipient(parsed, 'tneidinger+trips@gmail.com')).toBe(true);
     expect((await parseEmailMessage(source)).messageId).toBe(parsed.messageId);
   });
+
+  it('includes a forwarded original email attached as an eml', async () => {
+    const original = [
+      'From: Alaska Lodge <reservations@example.com>',
+      'To: traveler@example.com',
+      'Subject: TEST-AK-0917-02 confirmation',
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      'Check-in: December 13, 2026 at 3 PM. Check-out: December 15, 2026 at 11 AM.',
+    ].join('\r\n');
+    const source = Buffer.from([
+      'From: Traveler <traveler@example.com>',
+      'To: tneidinger+trips@gmail.com',
+      'Subject: Fwd: Alaska reservation',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="forward"',
+      '',
+      '--forward',
+      'Content-Type: text/plain',
+      '',
+      'Please add this trip.',
+      '--forward',
+      'Content-Type: message/rfc822; name="original.eml"',
+      'Content-Disposition: attachment; filename="original.eml"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from(original).toString('base64'),
+      '--forward--',
+    ].join('\r\n'));
+    const parsed = await parseEmailMessage(source);
+    expect(parsed.bodyText).toContain('Please add this trip.');
+    expect(parsed.bodyText).toContain('TEST-AK-0917-02');
+    expect(parsed.bodyText).toContain('Check-out: December 15, 2026 at 11 AM');
+    expect(matchesRecipient(parsed, 'tneidinger+trips@gmail.com')).toBe(true);
+  });
 });

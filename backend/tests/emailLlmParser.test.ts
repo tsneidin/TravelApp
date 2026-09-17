@@ -32,4 +32,12 @@ describe('email AI fallback', () => {
     expect(result.candidates).toEqual([]);
     expect(result.error).toMatch(/invalid Schema.org/);
   });
+
+  it('keeps a booking at the end of a long inline forward', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: '{"@context":"https://schema.org","@graph":[]}' } }] }) } as Response);
+    await extractEmailWithLlm('Fwd: confirmation', `${'older messages '.repeat(3_000)}\nOriginal hotel confirmation TEST-AK-0917-02`);
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string) as { messages: Array<{ content: string }> };
+    expect(body.messages[1].content).toContain('Original hotel confirmation TEST-AK-0917-02');
+    expect(body.messages[1].content.length).toBeLessThan(30_100);
+  });
 });

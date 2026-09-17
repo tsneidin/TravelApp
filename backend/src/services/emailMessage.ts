@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { simpleParser } from 'mailparser';
+import { extractText } from 'unpdf';
+import { stripHtmlToText } from './fileParser.js';
 
 export interface ParsedMessage {
   messageId: string;
@@ -13,6 +15,37 @@ export interface ParsedMessage {
 }
 
 const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const attachmentLimit = 5 * 1024 * 1024;
+
+async function messageText(mail: Awaited<ReturnType<typeof simpleParser>>, depth = 0): Promise<string> {
+  const parts = [mail.text?.trim() || ''];
+  if (depth >= 2) return parts.filter(Boolean).join('\n\n');
+  for (const attachment of mail.attachments.slice(0, 5)) {
+    const content = attachment.content as Buffer;
+    if (!Buffer.isBuffer(content) || content.length > attachmentLimit) continue;
+    const filename = attachment.filename || 'attachment';
+    const mime = attachment.contentType.toLowerCase();
+    try {
+      let text = '';
+      if (mime === 'message/rfc822' || /\.eml$/i.test(filename)) {
+        const forwarded = await simpleParser(content, { skipImageLinks: true, skipTextToHtml: true });
+        text = `Subject: ${forwarded.subject || filename}\n${await messageText(forwarded, depth + 1)}`;
+      } else if (mime === 'application/pdf' || /\.pdf$/i.test(filename)) {
+        const pdf = await extractText(new Uint8Array(content), { mergePages: true });
+        text = Array.isArray(pdf.text) ? pdf.text.join('\n') : String(pdf.text || '');
+      } else if (/^(text\/plain|text\/html|text\/calendar)$/.test(mime) || /\.(txt|html?|ics)$/i.test(filename)) {
+        text = mime === 'text/html' || /\.html?$/i.test(filename) ? stripHtmlToText(content.toString('utf8')) : content.toString('utf8');
+      }
+      if (text.trim()) parts.push(`Attached ${filename}:\n${text.trim()}`);
+    } catch {
+      // Keep the outer email available for review when one attachment is unreadable.
+    }
+  }
+  const combined = parts.filter(Boolean).join('\n\n');
+  return combined.length > 60_000
+    ? `${combined.slice(0, 1_000)}\n\n[Earlier forwarding text omitted]\n\n${combined.slice(-58_000)}`
+    : combined;
+}
 
 export async function parseEmailMessage(source: Buffer): Promise<ParsedMessage> {
   const mail = await simpleParser(source, { skipImageLinks: true, skipTextToHtml: true });
@@ -34,7 +67,7 @@ export async function parseEmailMessage(source: Buffer): Promise<ParsedMessage> 
     to: addressText(mail.to),
     recipients: [...new Set(addresses)],
     subject: mail.subject ?? '(no subject)',
-    bodyText: mail.text?.trim() ?? '',
+    bodyText: await messageText(mail),
     bodyHtml: typeof mail.html === 'string' ? mail.html : '',
   };
 }

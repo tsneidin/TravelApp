@@ -5,6 +5,8 @@ import { getUser, requireTripAccess } from '../middleware/auth.js';
 import { config } from '../config.js';
 import { pollOnce } from '../services/emailPoller.js';
 import { extractEmailWithLlm } from '../services/emailLlmParser.js';
+import { parseEmailMessage } from '../services/emailMessage.js';
+import { stripHtmlToText } from '../services/fileParser.js';
 import { Prisma } from '@prisma/client';
 import type { BookingType, ImportStatus } from '@prisma/client';
 import { extractKitinerary } from '../services/kitinerary.js';
@@ -294,6 +296,9 @@ emailRouter.post(
       return;
     }
     const hasOriginal = Boolean(item.rawSource?.length);
+    const bodyText = hasOriginal
+      ? (await parseEmailMessage(Buffer.from(item.rawSource!))).bodyText
+      : item.bodyText?.trim() || stripHtmlToText(item.bodyHtml || '');
     const extracted = await extractKitinerary(
       hasOriginal ? Buffer.from(item.rawSource!) : Buffer.from(item.bodyHtml || item.bodyText || ''),
       hasOriginal ? 'booking.eml' : item.bodyHtml ? 'saved.html' : 'saved.txt',
@@ -301,7 +306,7 @@ emailRouter.post(
     const previous = item.parsedPayload as ParsedPayloadShape | null;
     const savedCandidates = previous?.source === 'kitinerary' ? previous.candidates || [] : [];
     const kitineraryCandidates = extracted.length ? extracted : savedCandidates;
-    const llm = kitineraryCandidates.length ? null : await extractEmailWithLlm(item.subject, item.bodyText ?? '');
+    const llm = kitineraryCandidates.length ? null : await extractEmailWithLlm(item.subject, bodyText);
     const candidates = kitineraryCandidates.length ? kitineraryCandidates : llm?.candidates || [];
     const updated = await prisma.emailImport.update({
       where: { id: item.id },
@@ -311,6 +316,7 @@ emailRouter.post(
         ? {
             status: item.status === 'imported' ? 'imported' : candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed',
             type: candidates[0].type,
+            bodyText: bodyText.slice(0, 60_000),
             error: null,
             parsedPayload: {
               source: kitineraryCandidates.length ? 'kitinerary' : 'llm', candidates,
@@ -322,7 +328,7 @@ emailRouter.post(
               confidence: 0.85,
             } as unknown as Prisma.InputJsonValue,
           }
-        : { status: item.status === 'imported' ? 'imported' : 'needs_review' as ImportStatus, error: llm?.error || 'No reservation found', parsedPayload: previous ? previous as Prisma.InputJsonValue : Prisma.DbNull },
+        : { status: item.status === 'imported' ? 'imported' : 'needs_review' as ImportStatus, bodyText: bodyText.slice(0, 60_000), error: llm?.error || 'No reservation found', parsedPayload: previous ? previous as Prisma.InputJsonValue : Prisma.DbNull },
     });
     const parser = extracted.length ? 'KItinerary from the full email' : savedCandidates.length ? 'Saved KItinerary result' : 'AI extraction';
     const changed = JSON.stringify(item.parsedPayload) !== JSON.stringify(updated.parsedPayload);

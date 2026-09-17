@@ -95,6 +95,25 @@ export function Layout() {
     });
   };
 
+  const [tripExpansionOverrides, setTripExpansionOverrides] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('travelapp_trip_expansion');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const setTripExpanded = (tripId: string, expanded: boolean) => {
+    setTripExpansionOverrides((prev) => {
+      const next = { ...prev, [tripId]: expanded };
+      try {
+        localStorage.setItem('travelapp_trip_expansion', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Collapse states for itinerary, notes, and map sub-menus
   const [collapsedItineraries, setCollapsedItineraries] = useState<Record<string, boolean>>(() => {
     try {
@@ -406,14 +425,24 @@ export function Layout() {
 
         <div className="trip-tree">
           {trips.map((t) => {
-            const expanded = t.id === activeTripId;
+            const expanded = tripExpansionOverrides[t.id] ?? (t.id === activeTripId);
             return (
               <div className="trip-node" key={t.id}>
-                <Link to={`/trips/${t.id}`} className={`trip-row ${expanded ? 'active' : ''}`}>
-                  {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <span className="trip-dot" style={{ background: `hsl(${hashHue(t.id)} 72% 55%)` }} />
-                  <span className="trip-name">{t.name}</span>
-                </Link>
+                <div className={`trip-row ${t.id === activeTripId ? 'active' : ''}`}>
+                  <button
+                    type="button"
+                    className="trip-toggle"
+                    onClick={() => setTripExpanded(t.id, !expanded)}
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} ${t.name}`}
+                  >
+                    {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+                  <Link to={`/trips/${t.id}`} className="trip-link" onClick={() => setTripExpanded(t.id, true)}>
+                    <span className="trip-dot" style={{ background: `hsl(${hashHue(t.id)} 72% 55%)` }} />
+                    <span className="trip-name">{t.name}</span>
+                  </Link>
+                </div>
                 {expanded && (
                   <div className="trip-subnav">
                     {TRIP_TABS.map((tb) => (

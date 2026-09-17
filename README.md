@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.153` — check the bottom of the left sidebar for the
+**Current version:** `0.0.154` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -196,7 +196,9 @@ created as new bookings. KItinerary runs locally in the API container.
 To check ingestion on Unraid, open **Docker → travelapp-api → Logs**, or run
 `docker logs --since 30m travelapp-api`. The startup line
 `[email] worker disabled (EMAIL_ENABLED=false)` means no mailbox is being
-checked. Once enabled, `[email] polled N, imported M` reports each check;
+checked. `[email] worker disabled; missing EMAIL_RECIPIENT` means the Compose
+environment is incomplete. Once enabled, `[email] polled N, imported M`
+reports each check;
 `[email] poll error` indicates a connection or processing failure. The
 `[kitinerary] extracted N reservation(s)` line means the local extractor found
 structured data. The **Email imports** page shows the stored results and

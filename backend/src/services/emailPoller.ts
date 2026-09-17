@@ -8,10 +8,19 @@ import { matchesRecipient, parseEmailMessage } from './emailMessage.js';
 import type { ParsedMessage } from './emailMessage.js';
 import { extractKitinerary } from './kitinerary.js';
 
+function missingEmailSettings(): string[] {
+  return [
+    !config.email.user && 'IMAP_USER',
+    !config.email.pass && 'IMAP_PASS',
+    !config.email.recipient && 'EMAIL_RECIPIENT',
+  ].filter((value): value is string => Boolean(value));
+}
+
 export async function pollOnce(): Promise<{ processed: number; imported: number }> {
   if (!config.email.enabled) return { processed: 0, imported: 0 };
-  if (!config.email.user || !config.email.pass || !config.email.recipient) {
-    console.warn('[email] EMAIL_ENABLED=true but IMAP_USER, IMAP_PASS, or EMAIL_RECIPIENT missing; skipping.');
+  const missing = missingEmailSettings();
+  if (missing.length) {
+    console.warn(`[email] cannot poll; missing ${missing.join(', ')}`);
     return { processed: 0, imported: 0 };
   }
 
@@ -113,6 +122,11 @@ async function ingest(p: ParsedMessage, source: Buffer): Promise<boolean> {
 
 export function startEmailWorker(): void {
   if (!config.email.enabled) return;
+  const missing = missingEmailSettings();
+  if (missing.length) {
+    console.warn(`[email] worker disabled; missing ${missing.join(', ')}`);
+    return;
+  }
   const intervalMs = Math.max(config.email.pollMinutes, 1) * 60_000;
   const run = async () => {
     try {

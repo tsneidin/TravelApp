@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.152` — check the bottom of the left sidebar for the
+**Current version:** `0.0.153` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -185,6 +185,22 @@ it is not a separate Gmail login.
 `EMAIL_ALLOWLIST` is an optional comma-separated **sender** filter. Leave it
 empty initially so bookings from new vendors are not missed. Deleting an
 unassigned import record allows that email to be collected again on a later poll.
+
+The API image includes KDE KItinerary. It first extracts structured
+reservations from incoming email and AI Assist attachments; AI Assist also tries
+it on pasted confirmations. TravelApp falls back to its existing parser when
+KItinerary finds nothing. Email imports show every extracted reservation for
+review before creating bookings. Cancellations are held for review rather than
+created as new bookings. KItinerary runs locally in the API container.
+
+To check ingestion on Unraid, open **Docker → travelapp-api → Logs**, or run
+`docker logs --since 30m travelapp-api`. The startup line
+`[email] worker disabled (EMAIL_ENABLED=false)` means no mailbox is being
+checked. Once enabled, `[email] polled N, imported M` reports each check;
+`[email] poll error` indicates a connection or processing failure. The
+`[kitinerary] extracted N reservation(s)` line means the local extractor found
+structured data. The **Email imports** page shows the stored results and
+requires an admin account.
 
 ## Google API key test
 

@@ -270,10 +270,25 @@ export interface EmailImport {
   status: ImportStatus;
   type?: BookingType | null;
   parsedPayload?: {
+    source?: string;
+    candidates?: Array<{
+      type: BookingType;
+      title: string;
+      provider?: string;
+      reference?: string;
+      startAt?: string;
+      endAt?: string;
+      address?: string;
+      price?: number;
+      currency?: string;
+      cancelled?: boolean;
+      details?: Record<string, string>;
+    }>;
     title?: string;
     provider?: string;
     reference?: string;
     startAt?: string;
+    endAt?: string;
     address?: string;
     details?: Record<string, string>;
     confidence?: number;

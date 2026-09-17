@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import type { BookingType, ImportStatus } from '@prisma/client';
 import { matchesRecipient, parseEmailMessage } from './emailMessage.js';
 import type { ParsedMessage } from './emailMessage.js';
+import { extractKitinerary } from './kitinerary.js';
 
 export async function pollOnce(): Promise<{ processed: number; imported: number }> {
   if (!config.email.enabled) return { processed: 0, imported: 0 };
@@ -38,7 +39,7 @@ export async function pollOnce(): Promise<{ processed: number; imported: number 
       const parsed = await parseEmailMessage(msg.source);
       processed++;
       if (!matchesRecipient(parsed, config.email.recipient)) continue;
-      if (await ingest(parsed)) imported++;
+      if (await ingest(parsed, msg.source)) imported++;
     }
   } finally {
     try {
@@ -51,7 +52,7 @@ export async function pollOnce(): Promise<{ processed: number; imported: number 
   return { processed, imported };
 }
 
-async function ingest(p: ParsedMessage): Promise<boolean> {
+async function ingest(p: ParsedMessage, source: Buffer): Promise<boolean> {
   const existing = await prisma.emailImport.findUnique({ where: { messageId: p.messageId } });
   if (existing) return false;
 
@@ -60,12 +61,26 @@ async function ingest(p: ParsedMessage): Promise<boolean> {
     if (!config.email.allowlist.some((d) => from.includes(d))) return false;
   }
 
-  const parsed = parseConfirmation(p.subject, p.bodyText);
+  const candidates = await extractKitinerary(source, 'booking.eml', p.sentAt);
+  const parsed = candidates.length ? null : parseConfirmation(p.subject, p.bodyText);
   let status: ImportStatus = 'pending';
   let type: BookingType | undefined;
   let parsedPayload: Record<string, unknown> | undefined;
 
-  if (parsed) {
+  if (candidates.length) {
+    type = candidates[0].type;
+    status = candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed';
+    parsedPayload = {
+      source: 'kitinerary',
+      candidates,
+      title: candidates[0].title,
+      provider: candidates[0].provider,
+      reference: candidates[0].reference,
+      startAt: candidates[0].startAt,
+      endAt: candidates[0].endAt,
+      confidence: 0.85,
+    };
+  } else if (parsed) {
     type = parsed.type;
     status = parsed.confidence >= 0.7 ? 'parsed' : 'needs_review';
     parsedPayload = {
@@ -73,6 +88,7 @@ async function ingest(p: ParsedMessage): Promise<boolean> {
       provider: parsed.provider,
       reference: parsed.reference,
       startAt: parsed.startAt?.toISOString(),
+      endAt: parsed.endAt?.toISOString(),
       address: parsed.address,
       details: parsed.details,
       confidence: parsed.confidence,

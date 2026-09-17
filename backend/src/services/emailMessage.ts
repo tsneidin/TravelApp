@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 
 export interface ParsedMessage {
   messageId: string;
+  sentAt?: string;
   from: string;
   to: string;
   recipients: string[];
@@ -28,6 +29,7 @@ export async function parseEmailMessage(source: Buffer): Promise<ParsedMessage> 
 
   return {
     messageId: mail.messageId || createHash('sha256').update(source).digest('hex'),
+    sentAt: mail.date && !Number.isNaN(mail.date.getTime()) ? mail.date.toISOString() : undefined,
     from: addressText(mail.from),
     to: addressText(mail.to),
     recipients: [...new Set(addresses)],

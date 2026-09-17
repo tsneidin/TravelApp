@@ -6,6 +6,8 @@ import { getUser, requireTripAccess } from '../middleware/auth.js';
 import { processTripChat, suggestTitleAndDescription } from '../services/ai.js';
 import { getAiConfig, saveAiConfig, testAiConnection } from '../services/settings.service.js';
 import { extractDocumentText } from '../services/fileParser.js';
+import { extractKitinerary } from '../services/kitinerary.js';
+import type { KitineraryCandidate } from '../services/kitinerary.js';
 import { TRIP_TOOLS, executeTripTool } from '../services/tripTools.js';
 
 const docUpload = multer({
@@ -144,6 +146,8 @@ aiRouter.post(
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
     });
+    const candidates = await extractKitinerary(req.file.buffer, req.file.originalname);
+    if (candidates.length) document.metadata = { ...document.metadata, kitinerary: candidates };
 
     res.json({ ok: true, document });
   }),
@@ -157,7 +161,7 @@ aiRouter.post(
     await requireTripAccess(req, tripId, 'editor');
     let message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
     const attachments = Array.isArray(req.body.attachments)
-      ? (req.body.attachments as Array<{ filename: string; fileType: string; size?: number; text?: string; summary?: string }>)
+      ? (req.body.attachments as Array<{ filename: string; fileType: string; size?: number; text?: string; summary?: string; metadata?: { kitinerary?: KitineraryCandidate[] } }>)
       : [];
 
     if (!message && !attachments.length) {
@@ -177,6 +181,16 @@ aiRouter.post(
         `--- DOCUMENT CONTENT ---\n` +
         `${cleanDocText}\n` +
         `--- END OF DOCUMENT ---`;
+    }
+    const sourceText = llmPrompt;
+    const kitineraryCandidates = attachments
+      .flatMap((att) => Array.isArray(att.metadata?.kitinerary) ? att.metadata.kitinerary : [])
+      .slice(0, 20);
+    if (!attachments.length && /\b(booking|reservation|confirmation|itinerary|ticket|check-in|checkout|flight|hotel|train|bus)\b/i.test(message)) {
+      kitineraryCandidates.push(...await extractKitinerary(Buffer.from(message), 'pasted.txt'));
+    }
+    if (kitineraryCandidates.length) {
+      llmPrompt += `\n\n--- KItinerary reservation candidates (verify against source before saving) ---\n${JSON.stringify(kitineraryCandidates.slice(0, 20))}\n--- END CANDIDATES ---`;
     }
 
     // Format stored user message with badges and collapsible raw text
@@ -206,7 +220,7 @@ aiRouter.post(
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
     const focusedDayId = typeof req.body.focusedDayId === 'string' ? req.body.focusedDayId.trim() : undefined;
-    const { reply, actions } = await processTripChat(tripId, user.id, llmPrompt, history, focusedDayId);
+    const { reply, actions } = await processTripChat(tripId, user.id, llmPrompt, history, focusedDayId, sourceText);
 
     // Sanitize any remaining null characters to prevent PostgreSQL UTF-8 column insertion errors
     const safeStored = storedContent.replace(/\0/g, '');

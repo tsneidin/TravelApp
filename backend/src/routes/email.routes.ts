@@ -6,14 +6,23 @@ import { config } from '../config.js';
 import { pollOnce } from '../services/emailPoller.js';
 import { parseConfirmation } from '../services/emailParser.js';
 import { Prisma } from '@prisma/client';
-import type { ImportStatus } from '@prisma/client';
+import type { BookingType, ImportStatus } from '@prisma/client';
+import { extractKitinerary } from '../services/kitinerary.js';
+import type { KitineraryCandidate } from '../services/kitinerary.js';
 
 interface ParsedPayloadShape {
+  source?: string;
+  candidates?: KitineraryCandidate[];
+  type?: BookingType;
   title?: string;
   provider?: string;
   reference?: string;
   startAt?: string;
+  endAt?: string;
   address?: string;
+  price?: number;
+  currency?: string;
+  cancelled?: boolean;
   details?: Record<string, string>;
   confidence?: number;
 }
@@ -139,6 +148,7 @@ emailRouter.post(
             provider: parsed.provider,
             reference: parsed.reference,
             startAt: parsed.startAt?.toISOString(),
+            endAt: parsed.endAt?.toISOString(),
             address: parsed.address,
             details: parsed.details,
             confidence: parsed.confidence,
@@ -149,27 +159,50 @@ emailRouter.post(
     const fresh = await prisma.emailImport.findUnique({ where: { id } });
     const updatedPp: ParsedPayloadShape | null = fresh?.parsedPayload as ParsedPayloadShape | null;
     const bpp: ParsedPayloadShape = updatedPp ?? {};
-    const booking = await prisma.$transaction(async (tx) => {
+    if (bpp.candidates && bpp.candidates.length > 20) throw badRequest('Too many reservations in one email');
+    const candidates: ParsedPayloadShape[] = bpp.candidates?.length ? bpp.candidates : [bpp];
+    if (candidates.some((candidate) => candidate.cancelled)) {
+      throw badRequest('This email includes a cancellation. Review the existing booking instead.');
+    }
+    const result = await prisma.$transaction(async (tx) => {
       const claimed = await tx.emailImport.updateMany({
         where: { id, status: { not: 'imported' } },
         data: { status: 'imported', tripId, userId: user.id, assignedAt: new Date() },
       });
       if (!claimed.count) throw badRequest('This email has already been imported');
-      return tx.booking.create({
-        data: {
+      const bookings = [];
+      let skipped = 0;
+      for (const candidate of candidates) {
+        const type = candidate.type ?? fresh?.type ?? 'activity';
+        const title = candidate.title ?? item.subject;
+        const startAt = candidate.startAt && !Number.isNaN(Date.parse(candidate.startAt)) ? new Date(candidate.startAt) : null;
+        const existingWhere: Prisma.BookingWhereInput = candidate.reference
+          ? { tripId, type, reference: { equals: candidate.reference, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) }
+          : { tripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) };
+        if (await tx.booking.findFirst({ where: existingWhere, select: { id: true } })) {
+          skipped++;
+          continue;
+        }
+        bookings.push(await tx.booking.create({ data: {
           tripId,
           userId: user.id,
-          type: fresh?.type ?? 'activity',
-          title: bpp.title ?? item.subject,
-          provider: bpp.provider,
-          reference: bpp.reference,
-          startAt: bpp.startAt ? new Date(bpp.startAt) : null,
-          details: bpp.details ?? {},
+          type,
+          title,
+          provider: candidate.provider,
+          reference: candidate.reference,
+          startAt,
+          endAt: candidate.endAt && !Number.isNaN(Date.parse(candidate.endAt)) ? new Date(candidate.endAt) : null,
+          details: {
+            ...(candidate.details ?? {}),
+            ...(candidate.price !== undefined ? { confirmedPrice: candidate.price } : {}),
+            ...(candidate.currency ? { currency: candidate.currency } : {}),
+          },
           sourceImportId: id,
-        },
-      });
+        } }));
+      }
+      return { bookings, skipped };
     });
-    res.status(201).json({ booking });
+    res.status(201).json(result);
   }),
 );
 
@@ -191,18 +224,39 @@ emailRouter.post(
 
 emailRouter.post(
   '/imports/:id/reparse',
-  asyncHandler(async (_req, res) => {
-    // reparse is admin-or-owner; re-run parser on stored text
-    const item = await prisma.emailImport.findUnique({ where: { id: _req.params.id } });
+  asyncHandler(async (req, res) => {
+    if (!getUser(req).isAdmin) {
+      res.status(403).json({ error: 'Admin only' });
+      return;
+    }
+    const item = await prisma.emailImport.findUnique({ where: { id: req.params.id } });
     if (!item) {
       res.status(404).json({ error: 'Import not found' });
       return;
     }
     if (item.status === 'imported') throw badRequest('An imported email cannot be reparsed');
-    const parsed = parseConfirmation(item.subject, item.bodyText ?? '');
+    const candidates = await extractKitinerary(
+      Buffer.from(item.bodyHtml || item.bodyText || ''),
+      item.bodyHtml ? 'saved.html' : 'saved.txt',
+    );
+    const parsed = candidates.length ? null : parseConfirmation(item.subject, item.bodyText ?? '');
     const updated = await prisma.emailImport.update({
       where: { id: item.id },
-      data: parsed
+      data: candidates.length
+        ? {
+            status: candidates.some((candidate) => candidate.cancelled) ? 'needs_review' : 'parsed',
+            type: candidates[0].type,
+            parsedPayload: {
+              source: 'kitinerary', candidates,
+              title: candidates[0].title,
+              provider: candidates[0].provider,
+              reference: candidates[0].reference,
+              startAt: candidates[0].startAt,
+              endAt: candidates[0].endAt,
+              confidence: 0.85,
+            } as unknown as Prisma.InputJsonValue,
+          }
+        : parsed
         ? {
             status: parsed.confidence >= 0.7 ? 'parsed' : 'needs_review',
             type: parsed.type,
@@ -211,6 +265,7 @@ emailRouter.post(
               provider: parsed.provider,
               reference: parsed.reference,
               startAt: parsed.startAt?.toISOString(),
+              endAt: parsed.endAt?.toISOString(),
               address: parsed.address,
               details: parsed.details,
               confidence: parsed.confidence,

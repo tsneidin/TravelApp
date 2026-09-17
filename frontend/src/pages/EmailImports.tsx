@@ -83,8 +83,8 @@ export function EmailImports() {
     if (!detail || !selTrip) return;
     setBusy(true);
     try {
-      await apiPost(`/email/imports/${detail.id}/assign`, { tripId: selTrip });
-      setMsg('Imported as booking.');
+      const result = await apiPost<{ bookings: unknown[]; skipped: number }>(`/email/imports/${detail.id}/assign`, { tripId: selTrip });
+      setMsg(`${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} imported${result.skipped ? `, ${result.skipped} existing skipped` : ''}.`);
       setDetail(null);
       await load();
     } catch (e) {
@@ -102,6 +102,7 @@ export function EmailImports() {
   const reparse = async (id: string) => {
     await apiPost(`/email/imports/${id}/reparse`, {});
     await load();
+    await openDetail(id);
   };
 
   const remove = (id: string) => {
@@ -207,7 +208,21 @@ export function EmailImports() {
             <b>{detail.subject}</b>
           </div>
 
-          {detail.parsedPayload && (
+          {detail.parsedPayload?.candidates?.length ? (
+            <div className="card mb">
+              <div className="small muted" style={{ textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>
+                KItinerary found {detail.parsedPayload.candidates.length} reservation{detail.parsedPayload.candidates.length === 1 ? '' : 's'}
+              </div>
+              {detail.parsedPayload.candidates.map((candidate, index) => (
+                <div className="small" key={`${candidate.reference || candidate.title}-${index}`} style={{ padding: '8px 0', borderTop: index ? '1px solid var(--border)' : undefined }}>
+                  <div><b>{candidate.title}</b> {candidate.cancelled && <span className="badge warn">Cancellation</span>}</div>
+                  <div>{candidate.type} · {candidate.reference || 'No reference'}</div>
+                  {candidate.startAt && <div>{formatDateTime(candidate.startAt, timeFormat)}{candidate.endAt ? ` to ${formatDateTime(candidate.endAt, timeFormat)}` : ''}</div>}
+                  {candidate.price !== undefined && candidate.currency && <div>{candidate.currency} {candidate.price.toFixed(2)}</div>}
+                </div>
+              ))}
+            </div>
+          ) : detail.parsedPayload && (
             <div className="card mb">
               <div className="small muted" style={{ textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>
                 Parsed ({detail.type})
@@ -231,12 +246,12 @@ export function EmailImports() {
 
           <div className="modal-actions">
             <button className="btn" onClick={() => setDetail(null)}>Close</button>
-            <button className="btn" onClick={() => void reparse(detail.id)}>Reparse</button>
+            {detail.parsedPayload?.source !== 'kitinerary' && <button className="btn" onClick={() => void reparse(detail.id)}>Reparse</button>}
             {detail.trip ? (
               <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
             ) : (
-              <button className="btn primary" onClick={() => void assign()} disabled={busy || !selTrip}>
-                <Check size={14} /> Import as booking
+              <button className="btn primary" onClick={() => void assign()} disabled={busy || !selTrip || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
+                <Check size={14} /> Import {detail.parsedPayload?.candidates?.length || 1} booking{detail.parsedPayload?.candidates?.length === 1 ? '' : 's'}
               </button>
             )}
           </div>

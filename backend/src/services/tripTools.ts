@@ -1171,6 +1171,15 @@ export async function executeTripTool(
       const type = BOOKING_TYPES.includes(rawType as BookingType) ? (rawType as BookingType) : null;
       const title = String(a.title ?? '').trim();
       if (!type || !title) return { action: name, summary: 'add_booking: valid type and title required', ok: false };
+      const reference = a.reference ? String(a.reference).trim() : '';
+      const startAt = toDate(a.startAt);
+      const existing = await prisma.booking.findFirst({
+        where: reference
+          ? { tripId, type, reference: { equals: reference, mode: 'insensitive' } }
+          : { tripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) },
+        select: { id: true, title: true },
+      });
+      if (existing) return { action: name, summary: `Booking "${existing.title}" already exists. Use update_booking to correct it.`, ok: false, bookingId: existing.id };
       const confirmedPrice = typeof a.price === 'number' ? a.price : parseLocalizedAmount(String(a.price ?? ''));
       const bookingCurrency = normalizeCurrencyCode(a.currency ? String(a.currency) : undefined);
       const details = {
@@ -1186,8 +1195,8 @@ export async function executeTripTool(
           type,
           title,
           provider: a.provider ? String(a.provider).trim() : undefined,
-          reference: a.reference ? String(a.reference).trim() : undefined,
-          startAt: toDate(a.startAt),
+          reference: reference || undefined,
+          startAt,
           endAt: toDate(a.endAt),
           details,
         },
@@ -1223,6 +1232,7 @@ export async function executeTripTool(
           endAt: toDate(a.endAt),
           totalAmount: confirmedPrice,
           currency: bookingCurrency,
+          preferFallbackPrice: confirmedPrice !== undefined,
           legs: structuredLegs,
           address: a.address ? String(a.address).trim() : undefined,
           notes: a.notes ? String(a.notes).trim() : undefined,

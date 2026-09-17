@@ -1,4 +1,11 @@
-FROM node:20-alpine
+FROM node:20-trixie-slim
+
+# KItinerary's extractor is packaged for Debian; keep it in the API image so
+# email and AI Assist can use the same local parser without a network service.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libkitinerary-bin libkitinerary-data \
+    && ln -s "$(find /usr/lib -type f -name kitinerary-extractor -print -quit)" /usr/local/bin/kitinerary-extractor \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

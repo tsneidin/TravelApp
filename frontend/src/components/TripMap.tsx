@@ -50,7 +50,7 @@ declare global {
   }
 }
 
-function loadGoogleMaps(): Promise<any> {
+export function loadGoogleMaps(): Promise<any> {
   if (window.google?.maps) return Promise.resolve(window.google.maps);
   if (window.__travelGoogleMapsPromise) return window.__travelGoogleMapsPromise;
   const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;

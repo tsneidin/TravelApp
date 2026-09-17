@@ -1,8 +1,8 @@
 import { useTimeFormat } from '../../lib/time';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MapPin, ExternalLink, Image as ImageIcon } from 'lucide-react';
-import { TripMap, type PlaceWithStop } from '../../components/TripMap';
+import { TripMap, loadGoogleMaps, type PlaceWithStop } from '../../components/TripMap';
 import { Modal } from '../../components/Modal';
 import { apiPost } from '../../lib/api';
 import type { GeocodedPlace, Trip } from '../../lib/types';
@@ -17,6 +17,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
   const [draft, setDraft] = useState<(GeocodedPlace & { startTime?: string; endTime?: string; spanDays?: number }) | null>(null);
   const [draftDayId, setDraftDayId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [hotelPhotos, setHotelPhotos] = useState<Record<string, string>>({});
   const sortedDays = useMemo(
     () => [...(trip.days ?? [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.sortOrder - b.sortOrder),
     [trip.days],
@@ -38,6 +39,22 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
       stopNumber: placeStopNumberMap.get(place.id),
     }));
   }, [sortedDays, trip.places, placeStopNumberMap]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hotels = places.filter((place) => isAccommodationItem(place));
+    const unique = [...new Map(hotels.map((place) => [`${place.name}|${place.address || ''}`.toLowerCase(), place])).values()];
+    if (!unique.length) return;
+    void loadGoogleMaps().then((maps) => {
+      if (!maps.places?.PlacesService) return;
+      const service = new maps.places.PlacesService(document.createElement('div'));
+      unique.forEach((place) => service.textSearch({ query: [place.name, place.address, trip.destination].filter(Boolean).join(', ') }, (results: any[], status: any) => {
+        const photoUrl = status === maps.places.PlacesServiceStatus.OK ? results?.[0]?.photos?.[0]?.getUrl?.({ maxWidth: 240, maxHeight: 180 }) : undefined;
+        if (photoUrl && !cancelled) setHotelPhotos((current) => ({ ...current, [`${place.name}|${place.address || ''}`.toLowerCase()]: photoUrl }));
+      }));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [places, trip.destination]);
 
   const saveDraft = async () => {
     if (!draft?.name.trim()) return;
@@ -141,6 +158,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
           <div className="map-tab-list">
             {places.map((place) => {
               const photo = (trip.photos ?? []).find((item) => item.placeId === place.id);
+              const hotelPhoto = isAccommodationItem(place) ? hotelPhotos[`${place.name}|${place.address || ''}`.toLowerCase()] : undefined;
               const day = sortedDays.findIndex((item) => item.id === place.dayId) + 1;
               const googleUrl = place.lat != null && place.lng != null
                 ? `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`
@@ -149,7 +167,7 @@ export function MapTab({ trip, reload }: { trip: Trip; reload: () => Promise<voi
                 <div key={place.id} className={`list-row ${selected === place.id ? 'active-highlight' : ''}`}
                   style={{ alignItems: 'stretch', cursor: 'pointer' }} onClick={() => setSelected((prev) => prev === place.id ? undefined : place.id)}>
                   <div style={{ width: 82, minHeight: 68, borderRadius: 7, overflow: 'hidden', background: 'var(--panel-2)', display: 'grid', placeItems: 'center' }}>
-                    {photo ? <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={22} className="muted" />}
+                    {photo || hotelPhoto ? <img src={photo?.url || hotelPhoto} alt={isAccommodationItem(place) ? `${place.name} hotel` : ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={22} className="muted" />}
                   </div>
                   <div className="grow">
                     <div className="title">

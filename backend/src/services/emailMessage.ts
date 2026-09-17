@@ -18,7 +18,14 @@ const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const attachmentLimit = 5 * 1024 * 1024;
 
 async function messageText(mail: Awaited<ReturnType<typeof simpleParser>>, depth = 0): Promise<string> {
-  const parts = [mail.text?.trim() || ''];
+  const plainText = mail.text?.trim() || '';
+  const htmlText = typeof mail.html === 'string' ? stripHtmlToText(mail.html) : '';
+  // Prefer the rendering that retains more booking evidence. Mailparser's
+  // generated plain text sometimes joins adjacent HTML table cells.
+  const score = (value: string) => (value.match(/\b(?:booking number|property name|check[ -]?in|check[ -]?out|amount paid|total price)\s+\S|[€£$]/gi) || []).length;
+  const plainScore = score(plainText);
+  const htmlScore = score(htmlText);
+  const parts = [htmlText && (!plainText || htmlScore > plainScore || (htmlScore === plainScore && htmlText.length > plainText.length * 1.5)) ? htmlText : plainText];
   if (depth >= 2) return parts.filter(Boolean).join('\n\n');
   for (const attachment of mail.attachments.slice(0, 5)) {
     const content = attachment.content as Buffer;

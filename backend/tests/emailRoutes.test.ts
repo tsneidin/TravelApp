@@ -103,6 +103,23 @@ describe('personal email review queue', () => {
     expect(db.booking.create).toHaveBeenCalledWith({ data: expect.objectContaining({ tripId: 'new-trip', startAt: new Date('2026-12-13T15:00:00Z'), endAt: new Date('2026-12-15T11:00:00Z') }) });
   });
 
+  it('does not duplicate a confirmed stay when its receipt has the same reference but date-only times', async () => {
+    const item = {
+      id: 'receipt-email', userId: 'user-one', status: 'parsed', subject: 'Fwd: This is your receipt', type: 'hotel',
+      parsedPayload: { source: 'email-evidence', candidates: [{ source: 'email-evidence', type: 'hotel', title: 'Example Harbor Hotel', reference: '9000001234', startAt: '2027-02-10', endAt: '2027-02-12', details: {} }] },
+    };
+    db.emailImport.findFirst.mockResolvedValue(item);
+    db.emailImport.findUnique.mockResolvedValue(item);
+    db.emailImport.updateMany.mockResolvedValue({ count: 1 });
+    db.booking.findFirst.mockResolvedValue({ id: 'original-booking' });
+    const response = await request(app).post('/email/imports/receipt-email/assign')
+      .set('Authorization', `Bearer ${token('user-one')}`).send({ tripId: 'owned-trip' });
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ skipped: 1, bookings: [] });
+    expect(db.booking.findFirst).toHaveBeenCalledWith({ where: { tripId: 'owned-trip', type: 'hotel', reference: { equals: '9000001234', mode: 'insensitive' } }, select: { id: true } });
+    expect(db.booking.create).not.toHaveBeenCalled();
+  });
+
   it('reports the parser result while keeping an imported email linked to its trip', async () => {
     vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [{ source: 'llm', type: 'hotel', title: 'Alaska Lodge', startAt: '2026-12-13T15:00', endAt: '2026-12-15T11:00', details: { localStartAt: '2026-12-13T15:00', localEndAt: '2026-12-15T11:00' } }] });
     db.emailImport.findFirst.mockResolvedValue({ id: 'hotel-email', userId: 'user-one', status: 'imported', tripId: 'trip-one', subject: 'Alaska hotel booking', bodyText: 'Check-in: December 13, 2026 at 3 PM. Check-out: December 15, 2026 at 11 AM.', bodyHtml: '', parsedPayload: null });
@@ -124,15 +141,30 @@ describe('personal email review queue', () => {
     expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 0, item: { status: 'needs_review', error: 'AI extraction is disabled.' } });
   });
 
+  it('rebuilds blank saved text from the original HTML email before AI extraction', async () => {
+    const original = Buffer.from([
+      'From: traveler@example.com', 'To: tneidinger+trips@gmail.com', 'Subject: Fwd: This is your receipt',
+      'MIME-Version: 1.0', 'Content-Type: text/html; charset=utf-8', '',
+      '<p>Booking.com receipt</p><table><tr><td>Booking number</td><td>9000001234</td></tr><tr><td>Property name</td><td>Example Harbor Hotel</td></tr></table>',
+    ].join('\r\n'));
+    db.emailImport.findFirst.mockResolvedValue({ id: 'receipt-email', userId: 'user-one', status: 'needs_review', subject: 'Fwd: This is your receipt', bodyText: '', bodyHtml: '', rawSource: new Uint8Array(original), parsedPayload: null });
+    db.emailImport.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'receipt-email', ...data }));
+    const response = await request(app).post('/email/imports/receipt-email/reparse')
+      .set('Authorization', `Bearer ${token('user-one')}`).send({});
+    expect(response.status).toBe(200);
+    expect(extractEmailWithLlm).toHaveBeenCalledWith('Fwd: This is your receipt', expect.stringContaining('Booking number 9000001234'));
+    expect(response.body.item.bodyText).toContain('Example Harbor Hotel');
+  });
+
   it('uses AI to complete a hotel when KItinerary only finds a partial reservation', async () => {
-    vi.mocked(extractKitinerary).mockResolvedValue([{ source: 'kitinerary', type: 'hotel', title: 'Barirooms', reference: '5126038442', details: {} }]);
-    vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [{ source: 'llm', type: 'hotel', title: 'Barirooms', reference: '5126038442', startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00', price: 265.86, currency: 'EUR', details: {} }] });
-    db.emailImport.findFirst.mockResolvedValue({ id: 'bari-email', userId: 'user-one', status: 'needs_review', subject: 'Fwd: Barirooms', bodyText: 'Confirmation: 5126038442', bodyHtml: '', parsedPayload: null });
+    vi.mocked(extractKitinerary).mockResolvedValue([{ source: 'kitinerary', type: 'hotel', title: 'Example Harbor Hotel', reference: '9000001234', details: {} }]);
+    vi.mocked(extractEmailWithLlm).mockResolvedValue({ candidates: [{ source: 'llm', type: 'hotel', title: 'Example Harbor Hotel', reference: '9000001234', startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00', price: 123.45, currency: 'EUR', details: {} }] });
+    db.emailImport.findFirst.mockResolvedValue({ id: 'bari-email', userId: 'user-one', status: 'needs_review', subject: 'Fwd: Example Harbor Hotel', bodyText: 'Confirmation: 9000001234', bodyHtml: '', parsedPayload: null });
     db.emailImport.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'bari-email', ...data }));
     const response = await request(app).post('/email/imports/bari-email/reparse')
       .set('Authorization', `Bearer ${token('user-one')}`).send({});
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 1, item: { status: 'parsed', parsedPayload: { source: 'llm', candidates: [{ startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00', price: 265.86 }] } } });
+    expect(response.body).toMatchObject({ parser: 'AI extraction', reservations: 1, item: { status: 'parsed', parsedPayload: { source: 'llm', candidates: [{ startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00', price: 123.45 }] } } });
   });
 
   it('applies reparsed dates only to a booking linked to that email', async () => {

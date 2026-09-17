@@ -85,4 +85,30 @@ describe('booking email intake', () => {
     expect(parsed.bodyText).toContain('Check-out: December 15, 2026 at 11 AM');
     expect(matchesRecipient(parsed, 'tneidinger+trips@gmail.com')).toBe(true);
   });
+
+  it('keeps an HTML receipt when the plain-text part contains only the forwarding note', async () => {
+    const html = '<html><body><blockquote><h2>This is your receipt</h2><table><tr><td>Booking number</td><td>9000001234</td></tr><tr><td>Property name</td><td>Example Harbor Hotel</td></tr><tr><td>Check-in</td><td>Wednesday, February 10, 2027</td></tr><tr><td>Check-out</td><td>Friday, February 12, 2027</td></tr></table><p>Amount paid on Jan 5, 2027</p><b>&euro;&nbsp;123.45</b></blockquote></body></html>';
+    const source = Buffer.from([
+      'From: Traveler <traveler@example.com>',
+      'To: tneidinger+trips@gmail.com',
+      'Subject: Fwd: This is your receipt',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/alternative; boundary="receipt"',
+      '',
+      '--receipt',
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      'Sent from my iPhone',
+      '--receipt',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      html,
+      '--receipt--',
+    ].join('\r\n'));
+    const parsed = await parseEmailMessage(source);
+    expect(parsed.bodyText).toContain('Booking number 9000001234');
+    expect(parsed.bodyText).toContain('Example Harbor Hotel');
+    expect(parsed.bodyText).toContain('Check-in Wednesday, February 10, 2027');
+    expect(parsed.bodyText).toContain('€ 123.45');
+  });
 });

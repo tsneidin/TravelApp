@@ -36,9 +36,9 @@ describe('KItinerary reservation mapping', () => {
 
   it('recognizes common alternate hotel date fields from structured extraction', () => {
     const [candidate] = normalizeKitineraryOutput([{
-      '@type': 'LodgingReservation', reservationFor: { name: 'Barirooms', checkInTime: '2026-10-01T15:00', checkOutTime: '2026-10-03T10:00' },
+      '@type': 'LodgingReservation', reservationFor: { name: 'Example Harbor Hotel', checkInTime: '2027-02-10T15:00', checkOutTime: '2027-02-12T10:00' },
     }]);
-    expect(candidate).toMatchObject({ startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00' });
+    expect(candidate).toMatchObject({ startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00' });
   });
 
   it('keeps transport route, deduplicates passengers, and flags cancellations', () => {

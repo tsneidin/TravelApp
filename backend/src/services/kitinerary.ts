@@ -24,7 +24,7 @@ export interface KitineraryCandidate {
   currency?: string;
   cancelled?: boolean;
   details: Record<string, string>;
-  source: 'kitinerary' | 'llm';
+  source: 'kitinerary' | 'llm' | 'email-evidence';
 }
 
 export function needsEmailAiCompletion(candidates: KitineraryCandidate[]): boolean {

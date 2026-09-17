@@ -116,7 +116,7 @@ async function ingest(p: ParsedMessage, source: Buffer, connection: EmailConnect
     type = candidates[0].type;
     status = candidates.some((candidate) => candidate.cancelled) || incomplete ? 'needs_review' : 'parsed';
     parsedPayload = {
-      source: usedAi ? 'llm' : 'kitinerary', candidates,
+      source: usedAi ? candidates[0].source : 'kitinerary', candidates,
       title: candidates[0].title, provider: candidates[0].provider,
       reference: candidates[0].reference, startAt: candidates[0].startAt,
       endAt: candidates[0].endAt, confidence: 0.85,

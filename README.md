@@ -3,7 +3,7 @@
 A Wanderlog-style travel planning app built from scratch, containerized and
 deployed to Unraid via Docker Compose. Dark navy/cyan dashboard UI.
 
-**Current version:** `0.0.164` — check the bottom of the left sidebar for the
+**Current version:** `0.0.165` — check the bottom of the left sidebar for the
 live build. After any update, run **Update Stack** on Unraid and look for a
 new version number to confirm the rebuild deployed.
 
@@ -199,7 +199,11 @@ emails remain in the review queue with an error if AI is unavailable. The AI
 provider may be external, so choose its endpoint accordingly. Explicit
 check-in and check-out lines complete missing hotel dates; a focused AI retry
 handles other incomplete hotel results. For an email already added to a trip,
-reparse changes only the preview. **Apply dates to booking** updates the linked booking after
+reparse changes only the preview. Reparse can recover receipt text from saved
+HTML or the original email when the earlier preview was blank. A labeled
+Booking.com lodging receipt remains reviewable even if AI returns no booking;
+the booking reference prevents a second copy of the confirmed stay when you
+approve it into the same trip. **Apply dates to booking** updates the linked booking after
 you review the newly extracted check-in and check-out dates.
 
 For an upgrade from the former shared mailbox, keep the old `IMAP_USER` and

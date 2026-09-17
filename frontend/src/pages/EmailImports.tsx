@@ -271,7 +271,7 @@ export function EmailImports() {
           {detail.parsedPayload?.candidates?.length ? (
             <div className="card mb">
               <div className="small muted" style={{ textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>
-                {detail.parsedPayload.source === 'llm' ? 'AI extraction' : 'KItinerary'} found {detail.parsedPayload.candidates.length} reservation{detail.parsedPayload.candidates.length === 1 ? '' : 's'}
+                {detail.parsedPayload.source === 'email-evidence' ? 'Receipt details' : detail.parsedPayload.source === 'llm' ? 'AI extraction' : 'KItinerary'} found {detail.parsedPayload.candidates.length} reservation{detail.parsedPayload.candidates.length === 1 ? '' : 's'}
               </div>
               {detail.parsedPayload.candidates.map((candidate, index) => (
                 <div className="small" key={`${candidate.reference || candidate.title}-${index}`} style={{ padding: '8px 0', borderTop: index ? '1px solid var(--border)' : undefined }}>

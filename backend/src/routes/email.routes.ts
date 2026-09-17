@@ -241,7 +241,7 @@ emailRouter.post(
         const title = candidate.title ?? item.subject;
         const startAt = bookingDate(candidate, 'startAt');
         const existingWhere: Prisma.BookingWhereInput = candidate.reference
-          ? { tripId: targetTripId, type, reference: { equals: candidate.reference, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) }
+          ? { tripId: targetTripId, type, reference: { equals: candidate.reference, mode: 'insensitive' } }
           : { tripId: targetTripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) };
         if (await tx.booking.findFirst({ where: existingWhere, select: { id: true } })) {
           skipped++;
@@ -296,9 +296,8 @@ emailRouter.post(
       return;
     }
     const hasOriginal = Boolean(item.rawSource?.length);
-    const bodyText = hasOriginal
-      ? (await parseEmailMessage(Buffer.from(item.rawSource!))).bodyText
-      : item.bodyText?.trim() || stripHtmlToText(item.bodyHtml || '');
+    const bodyText = (hasOriginal ? (await parseEmailMessage(Buffer.from(item.rawSource!))).bodyText : '')
+      || item.bodyText?.trim() || stripHtmlToText(item.bodyHtml || '');
     const extracted = await extractKitinerary(
       hasOriginal ? Buffer.from(item.rawSource!) : Buffer.from(item.bodyHtml || item.bodyText || ''),
       hasOriginal ? 'booking.eml' : item.bodyHtml ? 'saved.html' : 'saved.txt',
@@ -321,7 +320,7 @@ emailRouter.post(
             bodyText: bodyText.slice(0, 60_000),
             error: incomplete ? llm?.error || 'Hotel dates are incomplete. Reparse or add the booking manually.' : null,
             parsedPayload: {
-              source: usedAi ? 'llm' : 'kitinerary', candidates,
+              source: usedAi ? candidates[0].source : 'kitinerary', candidates,
               title: candidates[0].title,
               provider: candidates[0].provider,
               reference: candidates[0].reference,
@@ -332,7 +331,7 @@ emailRouter.post(
           }
         : { status: item.status === 'imported' ? 'imported' : 'needs_review' as ImportStatus, bodyText: bodyText.slice(0, 60_000), error: llm?.error || 'No reservation found', parsedPayload: previous ? previous as Prisma.InputJsonValue : Prisma.DbNull },
     });
-    const parser = usedAi ? 'AI extraction' : extracted.length ? 'KItinerary from the full email' : savedCandidates.length ? 'Saved KItinerary result' : 'AI extraction';
+    const parser = usedAi ? candidates[0].source === 'email-evidence' ? 'Receipt details' : 'AI extraction' : extracted.length ? 'KItinerary from the full email' : savedCandidates.length ? 'Saved KItinerary result' : 'AI extraction';
     const changed = JSON.stringify(item.parsedPayload) !== JSON.stringify(updated.parsedPayload);
     res.json({ item: updated, parser, reservations: candidates.length, changed });
   }),

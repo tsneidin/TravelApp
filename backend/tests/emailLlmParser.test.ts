@@ -26,6 +26,12 @@ describe('email AI fallback', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('reports a blank captured message body without sending its subject to AI', async () => {
+    const result = await extractEmailWithLlm('Fwd: This is your receipt', '');
+    expect(result.error).toMatch(/No readable email body/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('rejects unstructured model output', async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: '{"hotel":"guess"}' } }] }) } as Response);
     const result = await extractEmailWithLlm('Hotel', 'Booking');
@@ -46,60 +52,79 @@ describe('email AI fallback', () => {
       'Sent from my iPhone',
       'Begin forwarded message:',
       '> From: noreply@booking.com',
-      '> Subject: Thanks! Your booking is confirmed at Barirooms - Picca 24',
-      '> Confirmation: 5126038442',
-      '> Your apartment in Bari is confirmed.',
+      '> Subject: Thanks! Your booking is confirmed at Example Harbor Hotel',
+      '> Confirmation: 9000001234',
+      '> Your apartment in Sample City is confirmed.',
       '> Reservation details',
-      '> Check-in Thursday, October 1, 2026 (3:00 PM - 9:00 PM)',
-      '> Check-out Saturday, October 3, 2026 (10:00 AM - 10:30 AM)',
-      '> Location 24 Piazza Luigi di Savoia Duca Degli Abruzzi, 70121 Bari, Italy',
-      '> Cancellation cost until October 1: € 288.91',
+      '> Check-in Wednesday, February 10, 2027 (3:00 PM - 9:00 PM)',
+      '> Check-out Friday, February 12, 2027 (10:00 AM - 10:30 AM)',
+      '> Location 1 Example Lane, Sample City, Italy',
+      '> Cancellation cost until February 10: € 145.67',
       '> Price details',
-      '> 1 Deluxe Apartment € 255.37',
-      '> VAT € 25.54',
-      '> Booking.com will pay - € 23.05',
-      '> Total Price € 265.86',
-      '> Total paid € 265.86',
-      '> The property invoice will show € 288.91.',
+      '> 1 Deluxe Apartment € 111.11',
+      '> VAT € 11.11',
+      '> Booking.com will pay - € 12.34',
+      '> Total Price € 123.45',
+      '> Total paid € 123.45',
+      '> The property invoice will show € 145.67.',
       '> <mime-attachment.gif>',
     ].join('\n');
     const modelJson = JSON.stringify({
-      '@type': 'LodgingReservation', reservationFor: 'Barirooms - Picca 24',
-      reservationNumber: '5126038442', checkinTime: '2026-10-01T15:00', checkoutTime: '2026-10-03T10:00',
-      totalPrice: '€ 265,86', priceCurrency: '€',
+      '@type': 'LodgingReservation', reservationFor: 'Example Harbor Hotel',
+      reservationNumber: '9000001234', checkinTime: '2027-02-10T15:00', checkoutTime: '2027-02-12T10:00',
+      totalPrice: '€ 123,45', priceCurrency: '€',
     });
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: `Here is the reservation:\n\x60\x60\x60json\n${modelJson}\n\x60\x60\x60` } }] }) } as Response);
-    const result = await extractEmailWithLlm('Fwd: Barirooms confirmation', forwarded);
+    const result = await extractEmailWithLlm('Fwd: Example Harbor Hotel confirmation', forwarded);
     expect(result.error).toBeUndefined();
     expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]).toMatchObject({ type: 'hotel', title: 'Barirooms - Picca 24', reference: '5126038442', startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00', price: 265.86, currency: 'EUR' });
+    expect(result.candidates[0]).toMatchObject({ type: 'hotel', title: 'Example Harbor Hotel', reference: '9000001234', startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00', price: 123.45, currency: 'EUR' });
     const request = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string) as { messages: Array<{ content: string }> };
-    expect(request.messages[1].content).toContain('Total Price € 265.86');
+    expect(request.messages[1].content).toContain('Total Price € 123.45');
     expect(request.messages[1].content).not.toContain('> Check-in');
     expect(request.messages[1].content).not.toContain('<mime-attachment.gif>');
   });
 
   it('uses a single explicitly labeled total instead of a cancellation amount selected by the model', async () => {
-    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Barirooms' }, checkinTime: '2026-10-01T15:00', checkoutTime: '2026-10-03T10:00', totalPrice: 288.91, priceCurrency: 'EUR' }] }) } }] }) } as Response);
-    const result = await extractEmailWithLlm('Fwd: hotel', 'Cancellation cost € 288.91\nTotal Price\n€ 265.86\nProperty invoice € 288.91');
-    expect(result.candidates[0]).toMatchObject({ price: 265.86, currency: 'EUR' });
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example Harbor Hotel' }, checkinTime: '2027-02-10T15:00', checkoutTime: '2027-02-12T10:00', totalPrice: 145.67, priceCurrency: 'EUR' }] }) } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: hotel', 'Cancellation cost € 145.67\nTotal Price\n€ 123.45\nProperty invoice € 145.67');
+    expect(result.candidates[0]).toMatchObject({ price: 123.45, currency: 'EUR' });
   });
 
   it('completes missing hotel dates from explicit email lines without another model call', async () => {
-    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Barirooms - Picca 24' }, reservationNumber: '5126038442' }] }) } }] }) } as Response);
-    const result = await extractEmailWithLlm('Fwd: Barirooms', 'Check-in Thursday, October 1, 2026 (3:00 PM - 9:00 PM)\nCheck-out Saturday, October 3, 2026 (10:00 AM - 10:30 AM)');
-    expect(result.candidates[0]).toMatchObject({ startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00' });
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example Harbor Hotel' }, reservationNumber: '9000001234' }] }) } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: Example Harbor Hotel', 'Check-in Wednesday, February 10, 2027 (3:00 PM - 9:00 PM)\nCheck-out Friday, February 12, 2027 (10:00 AM - 10:30 AM)');
+    expect(result.candidates[0]).toMatchObject({ startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00' });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('retries an incomplete hotel extraction with focused date instructions', async () => {
     const first = { '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example hotel' }, reservationNumber: 'ABC123' }] };
-    const second = { '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example hotel' }, checkinTime: '2026-10-01T15:00', checkoutTime: '2026-10-03T10:00' }] };
+    const second = { '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example hotel' }, checkinTime: '2027-02-10T15:00', checkoutTime: '2027-02-12T10:00' }] };
     vi.mocked(fetch)
       .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(first) } }] }) } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(second) } }] }) } as Response);
-    const result = await extractEmailWithLlm('Fwd: hotel', 'Hotel dates are October 1 through October 3, 2026. Arrive at 3 PM, leave at 10 AM.');
-    expect(result.candidates[0]).toMatchObject({ reference: 'ABC123', startAt: '2026-10-01T15:00', endAt: '2026-10-03T10:00' });
+    const result = await extractEmailWithLlm('Fwd: hotel', 'Hotel dates are February 10 through February 12, 2027. Arrive at 3 PM, leave at 10 AM.');
+    expect(result.candidates[0]).toMatchObject({ reference: 'ABC123', startAt: '2027-02-10T15:00', endAt: '2027-02-12T10:00' });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses labeled receipt evidence for review when AI returns no reservation', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: '{"@context":"https://schema.org","@graph":[]}' } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: This is your receipt', 'Booking.com\nBooking number 9000001234\nProperty name Example Harbor Hotel\nCheck-in Wednesday, February 10, 2027\nCheck-out Friday, February 12, 2027\nAmount paid on Jan 5, 2027\n€ 123.45');
+    expect(result.error).toBeUndefined();
+    expect(result.candidates[0]).toMatchObject({ source: 'email-evidence', type: 'hotel', reference: '9000001234', startAt: '2027-02-10', endAt: '2027-02-12', price: 123.45 });
+  });
+
+  it('retains a clearly labeled lodging receipt when the AI endpoint is unavailable', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
+    const result = await extractEmailWithLlm('Fwd: This is your receipt', 'Booking.com\nBooking number 9000001234\nProperty name Example Harbor Hotel\nCheck-in Wednesday, February 10, 2027\nCheck-out Friday, February 12, 2027\nAmount paid € 123.45');
+    expect(result.candidates[0]).toMatchObject({ source: 'email-evidence', reference: '9000001234' });
+  });
+
+  it('uses the receipt amount paid when AI selects a different number', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'LodgingReservation', reservationFor: { name: 'Example Harbor Hotel' }, checkinTime: '2027-02-10', checkoutTime: '2027-02-12', totalPrice: 145.67, priceCurrency: 'EUR' }] }) } }] }) } as Response);
+    const result = await extractEmailWithLlm('Fwd: This is your receipt', 'Booking.com\nAmount paid on Jan 5, 2027\n\n€ 123.45\nThis is not an invoice.');
+    expect(result.candidates[0]).toMatchObject({ price: 123.45, currency: 'EUR' });
   });
 });

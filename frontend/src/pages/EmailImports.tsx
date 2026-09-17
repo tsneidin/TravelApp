@@ -103,14 +103,15 @@ export function EmailImports() {
     }
   };
 
-  const assign = async () => {
+  const assign = async (force = false) => {
     if (!detail || !selTrip || (selTrip === '__new__' && !newTripName.trim())) return;
     setBusy(true);
     try {
-      const result = await apiPost<{ bookings: unknown[]; skipped: number; tripId: string; trip?: { name: string } | null; itineraryEntries: number; budgetEntries: number; emailDocuments: number }>(`/email/imports/${detail.id}/assign`, selTrip === '__new__'
-        ? { newTrip: { name: newTripName.trim(), destination: newTripDestination.trim() } }
-        : { tripId: selTrip });
-      setMsg(`${result.trip ? `Created ${result.trip.name}. ` : ''}${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added, ${result.itineraryEntries} itinerary item${result.itineraryEntries === 1 ? '' : 's'}, ${result.budgetEntries} budget item${result.budgetEntries === 1 ? '' : 's'}, and ${result.emailDocuments} email document${result.emailDocuments === 1 ? '' : 's'} attached${result.skipped ? `; ${result.skipped} existing booking${result.skipped === 1 ? '' : 's'} matched` : ''}.`);
+      const candidates = detail.parsedPayload?.candidates;
+      const result = await apiPost<{ bookings: unknown[]; skipped: number; updated: number; tripId: string; trip?: { name: string } | null; itineraryEntries: number; budgetEntries: number; emailDocuments: number }>(`/email/imports/${detail.id}/assign`, selTrip === '__new__'
+        ? { newTrip: { name: newTripName.trim(), destination: newTripDestination.trim() }, force, candidates }
+        : { tripId: detail.trip?.id || selTrip, force, candidates });
+      setMsg(`${result.trip ? `Created ${result.trip.name}. ` : ''}${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added${result.updated ? `, ${result.updated} booking${result.updated === 1 ? '' : 's'} updated` : ''}, ${result.itineraryEntries} itinerary item${result.itineraryEntries === 1 ? '' : 's'}, ${result.budgetEntries} budget item${result.budgetEntries === 1 ? '' : 's'}, and ${result.emailDocuments} email document${result.emailDocuments === 1 ? '' : 's'} attached${result.skipped ? `; ${result.skipped} existing booking${result.skipped === 1 ? '' : 's'} matched` : ''}.`);
       setDetail(null);
       setSelTrip(result.tripId);
       await load();
@@ -133,7 +134,7 @@ export function EmailImports() {
       const result = await apiPost<{ item: EmailImport; parser: string; reservations: number; changed: boolean }>(`/email/imports/${id}/reparse`, {});
       setDetail(result.item);
       setReparsedId(id);
-      setReparseResult(`${result.parser}: ${result.reservations} reservation${result.reservations === 1 ? '' : 's'} found. ${result.item.error || (result.changed ? 'The extracted details changed.' : 'The extracted details are unchanged.')}${result.item.status === 'imported' ? ' The saved booking has not been changed.' : ''}`);
+      setReparseResult(`${result.parser}: ${result.reservations} reservation${result.reservations === 1 ? '' : 's'} found. ${result.item.error || (result.changed ? ' Review or edit the fields, then update or add again.' : ' Review or edit the fields, then update or add again.')}`);
       await load();
     } catch (error) {
       setReparseResult(`Reparse failed: ${(error as Error).message}`);
@@ -155,6 +156,18 @@ export function EmailImports() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const updateCandidate = (index: number, field: string, value: string) => {
+    setDetail((current) => {
+      if (!current?.parsedPayload?.candidates) return current;
+      const candidates = current.parsedPayload.candidates.map((candidate, candidateIndex) => {
+        if (candidateIndex !== index) return candidate;
+        if (field === 'price') return { ...candidate, price: value === '' ? undefined : Number(value) };
+        return { ...candidate, [field]: value || undefined };
+      });
+      return { ...current, parsedPayload: { ...current.parsedPayload, candidates } };
+    });
   };
 
   const remove = (id: string) => {
@@ -275,11 +288,17 @@ export function EmailImports() {
               </div>
               {detail.parsedPayload.candidates.map((candidate, index) => (
                 <div className="small" key={`${candidate.reference || candidate.title}-${index}`} style={{ padding: '8px 0', borderTop: index ? '1px solid var(--border)' : undefined }}>
-                  <div><b>{candidate.title}</b> {candidate.cancelled && <span className="badge warn">Cancellation</span>}</div>
-                  <div>{candidate.type} · {candidate.reference || 'No reference'}</div>
-                  {candidate.startAt && <div>Check-in/start: {formatLocalDateTime(candidate.details?.localStartAt || candidate.startAt, timeFormat)}</div>}
-                  {candidate.endAt && <div>Check-out/end: {formatLocalDateTime(candidate.details?.localEndAt || candidate.endAt, timeFormat)}</div>}
-                  {candidate.price !== undefined && candidate.currency && <div>{candidate.currency} {candidate.price.toFixed(2)}</div>}
+                  <div className="grid grid-2" style={{ gap: 8 }}>
+                    <label>Title<input value={candidate.title || ''} onChange={(event) => updateCandidate(index, 'title', event.target.value)} /></label>
+                    <label>Provider<input value={candidate.provider || ''} onChange={(event) => updateCandidate(index, 'provider', event.target.value)} /></label>
+                    <label>Reference<input value={candidate.reference || ''} onChange={(event) => updateCandidate(index, 'reference', event.target.value)} /></label>
+                    <label>Type<select value={candidate.type} onChange={(event) => updateCandidate(index, 'type', event.target.value)}><option value="hotel">Hotel</option><option value="flight">Flight</option><option value="car">Car</option><option value="activity">Activity</option></select></label>
+                    <label>Start<input type="datetime-local" value={(candidate.details?.localStartAt || candidate.startAt || '').slice(0, 16)} onChange={(event) => updateCandidate(index, 'startAt', event.target.value)} /></label>
+                    <label>End<input type="datetime-local" value={(candidate.details?.localEndAt || candidate.endAt || '').slice(0, 16)} onChange={(event) => updateCandidate(index, 'endAt', event.target.value)} /></label>
+                    <label>Amount<input type="number" min="0" step="0.01" value={candidate.price ?? ''} onChange={(event) => updateCandidate(index, 'price', event.target.value)} /></label>
+                    <label>Currency<input value={candidate.currency || ''} onChange={(event) => updateCandidate(index, 'currency', event.target.value.toUpperCase())} maxLength={3} /></label>
+                  </div>
+                  {candidate.cancelled && <span className="badge warn">Cancellation</span>}
                 </div>
               ))}
             </div>
@@ -318,6 +337,7 @@ export function EmailImports() {
               <>
                 <span className="muted small" style={{ alignSelf: 'center' }}>Assigned to {detail.trip.name}</span>
                 {detail.status === 'imported' && reparsedId === detail.id && !detail.error && (detail.parsedPayload?.startAt || detail.parsedPayload?.endAt || detail.parsedPayload?.candidates?.some((candidate) => candidate.startAt || candidate.endAt)) && <button className="btn primary" onClick={() => void applyDates()} disabled={busy || reparsing}>Apply dates to booking</button>}
+                {detail.status === 'imported' && reparsedId === detail.id && !detail.error && <button className="btn primary" onClick={() => void assign(true)} disabled={busy || reparsing || !detail.parsedPayload}>Update or add again</button>}
               </>
             ) : detail.status !== 'ignored' ? (
               <button className="btn primary" onClick={() => void assign()} disabled={busy || reparsing || !selTrip || (selTrip === '__new__' && !newTripName.trim()) || !detail.parsedPayload || Boolean(detail.error) || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>

@@ -217,6 +217,7 @@ emailRouter.post(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const user = getUser(req);
+    const force = req.body.force === true;
     const tripId = typeof req.body.tripId === 'string' ? req.body.tripId : '';
     const newTrip = z.object({ name: z.string().trim().min(1).max(120), destination: z.string().trim().max(200).optional() }).safeParse(req.body.newTrip);
     if (!tripId && !newTrip.success) throw badRequest('Select a trip or enter a new trip name');
@@ -224,7 +225,8 @@ emailRouter.post(
     if (tripId) await requireTripAccess(req, tripId, 'editor');
     const item = await prisma.emailImport.findFirst({ where: { id, userId: user.id } });
     if (!item) throw notFound('Import not found');
-    if (item.status === 'imported' || item.status === 'ignored') throw badRequest('This email has already been reviewed');
+    if (item.status === 'ignored') throw badRequest('This email has already been reviewed');
+    if (item.status === 'imported' && !force) throw badRequest('Reparse this email and choose Update or add again');
     if (item.error) throw badRequest('Resolve the extraction error by reparsing this email before approval');
     const pp: ParsedPayloadShape | null = item.parsedPayload as ParsedPayloadShape | null;
     if (!pp) {
@@ -234,7 +236,8 @@ emailRouter.post(
     const updatedPp: ParsedPayloadShape | null = fresh?.parsedPayload as ParsedPayloadShape | null;
     const bpp: ParsedPayloadShape = updatedPp ?? {};
     if (bpp.candidates && bpp.candidates.length > 20) throw badRequest('Too many reservations in one email');
-    const candidates: ParsedPayloadShape[] = bpp.candidates?.length ? bpp.candidates : [bpp];
+    const editedCandidates = Array.isArray(req.body.candidates) ? req.body.candidates as ParsedPayloadShape[] : undefined;
+    const candidates: ParsedPayloadShape[] = editedCandidates?.length ? editedCandidates : bpp.candidates?.length ? bpp.candidates : [bpp];
     if (candidates.some((candidate) => candidate.cancelled)) {
       throw badRequest('This email includes a cancellation. Review the existing booking instead.');
     }
@@ -251,13 +254,14 @@ emailRouter.post(
       } }) : null;
       const targetTripId = createdTrip?.id || tripId;
       const claimed = await tx.emailImport.updateMany({
-        where: { id, userId: user.id, status: { notIn: ['imported', 'ignored'] } },
+        where: { id, userId: user.id, status: force ? { not: 'ignored' } : { notIn: ['imported', 'ignored'] } },
         data: { status: 'imported', tripId: targetTripId, assignedAt: new Date() },
       });
       if (!claimed.count) throw badRequest('This email has already been imported');
       const bookings: Booking[] = [];
       const created: Array<{ booking: Booking; candidate: ParsedPayloadShape }> = [];
       let skipped = 0;
+      let updated = 0;
       for (const candidate of candidates) {
         const type = candidate.type ?? fresh?.type ?? 'activity';
         const title = candidate.title ?? item.subject;
@@ -267,10 +271,22 @@ emailRouter.post(
           : { tripId: targetTripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) };
         const existing = await tx.booking.findFirst({ where: existingWhere, select: { id: true, details: true } });
         if (existing) {
-          await tx.booking.update({ where: { id: existing.id }, data: {
-            details: addEmailAttachment(existing.details, attachment) as Prisma.InputJsonValue,
+          if (!force) {
+            await tx.booking.update({ where: { id: existing.id }, data: { details: addEmailAttachment(existing.details, attachment) as Prisma.InputJsonValue } });
+            skipped++;
+            continue;
+          }
+          const booking = await tx.booking.update({ where: { id: existing.id }, data: {
+            type, title, provider: candidate.provider, reference: candidate.reference,
+            startAt, endAt: bookingDate(candidate, 'endAt'), updatedById: user.id,
+            details: {
+              ...addEmailAttachment(existing.details, attachment), ...(candidate.details ?? {}),
+              ...(candidate.price !== undefined ? { confirmedPrice: candidate.price } : {}),
+              ...(candidate.currency ? { currency: candidate.currency } : {}), sourceRaw: attachment.text || undefined,
+            } as Prisma.InputJsonValue,
           } });
-          skipped++;
+          created.push({ booking, candidate });
+          updated++;
           continue;
         }
         const booking = await tx.booking.create({ data: {
@@ -294,7 +310,7 @@ emailRouter.post(
         bookings.push(booking);
         created.push({ booking, candidate });
       }
-      return { bookings, created, skipped, trip: createdTrip ? { id: createdTrip.id, name: createdTrip.name } : null, tripId: targetTripId };
+      return { bookings, created, skipped, updated, trip: createdTrip ? { id: createdTrip.id, name: createdTrip.name } : null, tripId: targetTripId };
     });
     const synced = await Promise.all(result.created.map(async ({ booking, candidate }) => syncBookingToItinerary(
       result.tripId,
@@ -320,6 +336,7 @@ emailRouter.post(
     res.status(201).json({
       bookings: result.bookings,
       skipped: result.skipped,
+      updated: result.updated,
       trip: result.trip,
       tripId: result.tripId,
       itineraryEntries: synced.reduce((count, entry) => count + entry.placesAdded, 0),

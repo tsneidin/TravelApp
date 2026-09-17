@@ -17,14 +17,21 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
   const [newCat, setNewCat] = useState('General');
   const [editing, setEditing] = useState<PackingEdit | null>(null);
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const categories = ['General', ...new Set(items.map((i) => i.category).filter(Boolean))] as string[];
 
   const add = async () => {
-    if (!newItem.trim()) return;
-    await apiPost(`/trips/${trip.id}/packing`, { item: newItem.trim(), category: newCat });
-    setNewItem('');
-    await reload();
+    if (!newItem.trim() || adding) return;
+    setAdding(true);
+    try {
+      await apiPost(`/trips/${trip.id}/packing`, { item: newItem.trim(), category: newCat.trim() || 'General' });
+      setNewItem('');
+      await reload();
+    } finally {
+      setAdding(false);
+    }
   };
 
   const toggle = async (id: string, done: boolean) => {
@@ -33,8 +40,14 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
   };
 
   const remove = async (id: string) => {
-    await apiDelete(`/trips/${trip.id}/packing/${id}`);
-    await reload();
+    if (deletingId) return;
+    setDeletingId(id);
+    try {
+      await apiDelete(`/trips/${trip.id}/packing/${id}`);
+      await reload();
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const openEdit = (item: { id: string; item: string; category?: string | null }) => {
@@ -74,11 +87,12 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
           <div className="grow">
             <input value={newItem} onChange={(e) => setNewItem(e.target.value)} placeholder="e.g. Power adapter" onKeyDown={(e) => e.key === 'Enter' && void add()} />
           </div>
-          <select value={newCat} onChange={(e) => setNewCat(e.target.value)} style={{ width: 'auto' }}>
-            {categories.map((c) => <option key={c}>{c}</option>)}
-          </select>
-          <button className="btn primary" onClick={() => void add()} disabled={!newItem.trim()}>
-            <Plus size={14} /> Add
+          <input list="packing-categories" value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Category" style={{ width: 'auto' }} />
+          <datalist id="packing-categories">
+            {categories.map((c) => <option key={c} value={c} />)}
+          </datalist>
+          <button className="btn primary" onClick={() => void add()} disabled={!newItem.trim() || adding}>
+            <Plus size={14} /> {adding ? 'Adding…' : 'Add'}
           </button>
         </div>
 
@@ -115,7 +129,7 @@ export function PackingTab({ trip, reload }: { trip: Trip; reload: () => Promise
                     <button className="btn sm ghost" title="Edit packing item" onClick={() => openEdit(i)}>
                       <Pencil size={13} />
                     </button>
-                    <button className="btn sm ghost danger" title="Delete packing item" onClick={() => void remove(i.id)}>
+                    <button className="btn sm ghost danger" title="Delete packing item" onClick={() => void remove(i.id)} disabled={deletingId !== null}>
                       <Trash2 size={13} />
                     </button>
                   </div>

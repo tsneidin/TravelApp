@@ -254,7 +254,8 @@ contentRouter.delete(
   asyncHandler(async (req, res) => {
     const { tripId, itemId } = req.params;
     await requireTripAccess(req, tripId, 'editor');
-    await prisma.packingItem.delete({ where: { id: itemId } });
+    const deleted = await prisma.packingItem.deleteMany({ where: { id: itemId, tripId } });
+    if (!deleted.count) throw notFound('Packing item not found');
     res.status(204).send();
   }),
 );

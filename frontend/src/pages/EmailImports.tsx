@@ -107,10 +107,10 @@ export function EmailImports() {
     if (!detail || !selTrip || (selTrip === '__new__' && !newTripName.trim())) return;
     setBusy(true);
     try {
-      const result = await apiPost<{ bookings: unknown[]; skipped: number; tripId: string; trip?: { name: string } | null }>(`/email/imports/${detail.id}/assign`, selTrip === '__new__'
+      const result = await apiPost<{ bookings: unknown[]; skipped: number; tripId: string; trip?: { name: string } | null; itineraryEntries: number; budgetEntries: number; emailDocuments: number }>(`/email/imports/${detail.id}/assign`, selTrip === '__new__'
         ? { newTrip: { name: newTripName.trim(), destination: newTripDestination.trim() } }
         : { tripId: selTrip });
-      setMsg(`${result.trip ? `Created ${result.trip.name}. ` : ''}${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added${result.skipped ? `, ${result.skipped} existing skipped` : ''}.`);
+      setMsg(`${result.trip ? `Created ${result.trip.name}. ` : ''}${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} added, ${result.itineraryEntries} itinerary item${result.itineraryEntries === 1 ? '' : 's'}, ${result.budgetEntries} budget item${result.budgetEntries === 1 ? '' : 's'}, and ${result.emailDocuments} email document${result.emailDocuments === 1 ? '' : 's'} attached${result.skipped ? `; ${result.skipped} existing booking${result.skipped === 1 ? '' : 's'} matched` : ''}.`);
       setDetail(null);
       setSelTrip(result.tripId);
       await load();
@@ -321,7 +321,7 @@ export function EmailImports() {
               </>
             ) : detail.status !== 'ignored' ? (
               <button className="btn primary" onClick={() => void assign()} disabled={busy || reparsing || !selTrip || (selTrip === '__new__' && !newTripName.trim()) || !detail.parsedPayload || Boolean(detail.error) || Boolean(detail.parsedPayload?.candidates?.some((candidate) => candidate.cancelled))}>
-                <Check size={14} /> Approve and add {detail.parsedPayload?.candidates?.length || 1} booking{detail.parsedPayload?.candidates?.length === 1 ? '' : 's'}
+                <Check size={14} /> Add booking, itinerary, and budget
               </button>
             ) : null}
           </div>

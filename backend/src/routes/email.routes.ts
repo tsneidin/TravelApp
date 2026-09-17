@@ -8,12 +8,13 @@ import { extractEmailWithLlm } from '../services/emailLlmParser.js';
 import { parseEmailMessage } from '../services/emailMessage.js';
 import { stripHtmlToText } from '../services/fileParser.js';
 import { Prisma } from '@prisma/client';
-import type { BookingType, ImportStatus } from '@prisma/client';
+import type { Booking, BookingType, ImportStatus } from '@prisma/client';
 import { extractKitinerary, needsEmailAiCompletion } from '../services/kitinerary.js';
 import type { KitineraryCandidate } from '../services/kitinerary.js';
 import { decryptEmailPassword, encryptEmailPassword, testGmailConnection } from '../services/emailConnection.js';
 import { z } from 'zod';
 import { reconcileTripDays } from '../services/dayReconciliation.js';
+import { syncBookingToItinerary } from '../services/bookingHelper.js';
 
 interface ParsedPayloadShape {
   source?: string;
@@ -33,6 +34,25 @@ interface ParsedPayloadShape {
 }
 
 export const emailRouter = Router();
+
+function emailAttachment(item: { id: string; subject: string; from: string; bodyText: string | null; bodyHtml: string | null; rawSource: Uint8Array | null }) {
+  const filenameStem = item.subject.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'booking-email';
+  const text = item.bodyText?.trim() || stripHtmlToText(item.bodyHtml || '').trim();
+  return {
+    filename: `${filenameStem}-${item.id.slice(-8)}.eml`,
+    fileType: 'message/rfc822',
+    size: item.rawSource?.length || Buffer.byteLength(text, 'utf8'),
+    text,
+    summary: `Imported email from ${item.from}`,
+  };
+}
+
+function addEmailAttachment(details: unknown, attachment: ReturnType<typeof emailAttachment>) {
+  const current = details && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : {};
+  const attachments = Array.isArray(current.attachments) ? current.attachments.filter((entry) => entry && typeof entry === 'object') : [];
+  const alreadyAttached = attachments.some((entry) => (entry as Record<string, unknown>).filename === attachment.filename);
+  return { ...current, attachments: alreadyAttached ? attachments : [...attachments, attachment] };
+}
 
 const connectionSchema = z.object({
   username: z.string().email(),
@@ -218,6 +238,7 @@ emailRouter.post(
     if (candidates.some((candidate) => candidate.cancelled)) {
       throw badRequest('This email includes a cancellation. Review the existing booking instead.');
     }
+    const attachment = emailAttachment(item);
     const result = await prisma.$transaction(async (tx) => {
       const dateKeys = candidates.flatMap((candidate) => [candidate.details?.localStartAt?.slice(0, 10) || candidate.startAt?.slice(0, 10), candidate.details?.localEndAt?.slice(0, 10) || candidate.endAt?.slice(0, 10)]).filter((value): value is string => Boolean(value && /^20\d\d-\d\d-\d\d$/.test(value))).sort();
       const createdTrip = newTrip.success ? await tx.trip.create({ data: {
@@ -234,7 +255,8 @@ emailRouter.post(
         data: { status: 'imported', tripId: targetTripId, assignedAt: new Date() },
       });
       if (!claimed.count) throw badRequest('This email has already been imported');
-      const bookings = [];
+      const bookings: Booking[] = [];
+      const created: Array<{ booking: Booking; candidate: ParsedPayloadShape }> = [];
       let skipped = 0;
       for (const candidate of candidates) {
         const type = candidate.type ?? fresh?.type ?? 'activity';
@@ -243,11 +265,15 @@ emailRouter.post(
         const existingWhere: Prisma.BookingWhereInput = candidate.reference
           ? { tripId: targetTripId, type, reference: { equals: candidate.reference, mode: 'insensitive' } }
           : { tripId: targetTripId, type, title: { equals: title, mode: 'insensitive' }, ...(startAt ? { startAt } : {}) };
-        if (await tx.booking.findFirst({ where: existingWhere, select: { id: true } })) {
+        const existing = await tx.booking.findFirst({ where: existingWhere, select: { id: true, details: true } });
+        if (existing) {
+          await tx.booking.update({ where: { id: existing.id }, data: {
+            details: addEmailAttachment(existing.details, attachment) as Prisma.InputJsonValue,
+          } });
           skipped++;
           continue;
         }
-        bookings.push(await tx.booking.create({ data: {
+        const booking = await tx.booking.create({ data: {
           tripId: targetTripId,
           userId: user.id,
           type,
@@ -260,14 +286,46 @@ emailRouter.post(
             ...(candidate.details ?? {}),
             ...(candidate.price !== undefined ? { confirmedPrice: candidate.price } : {}),
             ...(candidate.currency ? { currency: candidate.currency } : {}),
+            attachments: [attachment],
+            sourceRaw: attachment.text || undefined,
           },
           sourceImportId: id,
-        } }));
+        } });
+        bookings.push(booking);
+        created.push({ booking, candidate });
       }
-      return { bookings, skipped, trip: createdTrip ? { id: createdTrip.id, name: createdTrip.name } : null, tripId: targetTripId };
+      return { bookings, created, skipped, trip: createdTrip ? { id: createdTrip.id, name: createdTrip.name } : null, tripId: targetTripId };
     });
+    const synced = await Promise.all(result.created.map(async ({ booking, candidate }) => syncBookingToItinerary(
+      result.tripId,
+      user.id,
+      booking.id,
+      attachment.text || item.subject,
+      booking.title,
+      {
+        type: booking.type,
+        provider: booking.provider || undefined,
+        reference: booking.reference || undefined,
+        startAt: bookingDate(candidate, 'startAt') || undefined,
+        endAt: bookingDate(candidate, 'endAt') || undefined,
+        totalAmount: candidate.price,
+        currency: candidate.currency,
+        address: candidate.address || candidate.details?.address,
+        notes: candidate.details?.notes,
+        preferFallbackPrice: candidate.price !== undefined,
+        preferFallbackDates: true,
+      },
+    )));
     await reconcileTripDays(result.tripId).catch((error) => console.warn('[email] trip day refresh failed after approval', error));
-    res.status(201).json(result);
+    res.status(201).json({
+      bookings: result.bookings,
+      skipped: result.skipped,
+      trip: result.trip,
+      tripId: result.tripId,
+      itineraryEntries: synced.reduce((count, entry) => count + entry.placesAdded, 0),
+      budgetEntries: synced.reduce((count, entry) => count + (entry.expenseAdded ? 1 : 0), 0),
+      emailDocuments: result.bookings.length + result.skipped,
+    });
   }),
 );
 

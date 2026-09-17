@@ -456,6 +456,7 @@ export interface BookingSyncFallback {
   address?: string;
   notes?: string;
   preferFallbackPrice?: boolean;
+  preferFallbackDates?: boolean;
 }
 
 export async function syncBookingToItinerary(
@@ -505,8 +506,8 @@ export async function syncBookingToItinerary(
     info.provider = fallback.provider;
   }
   if (!info.reference && fallback.reference) info.reference = fallback.reference;
-  if (!info.startDate && fallback.startAt) info.startDate = fallback.startAt;
-  if (!info.endDate && fallback.endAt) info.endDate = fallback.endAt;
+  if ((fallback.preferFallbackDates || !info.startDate) && fallback.startAt) info.startDate = fallback.startAt;
+  if ((fallback.preferFallbackDates || !info.endDate) && fallback.endAt) info.endDate = fallback.endAt;
   if (!info.address && fallback.address) info.address = fallback.address;
   if (!info.notes && fallback.notes) info.notes = fallback.notes;
   if (fallback.preferFallbackPrice && fallback.totalAmount !== undefined && fallback.totalAmount >= 0) {

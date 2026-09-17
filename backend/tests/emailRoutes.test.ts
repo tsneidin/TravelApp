@@ -12,11 +12,13 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock('../src/db.js', () => ({ prisma: db }));
 vi.mock('../src/services/dayReconciliation.js', () => ({ reconcileTripDays: vi.fn().mockResolvedValue({}) }));
+vi.mock('../src/services/bookingHelper.js', () => ({ syncBookingToItinerary: vi.fn().mockResolvedValue({ daysAdded: 2, placesAdded: 2, expenseAdded: true }) }));
 vi.mock('../src/services/kitinerary.js', () => ({ extractKitinerary: vi.fn().mockResolvedValue([]), needsEmailAiCompletion: (candidates: Array<{ type: string; startAt?: string; endAt?: string }>) => !candidates.length || candidates.some((candidate) => candidate.type === 'hotel' && (!candidate.startAt || !candidate.endAt)) }));
 vi.mock('../src/services/emailLlmParser.js', () => ({ extractEmailWithLlm: vi.fn().mockResolvedValue({ candidates: [] }) }));
 
 import { extractEmailWithLlm } from '../src/services/emailLlmParser.js';
 import { extractKitinerary } from '../src/services/kitinerary.js';
+import { syncBookingToItinerary } from '../src/services/bookingHelper.js';
 
 import { emailRouter } from '../src/routes/email.routes.js';
 import { errorHandler } from '../src/lib/errors.js';
@@ -93,7 +95,7 @@ describe('personal email review queue', () => {
     db.emailImport.updateMany.mockResolvedValue({ count: 1 });
     db.trip.create.mockResolvedValue({ id: 'new-trip', name: 'Alaska trip' });
     db.booking.findFirst.mockResolvedValue(null);
-    db.booking.create.mockResolvedValue({ id: 'new-booking' });
+    db.booking.create.mockResolvedValue({ id: 'new-booking', type: 'hotel', title: 'Alaska Lodge', provider: null, reference: null });
     const response = await request(app).post('/email/imports/hotel-email/assign')
       .set('Authorization', `Bearer ${token('user-one')}`)
       .send({ newTrip: { name: 'Alaska trip', destination: 'Alaska' } });
@@ -101,6 +103,9 @@ describe('personal email review queue', () => {
     expect(response.body.trip).toEqual({ id: 'new-trip', name: 'Alaska trip' });
     expect(db.trip.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ownerId: 'user-one', startDate: new Date('2026-12-13T12:00:00Z'), endDate: new Date('2026-12-15T12:00:00Z') }) });
     expect(db.booking.create).toHaveBeenCalledWith({ data: expect.objectContaining({ tripId: 'new-trip', startAt: new Date('2026-12-13T15:00:00Z'), endAt: new Date('2026-12-15T11:00:00Z') }) });
+    expect(db.booking.create.mock.calls[0][0].data.details).toMatchObject({ attachments: [expect.objectContaining({ fileType: 'message/rfc822' })] });
+    expect(syncBookingToItinerary).toHaveBeenCalledWith('new-trip', 'user-one', 'new-booking', expect.any(String), 'Alaska Lodge', expect.objectContaining({ type: 'hotel', preferFallbackDates: true }));
+    expect(response.body).toMatchObject({ itineraryEntries: 2, budgetEntries: 1, emailDocuments: 1 });
   });
 
   it('does not duplicate a confirmed stay when its receipt has the same reference but date-only times', async () => {
@@ -111,12 +116,13 @@ describe('personal email review queue', () => {
     db.emailImport.findFirst.mockResolvedValue(item);
     db.emailImport.findUnique.mockResolvedValue(item);
     db.emailImport.updateMany.mockResolvedValue({ count: 1 });
-    db.booking.findFirst.mockResolvedValue({ id: 'original-booking' });
+    db.booking.findFirst.mockResolvedValue({ id: 'original-booking', details: {} });
     const response = await request(app).post('/email/imports/receipt-email/assign')
       .set('Authorization', `Bearer ${token('user-one')}`).send({ tripId: 'owned-trip' });
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({ skipped: 1, bookings: [] });
-    expect(db.booking.findFirst).toHaveBeenCalledWith({ where: { tripId: 'owned-trip', type: 'hotel', reference: { equals: '9000001234', mode: 'insensitive' } }, select: { id: true } });
+    expect(db.booking.findFirst).toHaveBeenCalledWith({ where: { tripId: 'owned-trip', type: 'hotel', reference: { equals: '9000001234', mode: 'insensitive' } }, select: { id: true, details: true } });
+    expect(db.booking.update).toHaveBeenCalledWith({ where: { id: 'original-booking' }, data: { details: expect.objectContaining({ attachments: [expect.objectContaining({ fileType: 'message/rfc822' })] }) } });
     expect(db.booking.create).not.toHaveBeenCalled();
   });
 

@@ -28,11 +28,14 @@ const DATE_PATTERNS: [string, RegExp][] = [
 ];
 
 function hotelSection(body: string, label: 'in' | 'out'): string {
-  const pattern = label === 'in' ? /\bcheck[-\s]?in\b/i : /\bcheck[-\s]?out\b/i;
+  const pattern = label === 'in'
+    ? /\bcheck[-\s]?in(?:\s+date(?:\s+and\s+time)?)?\s*[:\-]\s*/i
+    : /\bcheck[-\s]?out(?:\s+date(?:\s+and\s+time)?)?\s*[:\-]\s*/i;
   const match = pattern.exec(body);
   if (!match) return '';
   const rest = body.slice(match.index + match[0].length);
-  return rest.split(/\bcheck[-\s]?(?:in|out)\b/i, 1)[0].slice(0, 180);
+  const nextField = /\bcheck[-\s]?(?:in|out)(?:\s+date(?:\s+and\s+time)?)?\s*[:\-]/i.exec(rest);
+  return rest.slice(0, nextField?.index ?? 180).slice(0, 180);
 }
 
 function hotelMoment(section: string): { date: Date; local: string } | undefined {

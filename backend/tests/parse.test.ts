@@ -51,7 +51,7 @@ describe('parseConfirmation', () => {
   });
 
   it('parses the captured Anchorage test-email format and its body confirmation number', () => {
-    const body = `TEST DATA ONLY. NO RESERVATION EXISTS.
+    const body = `TEST DATA ONLY. NO RESERVATION EXISTS. This fictional confirmation is solely for testing TravelApp email importing. Do not use it for travel, payment, or check-in.
 HOTEL BOOKING CONFIRMATION (TEST)
 Confirmation number: TEST-AK-0917-02
 Property: Aurora Harbor Hotel (fictional)

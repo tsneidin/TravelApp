@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { Users, Crown, Shield, Eye, FileText } from 'lucide-react';
+import { Users, Crown, Shield, Eye } from 'lucide-react';
 import { apiGet, apiPatch, apiDelete } from '../lib/api';
 import { endForStart, formatTripDate } from '../lib/dateRange';
 import { useAuth } from '../lib/auth';
@@ -9,7 +9,6 @@ import { Spinner } from '../components/Spinner';
 import { Modal, ConfirmModal } from '../components/Modal';
 import { Avatar } from '../components/Avatar';
 import { TripMembersModal } from '../components/TripMembersModal';
-import { printTripBrochure } from '../lib/brochure';
 const ItineraryTab = lazy(() => import('./tabs/ItineraryTab').then((module) => ({ default: module.ItineraryTab })));
 const MapTab = lazy(() => import('./tabs/MapTab').then((module) => ({ default: module.MapTab })));
 const TimelineTab = lazy(() => import('./tabs/TimelineTab').then((module) => ({ default: module.TimelineTab })));
@@ -163,7 +162,6 @@ export function TripDetail() {
         </div>
 
         <div className="row" style={{ alignItems: 'center', gap: 10 }}>
-          <button type="button" className="btn ghost sm" onClick={() => printTripBrochure(trip)} title="Print or save a shareable PDF itinerary brochure"><FileText size={14} /> Trip brochure</button>
           {/* Member Avatars Stack */}
           <button
             type="button"
